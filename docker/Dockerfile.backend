@@ -1,0 +1,33 @@
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9 --activate
+WORKDIR /app
+
+# ── Install dependencies ──
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/backend/package.json ./packages/backend/
+RUN pnpm install --frozen-lockfile
+
+# ── Build ──
+FROM deps AS build
+COPY packages/shared/ ./packages/shared/
+COPY packages/backend/ ./packages/backend/
+RUN pnpm --filter @khalifa/backend db:generate
+RUN pnpm --filter @khalifa/backend build
+
+# ── Production ──
+FROM base AS production
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
+COPY --from=build /app/packages/backend/dist ./packages/backend/dist
+COPY --from=build /app/packages/backend/prisma ./packages/backend/prisma
+COPY --from=build /app/packages/backend/node_modules/.prisma ./packages/backend/node_modules/.prisma
+COPY packages/shared/src ./packages/shared/src
+COPY packages/shared/package.json ./packages/shared/
+
+WORKDIR /app/packages/backend
+EXPOSE 3001
+
+CMD ["node", "dist/server.js"]

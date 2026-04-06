@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================================
+// Enums
+// ================================================
+
+enum UserRole {
+  ADMIN
+  CLIENT
+}
+
+enum DocumentStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  ARCHIVED
+}
+
+enum IngestionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum IngestionStep {
+  EXTRACTING
+  OCR
+  CHUNKING
+  EMBEDDING
+  INDEXING
+}
+
+// ================================================
+// Auth Models
+// ================================================
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name")
+  avatarUrl    String?  @map("avatar_url")
+  role         UserRole @default(CLIENT)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+  documents     Document[]
+  questions     Question[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  isRevoked Boolean  @default(false) @map("is_revoked")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ================================================
+// Document Models
+// ================================================
+
+model Document {
+  id               String         @id @default(uuid()) @db.Uuid
+  title            String
+  originalFilename String         @map("original_filename")
+  storedFilename   String         @map("stored_filename")
+  filePath         String         @map("file_path")
+  mimeType         String         @map("mime_type")
+  fileSizeBytes    BigInt         @map("file_size_bytes")
+  pageCount        Int?           @map("page_count")
+  chunkCount       Int?           @map("chunk_count")
+  status           DocumentStatus @default(UPLOADED)
+  progress         Int            @default(0)
+  categories       String[]       @default([])
+  metadata         Json?          @default("{}")
+  uploadedBy       String         @map("uploaded_by") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  uploader      User             @relation(fields: [uploadedBy], references: [id])
+  pages         DocumentPage[]
+  chunks        DocumentChunk[]
+  images        DocumentImage[]
+  ingestionJobs IngestionJob[]
+
+  @@index([status])
+  @@index([uploadedBy])
+  @@map("documents")
+}
+
+model DocumentPage {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  pageNumber Int      @map("page_number")
+  rawText    String   @map("raw_text") @db.Text
+  isOcr      Boolean  @default(false) @map("is_ocr")
+  wordCount  Int      @map("word_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunks   DocumentChunk[]
+
+  @@unique([documentId, pageNumber])
+  @@map("document_pages")
+}
+
+/// Chunk text and metadata stored in PostgreSQL.
+/// The embedding vector is stored in Pinecone, linked via pineconeVectorId.
+model DocumentChunk {
+  id               String   @id @default(uuid()) @db.Uuid
+  documentId       String   @map("document_id") @db.Uuid
+  pageId           String?  @map("page_id") @db.Uuid
+  chunkIndex       Int      @map("chunk_index")
+  content          String   @db.Text
+  tokenCount       Int      @map("token_count")
+  pageNumber       Int      @map("page_number")
+  sectionHeading   String?  @map("section_heading")
+  language         String?
+  pineconeVectorId String?  @map("pinecone_vector_id")
+  metadata         Json?    @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  page          DocumentPage?  @relation(fields: [pageId], references: [id])
+  answerSources AnswerSource[]
+
+  @@index([documentId])
+  @@index([pineconeVectorId])
+  @@map("document_chunks")
+}
+
+model DocumentImage {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  pageNumber Int      @map("page_number")
+  filePath   String   @map("file_path")
+  altText    String?  @map("alt_text")
+  width      Int?
+  height     Int?
+  format     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document     Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  answerImages AnswerImage[]
+
+  @@map("document_images")
+}
+
+// ================================================
+// Ingestion Models
+// ================================================
+
+model IngestionJob {
+  id           String          @id @default(uuid()) @db.Uuid
+  documentId   String          @map("document_id") @db.Uuid
+  status       IngestionStatus @default(PENDING)
+  step         IngestionStep?
+  progressPct  Int             @default(0) @map("progress_pct")
+  errorMessage String?         @map("error_message") @db.Text
+  logEntries   Json?           @default("[]") @map("log_entries")
+  startedAt    DateTime?       @map("started_at")
+  completedAt  DateTime?       @map("completed_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([status])
+  @@map("ingestion_jobs")
+}
+
+// ================================================
+// Q&A Models
+// ================================================
+
+model Question {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  queryText String   @map("query_text") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id])
+  answer Answer?
+
+  @@index([userId])
+  @@map("questions")
+}
+
+model Answer {
+  id              String   @id @default(uuid()) @db.Uuid
+  questionId      String   @unique @map("question_id") @db.Uuid
+  answerText      String   @map("answer_text") @db.Text
+  confidenceScore Float?   @map("confidence_score")
+  isGrounded      Boolean  @default(true) @map("is_grounded")
+  groundingNote   String?  @map("grounding_note") @db.Text
+  rawLlmResponse  Json?    @map("raw_llm_response")
+  tokensUsed      Int?     @map("tokens_used")
+  modelUsed       String?  @map("model_used")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  question     Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sources      AnswerSource[]
+  answerImages AnswerImage[]
+
+  @@map("answers")
+}
+
+model AnswerSource {
+  id             String @id @default(uuid()) @db.Uuid
+  answerId       String @map("answer_id") @db.Uuid
+  chunkId        String @map("chunk_id") @db.Uuid
+  documentId     String @map("document_id") @db.Uuid
+  pageNumber     Int    @map("page_number")
+  excerpt        String @db.Text
+  relevanceScore Float  @map("relevance_score")
+  rank           Int
+
+  answer Answer        @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  chunk  DocumentChunk @relation(fields: [chunkId], references: [id])
+
+  @@map("answer_sources")
+}
+
+model AnswerImage {
+  id       String @id @default(uuid()) @db.Uuid
+  answerId String @map("answer_id") @db.Uuid
+  imageId  String @map("image_id") @db.Uuid
+
+  answer Answer        @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  image  DocumentImage @relation(fields: [imageId], references: [id])
+
+  @@map("answer_images")
+}
+
+// ================================================
+// Audit
+// ================================================
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id") @db.Uuid
+  details      Json?
+  ipAddress    String?  @map("ip_address")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}

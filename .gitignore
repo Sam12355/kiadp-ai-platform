@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Uploads
+uploads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+
+# Prisma
+packages/backend/prisma/*.db
+
+# Misc
+*.tsbuildinfo
+
+# Root-level loose files (not part of source)
+*.pdf
+check-db.js
+earth.png
+leaf.png
+Neo_Sans_Arabic_Regular.ttf
