@@ -94,7 +94,7 @@ router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMI
   try {
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       select: { id: true, isActive: true }
     });
 
