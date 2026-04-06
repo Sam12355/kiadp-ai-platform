@@ -1,0 +1,36 @@
+services:
+  # ── Backend API + Worker ──
+  - type: web
+    name: kiadp-backend
+    runtime: node
+    rootDir: packages/backend
+    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @khalifa/backend run build
+    startCommand: node /opt/render/project/src/packages/backend/dist/server.js & node /opt/render/project/src/packages/backend/dist/worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Set the rest manually in Render dashboard:
+      # DATABASE_URL, PINECONE_API_KEY, PINECONE_INDEX_NAME,
+      # OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL, OPENAI_CHAT_MODEL,
+      # JWT_SECRET, JWT_EXPIRY, REFRESH_TOKEN_EXPIRY_DAYS,
+      # UPLOAD_DIR, MAX_FILE_SIZE_MB, CORS_ORIGIN, LOG_LEVEL
+    disk:
+      name: uploads
+      mountPath: /var/data/uploads
+      sizeGB: 1
+
+  # ── Frontend Static Site ──
+  - type: web
+    name: kiadp-frontend
+    runtime: static
+    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @khalifa/frontend run build
+    staticPublishPath: ./packages/frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://kiadp-backend.onrender.com/api/v1
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
