@@ -113,7 +113,7 @@ router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMI
   }
 });
 
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 /**
  * @openapi
