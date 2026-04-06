@@ -165,7 +165,7 @@ router.patch('/:id', authenticate, requireRole(UserRole.ADMIN as any), uploadPDF
         where: { documentId: docId },
         select: { pineconeVectorId: true },
       });
-      const vectorIds = chunks.map((c) => c.pineconeVectorId).filter((id) => id !== null) as string[];
+      const vectorIds = chunks.map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId).filter((id: string | null): id is string => id !== null);
 
       if (vectorIds.length > 0) {
         const boss = await getBoss();
@@ -238,7 +238,7 @@ router.delete('/:id', authenticate, requireRole(UserRole.ADMIN as any), async (r
       where: { documentId: docId },
       select: { pineconeVectorId: true },
     });
-    const vectorIds = chunks.map((c) => c.pineconeVectorId).filter((id) => id !== null) as string[];
+    const vectorIds = chunks.map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId).filter((id: string | null): id is string => id !== null);
 
     if (vectorIds.length > 0) {
       const boss = await getBoss();
