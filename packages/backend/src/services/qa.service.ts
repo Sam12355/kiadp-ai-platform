@@ -186,9 +186,9 @@ export async function askQuestion(
     // Safety Net: If AI only sent [UNGROUNDED] or failed to provide a refusal
     if (!answerText) {
       const fallbackMap: Record<string, string> = {
-        'en': "I'm sorry, but this specific information is not available in the Khalifa Knowledge Base documents.",
-        'fr': "Je suis désolé, mais cette information spécifique n'est pas disponible dans les documents de la base de connaissances Khalifa.",
-        'ar': "عذرًا، هذه المعلومات المحددة غير متوفرة في وثائق قاعدة معرفة خليفة."
+        'en': "I'm sorry, but this specific information is not available in the Khalifa Knowledge Base. For a general scientific explanation, please try the **Deep Dive** ✦ mode below.",
+        'fr': "Je suis désolé, mais cette information spécifique n'est pas disponible dans la base de connaissances Khalifa. Pour une explication scientifique générale, veuillez essayer le mode **Deep Dive** ✦ ci-dessous.",
+        'ar': "عذرًا، هذه المعلومات المحددة غير متوفرة في قاعدة معرفة خليفة. للحصول على شرح علمي عام، يرجى تجربة وضع **Deep Dive** ✦ أدناه."
       };
       answerText = fallbackMap[language] || fallbackMap['en'];
     }
