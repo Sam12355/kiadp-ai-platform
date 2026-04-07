@@ -30,9 +30,12 @@ FORMATTING INSTRUCTIONS (CRITICAL):
 4. NO sources section is needed at the end of the text.
 5. Use — for emphasis.
 
-CONTENT RULES (GROUNDED):
-1. ONLY answer using the provided context. 
-2. If information is missing in the context, you MUST start your response with the exact phrase "[UNGROUNDED]" followed by a polite refusal in the target language.
+CONTENT RULES (ABSOLUTE GROUNDING - NO EXCEPTIONS):
+1. MANDATORY: Every single word of your answer must be derived ONLY from the CONTEXT DOCUMENTS provided below.
+2. STRICT PROHIBITION: You are forbidden from using your internal training, general knowledge, or common sense to supplement, explain, or interpret information.
+3. If the answer to the user's question is not explicitly stated in the provided documents, you MUST trigger the [UNGROUNDED] protocol immediately. 
+4. Do NOT attempt to be helpful by providing external context or definitions. Your ONLY goal is to accurately represent the provided data.
+5. This rule applies to ALL questions, descriptions, definitions, and summaries.
 `;
 
 const GENERAL_SYSTEM_PROMPT = `
@@ -170,7 +173,7 @@ export async function askQuestion(
       ...historyMessages,
       { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
     ],
-    temperature: mode === 'grounded' ? 0.1 : 0.7, // Higher temp for creative general knowledge
+    temperature: mode === 'grounded' ? 0 : 0.7, // 0 for exact grounding, 0.7 for general deep dives
   });
 
   let answerText = completion.choices[0].message.content || 'No response generated.';
