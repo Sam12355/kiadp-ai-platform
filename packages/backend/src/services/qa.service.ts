@@ -18,6 +18,12 @@ export interface AnswerResponse {
     relevanceScore: number;
     sourceDocument: { title: string; originalFilename: string; storedFilename: string };
   }[];
+  images: {
+    id: string;
+    url: string;
+    description: string;
+    pageNumber: number;
+  }[];
 }
 
 const SYSTEM_PROMPT = `
@@ -134,11 +140,22 @@ export async function askQuestion(
     });
 
     const pineconeIds = searchResults.matches.map(m => m.id);
+    const textIds = searchResults.matches.filter(m => m.metadata?.type !== 'visual').map(m => m.id);
+    const visualIds = searchResults.matches.filter(m => m.metadata?.type === 'visual').map(m => m.id);
+
+    // Fetch Text Chunks
     chunks = await prisma.documentChunk.findMany({
-      where: { pineconeVectorId: { in: pineconeIds } },
+      where: { pineconeVectorId: { in: textIds } },
       include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
     });
+
+    // Fetch Images for Visual Matches
+    const visualImages = await prisma.documentImage.findMany({
+      where: { pineconeVectorId: { in: visualIds } },
+    });
+
     scoreMap = new Map(searchResults.matches.map(m => [m.id, m.score ?? 0]));
+    (chunks as any).visualImages = visualImages; // Temporarily attach to pass to next step
   }
 
   // 6. Handle grounded mode with no results
@@ -212,11 +229,19 @@ export async function askQuestion(
           rank: idx + 1,
         })) : [],
       },
+      answerImages: {
+        create: mode === 'grounded' && (chunks as any).visualImages ? (chunks as any).visualImages.map((img: any) => ({
+          imageId: img.id
+        })) : []
+      }
     },
     include: {
       sources: {
         include: { chunk: { include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } } } },
       },
+      answerImages: {
+        include: { image: true }
+      }
     },
   });
 
@@ -252,5 +277,11 @@ function formatAnswerResponse(answer: any): AnswerResponse {
         storedFilename: s.chunk.document.storedFilename 
       },
     })),
+    images: answer.answerImages?.map((ai: any) => ({
+      id: ai.image.id,
+      url: ai.image.filePath,
+      description: ai.image.description,
+      pageNumber: ai.image.pageNumber
+    })) || []
   };
 }

@@ -6,9 +6,8 @@ import { getOpenAI } from '../config/openai.js';
 import { getPinecone } from '../config/pinecone.js';
 import { getEnv } from '../config/env.js';
 import { getLogger } from '../utils/logger.js';
+import { uploadToCloudinary, uploadBufferToCloudinary } from './storage.service.js';
 import crypto from 'node:crypto';
-
-// ── Chunking Configuration ──
 const MAX_CHUNK_LENGTH = 1500; // rough approx for ~500 tokens
 const CHUNK_OVERLAP = 150;     // rough approx for ~50 tokens
 
@@ -38,8 +37,15 @@ export async function processDocument(documentId: string, filePath: string): Pro
       data: { pageCount, progress: 10 },
     });
 
-    // 3. Extract text page by page & perform simplistic chunking
+    // Prepare AI & Storage
+    const openai = getOpenAI();
+    const pinecone = getPinecone();
+    const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
+
+    // 3. Extract text & Visual analysis page by page
     const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
+    const documentUrl = await uploadToCloudinary(filePath, 'kiadp/documents');
+    if (!documentUrl) throw new Error('Failed to backup document to Cloudinary for vision analysis');
 
     for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
       const page = await pdf.getPage(pageNum);
@@ -47,6 +53,54 @@ export async function processDocument(documentId: string, filePath: string): Pro
       
       const textItems = textContent.items.map((item: any) => item.str).join(' ');
       let fullPageText = textItems.trim();
+
+      // [VISUAL ANALYSIS] Use Cloudinary's URL-based PDF-to-Image transformation
+      // We convert the PDF page into a JPG URL and send it to GPT-4o-mini Vision
+      const pageImageUrl = `${documentUrl.replace('.pdf', '.jpg')}?page=${pageNum}`;
+      
+      // If the page has significant visual content (or just for every page to be safe), analyze it.
+      // For now, let's keep it to pages with text or do a sample.
+      if (fullPageText.length > 50) {
+        // We'll run this in parallel for speed later, but one by one for reliability now
+        try {
+          const visionResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: "Describe any figures, graphs, photos, or diagrams on this agricultural research page. If there is a caption, include it. If no images exist, respond 'No visuals found.' Keep it brief but descriptive for search." },
+                  { type: 'image_url', image_url: { url: pageImageUrl } }
+                ]
+              }
+            ],
+            max_tokens: 300
+          });
+          
+          const visualDescription = visionResponse.choices[0].message.content;
+          if (visualDescription && !visualDescription.includes('No visuals found')) {
+            // Index this as a "Visual Chunk"
+            chunks.push({
+              pageNumber: pageNum,
+              text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
+              chunkIndex: 999 + pageNum // High index to separate from text
+            });
+            
+            // Save as an Image record
+            await prisma.documentImage.create({
+              data: {
+                documentId,
+                pageNumber: pageNum,
+                filePath: pageImageUrl,
+                description: visualDescription,
+                altText: `Figure on page ${pageNum}`
+              }
+            });
+          }
+        } catch (vErr) {
+          logger.warn(`Vision analysis failed for p${pageNum}: ${vErr}`);
+        }
+      }
 
       if (fullPageText.length === 0) continue;
 
@@ -75,11 +129,6 @@ export async function processDocument(documentId: string, filePath: string): Pro
       throw new Error('No valid text could be extracted from this PDF');
     }
 
-    // 4. Generate Embeddings & Upsert to Pinecone directly
-    const openai = getOpenAI();
-    const pinecone = getPinecone();
-    const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
-
     logger.info(`Extracted ${chunks.length} chunks. Generating embeddings...`);
 
     // Process in batches of 100 to avoid OpenAI rate limits
@@ -103,6 +152,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
             documentId,
             pageNumber: chunk.pageNumber,
             text: chunk.text,
+            type: chunk.chunkIndex >= 999 ? 'visual' : 'text'
           },
         };
       });

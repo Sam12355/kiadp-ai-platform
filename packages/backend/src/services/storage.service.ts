@@ -47,6 +47,40 @@ export const uploadToCloudinary = async (filePath: string, folder: string = 'kia
 };
 
 /**
+ * Uploads a buffer to Cloudinary
+ * @param buffer The image buffer
+ * @param folder Cloudinary folder
+ * @param fileName Original filename or specific name
+ */
+export const uploadBufferToCloudinary = async (
+  buffer: Buffer,
+  folder: string = 'kiadp/images',
+  fileName?: string
+): Promise<string | null> => {
+  configure();
+  if (!isConfigured) return null;
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: fileName ? fileName.split('.')[0] : undefined,
+        resource_type: 'image',
+      },
+      (error, result) => {
+        if (error) {
+          console.error('❌ Cloudinary Buffer Upload Error:', error);
+          resolve(null);
+        } else {
+          resolve(result?.secure_url || null);
+        }
+      }
+    );
+    uploadStream.end(buffer);
+  });
+};
+
+/**
  * Deletes a file from Cloudinary using its public ID
  * @param publicId The public ID of the file in Cloudinary
  */

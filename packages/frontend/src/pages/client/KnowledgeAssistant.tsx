@@ -20,6 +20,12 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: Source[];
+  images?: {
+    id: string;
+    url: string;
+    description: string;
+    pageNumber: number;
+  }[];
   isGrounded?: boolean;
   thread?: Message[];
 }
@@ -237,8 +243,8 @@ export default function KnowledgeAssistant() {
         history,
         language: lang
       });
-      const { answerId, answerText, isGrounded, sources } = data.data;
-      const assistantMessage: Message = { id: answerId, role: 'assistant', content: answerText, isGrounded, sources };
+      const { answerId, answerText, isGrounded, sources, images } = data.data;
+      const assistantMessage: Message = { id: answerId, role: 'assistant', content: answerText, isGrounded, sources, images };
       setSessions(prev => prev.map(s => {
         if (s.id === activeSessionId) return { ...s, messages: [...s.messages, assistantMessage], updatedAt: Date.now() };
         return s;
@@ -645,15 +651,28 @@ export default function KnowledgeAssistant() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="prose prose-invert prose-emerald max-w-none prose-p:leading-relaxed prose-p:my-0" 
-                        style={{ 
-                          color: 'var(--color-text-primary)', 
-                          fontSize: '1.05rem', 
-                          lineHeight: 1.8, 
-                          fontFamily: 'var(--font-ai)', 
-                          fontWeight: 450 
-                        }}>
+                        style={{ color: 'var(--color-text-primary)', fontSize: '0.9rem', lineHeight: 1.6 }}>
                         {formatContent(msg.content)}
                       </div>
+
+                      {/* Display Relevant Images from Knowledge Base */}
+                      {msg.images && msg.images.length > 0 && (
+                        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {msg.images.map((img) => (
+                            <div key={img.id} className="group relative rounded-2xl overflow-hidden border border-white/5 transition-all hover:border-[var(--color-palm-400)]">
+                              <img 
+                                src={img.url} 
+                                alt={img.description} 
+                                className="w-full h-auto object-cover max-h-[300px] bg-black/20"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-end">
+                                <p className="text-[10px] text-white/90 line-clamp-2 leading-relaxed">{img.description}</p>
+                                <span className="text-[8px] font-bold uppercase tracking-tighter text-[var(--color-palm-400)] mt-1">PAGE {img.pageNumber}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {msg.isGrounded !== false && msg.sources && msg.sources.length > 0 && (
                         <div className="mt-4 flex flex-wrap gap-2">

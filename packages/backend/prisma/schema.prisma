@@ -151,15 +151,17 @@ model DocumentChunk {
 }
 
 model DocumentImage {
-  id         String   @id @default(uuid()) @db.Uuid
-  documentId String   @map("document_id") @db.Uuid
-  pageNumber Int      @map("page_number")
-  filePath   String   @map("file_path")
-  altText    String?  @map("alt_text")
-  width      Int?
-  height     Int?
-  format     String?
-  createdAt  DateTime @default(now()) @map("created_at")
+  id               String   @id @default(uuid()) @db.Uuid
+  documentId       String   @map("document_id") @db.Uuid
+  pageNumber       Int      @map("page_number")
+  filePath         String   @map("file_path")
+  altText          String?  @map("alt_text")
+  description      String?  @db.Text
+  pineconeVectorId String?  @map("pinecone_vector_id")
+  width            Int?
+  height           Int?
+  format           String?
+  createdAt        DateTime @default(now()) @map("created_at")
 
   document     Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
   answerImages AnswerImage[]
