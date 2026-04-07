@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { getPrisma } from '../config/database.js';
 import { uploadPDF } from '../middleware/upload.js';
+import { uploadToCloudinary } from '../services/storage.service.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { UserRole } from '@prisma/client';
@@ -138,6 +139,21 @@ router.post(
           data: { status: 'FAILED' }
         });
         throw sendErr;
+      }
+
+      // 4. Also upload to Cloudinary for persistent storage (survives Render ephemeral disk resets)
+      try {
+        const cloudinaryUrl = await uploadToCloudinary(req.file.path);
+        if (cloudinaryUrl) {
+          const updatedDoc = await prisma.document.update({
+            where: { id: newDoc.id },
+            data: { storedFilename: cloudinaryUrl }
+          });
+          return res.status(201).json({ success: true, data: updatedDoc });
+        }
+      } catch (cloudErr) {
+        logger.error({ err: cloudErr }, `Cloudinary backup failed for doc ${newDoc.id}, but local ingestion continues`);
+        // We don't fail the whole request since local ingestion is already queued
       }
 
       res.status(201).json({ success: true, data: newDoc });

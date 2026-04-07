@@ -10,6 +10,8 @@ const backendBase = (() => {
 })();
 
 export function uploadUrl(storedFilename: string): string {
+  if (!storedFilename) return '';
+  if (storedFilename.startsWith('http')) return storedFilename;
   return `${backendBase}/uploads/${storedFilename}`;
 }
 
