@@ -69,7 +69,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
               {
                 role: 'user',
                 content: [
-                  { type: 'text', text: "Describe any figures, graphs, photos, or diagrams on this agricultural research page. If there is a caption, include it. If no images exist, respond 'No visuals found.' Keep it brief but descriptive for search." },
+                  { type: 'text', text: "Identify and describe only INFORMATIVE scientific or research-related elements on this page (e.g., charts, data tables, system diagrams, or photographic evidence of pests/damage). IGNORE logos, decorative graphics, page borders, or generic cover art. If no scientific data or informative figures exist, respond simply 'No informative visuals found.' Be concise but precise for search indexing." },
                   { type: 'image_url', image_url: { url: pageImageUrl } }
                 ]
               }
