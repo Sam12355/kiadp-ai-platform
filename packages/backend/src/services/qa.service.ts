@@ -182,6 +182,16 @@ export async function askQuestion(
   if (mode === 'grounded' && answerText.includes("[UNGROUNDED]")) {
     isGrounded = false;
     answerText = answerText.replace("[UNGROUNDED]", "").trim();
+    
+    // Safety Net: If AI only sent [UNGROUNDED] or failed to provide a refusal
+    if (!answerText) {
+      const fallbackMap: Record<string, string> = {
+        'en': "I'm sorry, but this specific information is not available in the Khalifa Knowledge Base documents.",
+        'fr': "Je suis désolé, mais cette information spécifique n'est pas disponible dans les documents de la base de connaissances Khalifa.",
+        'ar': "عذرًا، هذه المعلومات المحددة غير متوفرة في وثائق قاعدة معرفة خليفة."
+      };
+      answerText = fallbackMap[language] || fallbackMap['en'];
+    }
   }
 
   // 7. Save Answer & Sources
