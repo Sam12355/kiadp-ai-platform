@@ -4,7 +4,6 @@
   "private": true,
   "description": "AI-powered knowledge platform for the Khalifa International Award for Date Palm and Agricultural Innovation",
   "scripts": {
-    "preinstall": "npx -y only-allow pnpm",
     "dev:backend": "pnpm --filter @khalifa/backend dev",
     "dev:worker": "pnpm --filter @khalifa/backend dev:worker",
     "dev:frontend": "pnpm --filter @khalifa/frontend dev",
