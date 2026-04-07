@@ -23,6 +23,9 @@ async function main() {
   }
 
   const app = createApp();
+  
+  // Enable trust proxy for Render.com to support rate limiting via X-Forwarded-For
+  app.set('trust proxy', 1);
 
   const server = app.listen(env.PORT, () => {
     logger.info(`🌴 Khalifa Knowledge API running on port ${env.PORT}`);

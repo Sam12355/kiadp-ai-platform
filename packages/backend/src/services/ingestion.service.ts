@@ -45,7 +45,10 @@ export async function processDocument(documentId: string, filePath: string): Pro
     // 3. Extract text & Visual analysis page by page
     const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
     const documentUrl = await uploadToCloudinary(filePath, 'kiadp/documents');
-    if (!documentUrl) throw new Error('Failed to backup document to Cloudinary for vision analysis');
+    
+    if (!documentUrl) {
+      logger.warn(`⚠️ Document ${documentId} is too large or failed to upload to Cloudinary. Vision analysis will be skipped, but text will be processed.`);
+    }
 
     for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
       const page = await pdf.getPage(pageNum);
@@ -56,11 +59,11 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
       // [VISUAL ANALYSIS] Use Cloudinary's URL-based PDF-to-Image transformation
       // We convert the PDF page into a JPG URL and send it to GPT-4o-mini Vision
-      const pageImageUrl = `${documentUrl.replace('.pdf', '.jpg')}?page=${pageNum}`;
+      const pageImageUrl = documentUrl ? `${documentUrl.replace('.pdf', '.jpg')}?page=${pageNum}` : null;
       
       // If the page has significant visual content (or just for every page to be safe), analyze it.
       // For now, let's keep it to pages with text or do a sample.
-      if (fullPageText.length > 50) {
+      if (pageImageUrl && fullPageText.length > 50) {
         // We'll run this in parallel for speed later, but one by one for reliability now
         try {
           const visionResponse = await openai.chat.completions.create({
@@ -78,7 +81,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
           });
           
           const visualDescription = visionResponse.choices[0].message.content;
-          if (visualDescription && !visualDescription.includes('No visuals found')) {
+          if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
             // Index this as a "Visual Chunk"
             chunks.push({
               pageNumber: pageNum,
