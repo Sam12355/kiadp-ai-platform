@@ -124,13 +124,39 @@ export default function KnowledgeAssistant() {
   // ── Thread Handlers ──
   const openThread = (msg: Message) => {
     setActiveThreadId(msg.id);
-    // If it's a first time, it only has the original message. If already has thread, use it.
+    
+    // If it's the first time opening this message's thread, we can auto-fill the query
     if (!msg.thread) {
       setThreadMessages([msg]);
+      
+      // If the answer was ungrounded, auto-fill the general question from the preceding user message
+      if (msg.isGrounded === false) {
+        const session = sessions.find(s => s.id === activeSessionId);
+        if (session) {
+          const msgIdx = session.messages.findIndex(m => m.id === msg.id);
+          const userQuery = msgIdx > 0 ? session.messages[msgIdx - 1].content : '';
+          
+          let autoFillText = `Could you please provide a general scientific explanation for this question? I am specifically interested in how it relates to the Red Palm Weevil context mentioned in the documents.\n\nQuestion: ${userQuery}`;
+          
+          // Optionally add context snippets to help the general AI stay on topic
+          if (msg.sources && msg.sources.length > 0) {
+            autoFillText += "\n\nRelevant Context from PDF for reference:";
+            msg.sources.slice(0, 2).forEach((s, idx) => {
+              autoFillText += `\n- "${s.excerpt.substring(0, 150)}..."`;
+            });
+          }
+          
+          setThreadQuery(autoFillText);
+        } else {
+          setThreadQuery('');
+        }
+      } else {
+        setThreadQuery('');
+      }
     } else {
       setThreadMessages(msg.thread);
+      setThreadQuery('');
     }
-    setThreadQuery('');
   };
 
   const persistThread = (msgId: string, fullThread: Message[]) => {
