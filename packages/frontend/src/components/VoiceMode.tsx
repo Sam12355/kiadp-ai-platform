@@ -31,8 +31,11 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey })
       // PROACTIVE PERMISSION: Request mic before connecting
       await startMic();
 
-      // Try v1beta as it is often more stable for Live API
-      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.BiDiGenerateContent?key=${apiKey}`;
+      // Connect to the local backend bridge instead of direct Google API
+      // This bypasses browser-side CORS and 1006 errors
+      // Use a hardcoded loopback IP to avoid IPv6 resolution issues with 'localhost'
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${protocol}//127.0.0.1:3001/api/voice`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
