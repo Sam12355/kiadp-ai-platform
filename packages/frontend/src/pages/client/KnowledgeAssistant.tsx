@@ -365,16 +365,19 @@ export default function KnowledgeAssistant() {
           </div>
         </header>
 
-        <div className={`flex-1 overflow-y-auto ${messages.length === 0 ? 'relative flex' : ''}`}>
+        <div className={`flex-1 overflow-y-auto ${messages.length === 0 ? 'relative flex overflow-x-hidden' : ''}`}>
           <div className={`max-w-3xl mx-auto px-6 py-8 space-y-6 w-full ${messages.length === 0 ? 'h-full flex flex-col items-center justify-center relative' : ''}`}>
             
             {messages.length === 0 && (
-               <>
+               <div className="absolute inset-0 overflow-hidden pointer-events-none">
                  {/* ── Background Planet Animation ── */}
                  <div className="planet-container">
                    <div className="planet-glow-side" />
                  </div>
+               </div>
+            )}
 
+            {messages.length === 0 && (
                  <div className="flex flex-col items-center justify-center animate-fade-in text-center relative z-10 w-full">
                    <div className="orbit-wrapper orbit-hero">
                      <div className="sphere sphere-1" />
