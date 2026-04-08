@@ -392,7 +392,6 @@ export default function KnowledgeAssistant() {
                      ))}
                    </div>
                  </div>
-               </>
             )}
 
             {messages.map((m) => (
