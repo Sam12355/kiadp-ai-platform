@@ -366,12 +366,22 @@ export default function KnowledgeAssistant() {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-white/40 hover:text-white">
               <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
-            <span 
-              className="text-[13px] font-medium truncate cursor-pointer hover:text-white transition-colors" 
-              onClick={() => urlSessionId && startRename(urlSessionId, activeSession?.title || '')}
-            >
-              {activeSession?.title}
-            </span>
+            {editingTitleId === urlSessionId ? (
+              <input 
+                autoFocus 
+                value={editingTitleValue} 
+                onChange={(e) => setEditingTitleValue(e.target.value)} 
+                onKeyDown={(e) => { if (e.key === 'Enter') saveRename(urlSessionId, editingTitleValue); }} 
+                className="text-[13px] font-medium bg-transparent border-b border-white/20 outline-none text-white w-full max-w-[200px]" 
+              />
+            ) : (
+              <span 
+                className="text-[13px] font-medium truncate cursor-pointer hover:text-white transition-colors" 
+                onClick={() => urlSessionId && startRename(urlSessionId, activeSession?.title || '')}
+              >
+                {activeSession?.title}
+              </span>
+            )}
           </div>
 
           <div className="relative">
