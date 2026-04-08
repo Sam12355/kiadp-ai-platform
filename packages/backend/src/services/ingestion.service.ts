@@ -110,19 +110,19 @@ export async function processDocument(documentId: string, filePath: string): Pro
             // 2. Clearer Permanent Upload (optional)
             const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
 
-            // 3. Ask OpenAI Vision using the Base64 data
+            // 3. Ask OpenAI Vision using the Base64 data (Upgraded to gpt-4o for better caption extraction)
             const visionResponse = await openai.chat.completions.create({
-              model: 'gpt-4o-mini',
+              model: 'gpt-4o',
               messages: [
                 {
                   role: 'user',
                   content: [
-                    { type: 'text', text: "Identify and describe only INFORMATIVE scientific elements (charts, tables, diagrams, or pest photos). IGNORE decorations/logos. If no info visuals exist, respond 'No informative visuals found.' Be concise for search." },
+                    { type: 'text', text: "Identify and describe every informative visual element on this page (charts, tables, scientific maps, photos of pests/crops). MANDATORY: If there is a caption like 'Figure 1' or 'Table 2' or any descriptive label under the visual, you MUST include it word-for-word in the description. If no informative visuals exist, respond 'No informative visuals found.'." },
                     { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
                   ]
                 }
               ],
-              max_tokens: 300
+              max_tokens: 500
             });
             
             const visualDescription = visionResponse.choices[0].message.content;
@@ -200,9 +200,14 @@ export async function processDocument(documentId: string, filePath: string): Pro
         input: texts,
       });
 
-      const vectorsToUpsert = batchChunks.map((chunk, idx) => {
+      const vectorsToUpsert = [];
+      const chunkRecords = [];
+      
+      for (let idx = 0; idx < batchChunks.length; idx++) {
+        const chunk = batchChunks[idx];
         const pineconeVectorId = `doc_${documentId}_p${chunk.pageNumber}_c${chunk.chunkIndex}_${crypto.randomUUID()}`;
-        return {
+        
+        vectorsToUpsert.push({
           id: pineconeVectorId,
           values: embeddingResponse.data[idx].embedding,
           metadata: {
@@ -211,21 +216,32 @@ export async function processDocument(documentId: string, filePath: string): Pro
             text: chunk.text,
             type: chunk.chunkIndex >= 999 ? 'visual' : 'text'
           },
-        };
-      });
+        });
+
+        chunkRecords.push({
+          documentId,
+          content: chunk.text,
+          pageNumber: chunk.pageNumber,
+          chunkIndex: chunk.chunkIndex,
+          pineconeVectorId: pineconeVectorId,
+          tokenCount: Math.ceil(chunk.text.length / 4),
+        });
+
+        // CRITICAL: If this is a visual chunk, update the corresponding documentImage record with the vector ID
+        if (chunk.chunkIndex >= 999) {
+          await prisma.documentImage.updateMany({
+            where: { 
+              documentId, 
+              pageNumber: chunk.pageNumber,
+              pineconeVectorId: null // only update the one we just created
+            },
+            data: { pineconeVectorId: pineconeVectorId }
+          });
+        }
+      }
 
       await pineconeIndex.upsert(vectorsToUpsert);
-
-      await prisma.documentChunk.createMany({
-        data: vectorsToUpsert.map((v, idx) => ({
-          documentId,
-          content: batchChunks[idx].text,
-          pageNumber: batchChunks[idx].pageNumber,
-          chunkIndex: batchChunks[idx].chunkIndex,
-          pineconeVectorId: v.id,
-          tokenCount: Math.ceil(batchChunks[idx].text.length / 4),
-        })),
-      });
+      await prisma.documentChunk.createMany({ data: chunkRecords });
 
       // Progress from 40% to 95% based on batches
       const batchProgress = Math.floor(40 + (i / chunks.length) * 55);
