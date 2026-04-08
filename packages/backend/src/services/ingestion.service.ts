@@ -98,6 +98,20 @@ export async function processDocument(documentId: string, filePath: string): Pro
             
             const visualDescription = visionResponse.choices[0].message.content;
             if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
+              const visualVectorId = `vis_${documentId}_p${pageNum}_${crypto.randomUUID()}`;
+              
+              // Upsert visual chunk to Pinecone
+              await pineconeIndex.upsert([{
+                id: visualVectorId,
+                values: (await openai.embeddings.create({ model: env.OPENAI_EMBEDDING_MODEL, input: visualDescription })).data[0].embedding,
+                metadata: {
+                  documentId,
+                  pageNumber: pageNum,
+                  text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
+                  type: 'visual'
+                }
+              }]);
+
               chunks.push({
                 pageNumber: pageNum,
                 text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
@@ -110,7 +124,8 @@ export async function processDocument(documentId: string, filePath: string): Pro
                   pageNumber: pageNum,
                   filePath: permanentImageUrl || dynamicImageUrl,
                   description: visualDescription,
-                  altText: `Figure on page ${pageNum}`
+                  altText: `Figure on page ${pageNum}`,
+                  pineconeVectorId: visualVectorId
                 }
               });
             }
