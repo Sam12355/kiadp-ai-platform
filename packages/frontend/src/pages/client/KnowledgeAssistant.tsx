@@ -201,7 +201,7 @@ export default function KnowledgeAssistant() {
 
     if (!targetId) {
       const newId = Date.now().toString();
-      const newSession: ChatSession = { id: newId, title: currentQ.substring(0, 40), messages: [userMsg], updatedAt: Date.now() };
+      const newSession: ChatSession = { id: newId, title: currentQ.substring(0, 200), messages: [userMsg], updatedAt: Date.now() };
       setSessions(prev => [newSession, ...prev]);
       navigate(`/knowledge/chat/${newId}`, { replace: true });
       targetId = newId;
@@ -376,7 +376,8 @@ export default function KnowledgeAssistant() {
                   value={editingTitleValue} 
                   onChange={(e) => setEditingTitleValue(e.target.value)} 
                   onKeyDown={(e) => { if (e.key === 'Enter') saveRename(urlSessionId, editingTitleValue); }} 
-                  className="text-[14px] font-medium bg-transparent border-b border-white/30 outline-none text-white flex-1 py-0.5" 
+                  size={Math.max(editingTitleValue.length + 2, 10)}
+                  className="text-[14px] font-medium bg-transparent border-b border-white/30 outline-none text-white py-0.5" 
                 />
                 <button 
                   onClick={() => saveRename(urlSessionId, editingTitleValue)}
