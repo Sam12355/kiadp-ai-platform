@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 import Portal from '../../components/Portal';
+import { VoiceMode } from '../../components/VoiceMode';
 
 interface Source {
   id: string;
@@ -58,6 +59,7 @@ export default function KnowledgeAssistant() {
   const [isThreadLoading, setIsThreadLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainInputRef = useRef<HTMLInputElement>(null);
@@ -507,11 +509,30 @@ export default function KnowledgeAssistant() {
                   rows={query.split('\n').length > 5 ? 5 : Math.max(1, query.split('\n').length)}
                   className="flex-1 bg-transparent border-none outline-none text-[15px] p-3 resize-none max-h-48" 
                 />
-                <button disabled={!query.trim() || loading} className="ask-ai-btn flex-shrink-0">{t.askAi}</button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button 
+                    type="button"
+                    onClick={() => setIsVoiceModeOpen(true)}
+                    className="p-2.5 rounded-xl text-green-500/60 hover:text-green-500 hover:bg-green-500/5 transition-all"
+                    title="Live Voice Mode"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 18.5V23M8 23h8"/>
+                    </svg>
+                  </button>
+                  <button disabled={!query.trim() || loading} className="ask-ai-btn">{t.askAi}</button>
+                </div>
               </div>
             </form>
           </div>
         </div>
+
+        <VoiceMode 
+          isOpen={isVoiceModeOpen} 
+          onClose={() => setIsVoiceModeOpen(false)} 
+          apiKey="AIzaSyBi-jHV2-gliX38HZLdh6boCS39SxM1-M0" 
+        />
 
         {/* Lightbox / Tooltips etc omitted for brevity or re-implementing if needed */}
         {selectedImage && (
