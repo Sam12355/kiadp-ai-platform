@@ -140,12 +140,11 @@ export async function askQuestion(
       includeMetadata: true,
     });
 
-    const pineconeIds = searchResults.matches.map(m => m.id);
     const textIds = searchResults.matches.filter(m => m.metadata?.type !== 'visual').map(m => m.id);
     const visualIds = searchResults.matches.filter(m => m.metadata?.type === 'visual').map(m => m.id);
 
     // Fetch Text Chunks
-    chunks = await prisma.documentChunk.findMany({
+    const textChunks = await prisma.documentChunk.findMany({
       where: { pineconeVectorId: { in: textIds } },
       include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
     });
@@ -153,18 +152,34 @@ export async function askQuestion(
     // Fetch Images for Visual Matches
     const visualImages = await prisma.documentImage.findMany({
       where: { pineconeVectorId: { in: visualIds } },
+      include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
     });
 
     scoreMap = new Map(searchResults.matches.map(m => [m.id, m.score ?? 0]));
-    (chunks as any).visualImages = visualImages; // Temporarily attach to pass to next step
+    
+    // Combine both for common processing
+    chunks = textChunks;
+    (chunks as any).visualImages = visualImages;
+
+    // Add visual descriptions to the context if any
+    visualImages.forEach((img: any) => {
+      chunks.push({
+        id: `vis_${img.id}`,
+        content: `[Visual Evidence from Page ${img.pageNumber}]: ${img.description}`,
+        pageNumber: img.pageNumber,
+        documentId: img.documentId,
+        document: img.document,
+        isVisual: true
+      });
+    });
   }
 
-  // 6. Handle grounded mode with no results
+  // 6. Handle grounded mode with no results (Now checks both text and visual)
   if (mode === 'grounded' && chunks.length === 0) {
     const noInfoMap: Record<string, string> = {
-      'en': "I couldn't find any relevant documents in the Khalifa repository to address your specific query.",
-      'fr': "Je n'ai trouvé aucun document pertinent dans le répertoire Khalifa pour répondre à votre demande spécifique.",
-      'ar': "لم أتمكن من العثور على أي وثائق ذات صلة في مستودع خليفة للإجابة على استفسارك المحدد."
+      'en': "I couldn't find any relevant documents or visual evidence in the Khalifa repository to address your specific query.",
+      'fr': "Je n'ai trouvé aucun document ou preuve visuelle pertinente dans le répertoire Khalifa pour répondre à votre demande spécifique.",
+      'ar': "لم أتمكن من العثور على أي وثائق أو أدلة مرئية ذات صلة في مستودع خليفة للإجابة على استفسارك المحدد."
     };
     return createEmptyAnswer(question.id, noInfoMap[language] || noInfoMap['en']);
   }
@@ -174,7 +189,7 @@ export async function askQuestion(
   
   let instructions = "";
   if (mode === 'grounded') {
-    instructions = "CONTEXT DOCUMENTS:\n\n";
+    instructions = "CONTEXT DOCUMENTS (Including Visual Evidence descriptions):\n\n";
     chunks.forEach((chunk: any, idx: number) => {
       instructions += `[Source ${idx + 1}] Filename: ${chunk.document.originalFilename} | Page: ${chunk.pageNumber}\n`;
       instructions += `${chunk.content}\n\n`;
@@ -204,9 +219,9 @@ export async function askQuestion(
     // Safety Net: If AI only sent [UNGROUNDED] or failed to provide a refusal
     if (!answerText) {
       const fallbackMap: Record<string, string> = {
-        'en': "I'm sorry, but this specific information is not available in the Khalifa Knowledge Base. For a general scientific explanation, please try the **Deep Dive** ✦ mode below.",
-        'fr': "Je suis désolé, mais cette information spécifique n'est pas disponible dans la base de connaissances Khalifa. Pour une explication scientifique générale, veuillez essayer le mode **Deep Dive** ✦ ci-dessous.",
-        'ar': "عذرًا، هذه المعلومات المحددة غير متوفرة في قاعدة معرفة خليفة. للحصول على شرح علمي عام، يرجى تجربة وضع **Deep Dive** ✦ أدناه."
+        'en': "I'm sorry, but this information or visual evidence is not available in the Khalifa Knowledge Base. For a general scientific explanation, please try the **Deep Dive** ✦ mode below.",
+        'fr': "Je suis désolé, mais cette information ou preuve visuelle n'est pas disponible dans la base de connaissances Khalifa. Pour une explication scientifique générale, veuillez essayer le mode **Deep Dive** ✦ ci-dessous.",
+        'ar': "عذرًا، هذه المعلومات أو الأدلة المرئية غير متوفرة في قاعدة معرفة خليفة. للحصول على شرح علمي عام، يرجى تجربة وضع **Deep Dive** ✦ أدناه."
       };
       answerText = fallbackMap[language] || fallbackMap['en'];
     }
@@ -221,7 +236,7 @@ export async function askQuestion(
       modelUsed: env.OPENAI_CHAT_MODEL,
       tokensUsed: completion.usage?.total_tokens ?? 0,
       sources: {
-        create: mode === 'grounded' ? chunks.map((chunk: any, idx: number) => ({
+        create: mode === 'grounded' ? chunks.filter((c: any) => !c.isVisual).map((chunk: any, idx: number) => ({
           chunkId: chunk.id,
           documentId: chunk.documentId,
           pageNumber: chunk.pageNumber,
