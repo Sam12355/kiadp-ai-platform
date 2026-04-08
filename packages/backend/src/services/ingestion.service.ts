@@ -94,7 +94,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
         fn === (pdfjs as any).OPS.shadingFill
       );
       
-      const hasKeywords = /figure|table|chart|illustration|plate/i.test(fullPageText);
+      const hasKeywords = /figure|table|chart|illustration|plate|شكل|جدول|صورة|رسم|توضيح/i.test(fullPageText);
       const shouldAnalyzeVisuals = hasVisualsInOps || hasKeywords;
  
       // [VISUAL ANALYSIS] Run if page has potential visual elements or figure keywords

@@ -136,7 +136,7 @@ export async function askQuestion(
     const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
     const searchResults = await pineconeIndex.query({
       vector: queryVector,
-      topK: 6,
+      topK: 12,
       includeMetadata: true,
     });
 
