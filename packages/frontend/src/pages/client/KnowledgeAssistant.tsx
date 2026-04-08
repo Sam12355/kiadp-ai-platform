@@ -341,7 +341,7 @@ export default function KnowledgeAssistant() {
         {messages.length === 0 && (
            <div className="absolute inset-x-0 bottom-0 h-full overflow-hidden pointer-events-none z-0">
               {/* ── Background Planet Animation ── */}
-              <div className="planet-container" style={{ bottom: '-5%' }}>
+              <div className="planet-container" style={{ bottom: '30%' }}>
                 <div className="planet-glow-side" />
               </div>
            </div>
