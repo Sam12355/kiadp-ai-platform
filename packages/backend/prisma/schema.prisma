@@ -239,7 +239,7 @@ model AnswerSource {
   rank           Int
 
   answer Answer        @relation(fields: [answerId], references: [id], onDelete: Cascade)
-  chunk  DocumentChunk @relation(fields: [chunkId], references: [id])
+  chunk  DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
   @@map("answer_sources")
 }
@@ -250,7 +250,7 @@ model AnswerImage {
   imageId  String @map("image_id") @db.Uuid
 
   answer Answer        @relation(fields: [answerId], references: [id], onDelete: Cascade)
-  image  DocumentImage @relation(fields: [imageId], references: [id])
+  image  DocumentImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
 
   @@map("answer_images")
 }
