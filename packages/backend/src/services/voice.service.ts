@@ -6,7 +6,11 @@ import fs from 'node:fs';
 export function setupVoiceBridge(server: any) {
   const env = getEnv();
   const logger = getLogger();
-  const wss = new WebSocketServer({ server, path: '/api/voice' });
+  const wss = new WebSocketServer({ server, path: '/voice' });
+
+  console.log('-------------------------------------------');
+  console.log('🎤 [VOICE BRIDGE ACTIVE] listening on /voice');
+  console.log('-------------------------------------------');
 
   wss.on('connection', (ws, req) => {
     logger.info(`Voice bridge: Client connected from ${req.socket.remoteAddress}`);

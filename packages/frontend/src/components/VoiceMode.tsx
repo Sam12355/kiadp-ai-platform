@@ -33,9 +33,9 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey })
 
       // Connect to the local backend bridge instead of direct Google API
       // This bypasses browser-side CORS and 1006 errors
-      // Use a hardcoded loopback IP to avoid IPv6 resolution issues with 'localhost'
+      // Use a hardcoded loopback IP and simple path to avoid resolution and routing issues
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${protocol}//127.0.0.1:3001/api/voice`;
+      const url = `${protocol}//127.0.0.1:3001/voice`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
