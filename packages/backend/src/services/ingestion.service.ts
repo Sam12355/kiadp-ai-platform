@@ -43,12 +43,11 @@ export async function processDocument(documentId: string, filePath: string): Pro
         // Extract Public ID for signing
         const pdfPublicId = doc.storedFilename.split('/upload/')[1]?.split('/').slice(1).join('/').replace(/\.[^/.]+$/, '');
         
-        // Generate a SIGNED URL for the fetch
         configureCloudinary();
-        const signedFetchUrl = (cloudinary as any).url(pdfPublicId, {
-          resource_type: 'image',
-          secure: true,
-          sign_url: true
+        
+        // Use the dedicated private download URL generator for maximum reliability with restricted assets
+        const signedFetchUrl = cloudinary.utils.private_download_url(pdfPublicId, 'pdf', {
+          resource_type: 'image'
         });
 
         const fetchResp = await fetch(signedFetchUrl);
