@@ -29,6 +29,7 @@ export default function App() {
       {/* Client routes (Protected Layout) */}
       <Route path="/knowledge" element={<ClientLayout />}>
         <Route index element={<ClientKnowledge />} />
+        <Route path="chat/:sessionId" element={<ClientKnowledge />} />
         <Route path="settings" element={<ClientSettings />} />
       </Route>
 

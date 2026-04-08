@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { uploadUrl } from '../../api/urls';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
@@ -40,9 +40,9 @@ interface ChatSession {
 
 export default function KnowledgeAssistant() {
   const { lang, setLanguage } = useLanguageStore();
+  const { sessionId: urlSessionId } = useParams();
   const t = translations[lang];
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,79 +50,85 @@ export default function KnowledgeAssistant() {
   const [editingTitleValue, setEditingTitleValue] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { user, logout } = useAuthStore();
-  const navigate = useNavigate();
-
-  // Deep Dive Threading
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null); // Message ID
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadQuery, setThreadQuery] = useState('');
   const [isThreadLoading, setIsThreadLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainInputRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
-  const activeSession = sessions.find(s => s.id === activeSessionId) || null;
+  const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
+
+  const activeSession = sessions.find(s => s.id === urlSessionId) || null;
   const messages = activeSession?.messages || [];
 
+  // 1. Initial Load & URL Sync
   useEffect(() => {
     const saved = localStorage.getItem('khalifa_all_sessions');
-    let initialSessions: ChatSession[] = [];
+    let initial: ChatSession[] = [];
     if (saved) {
-      try {
-        initialSessions = JSON.parse(saved);
-      } catch (e) { console.error('Failed load', e); }
+      try { initial = JSON.parse(saved); } catch (e) { console.error(e); }
     }
+    setSessions(initial);
 
-    // Start with a new chat ONLY if there isn't already an empty "New Chat" at the top
-    const firstSession = initialSessions[0];
-    const isFirstEmpty = firstSession && firstSession.messages.length === 0 && firstSession.title === t.newChat;
-
-    if (isFirstEmpty) {
-      setSessions(initialSessions);
-      setActiveSessionId(firstSession.id);
+    if (!urlSessionId) {
+      if (initial.length > 0) {
+        navigate(`/knowledge/chat/${initial[0].id}`, { replace: true });
+      } else {
+        createNewChat(initial);
+      }
     } else {
-      const newId = Date.now().toString();
-      const newSession: ChatSession = { id: newId, title: t.newChat, messages: [], updatedAt: Date.now() };
-      setSessions([newSession, ...initialSessions]);
-      setActiveSessionId(newId);
+      // If URL has a session but it's not in our list (maybe cleared storage), create it
+      if (initial.length > 0 && !initial.find(s => s.id === urlSessionId)) {
+        // Just let it be for now, or create new if absolutely needed
+      }
     }
-  }, []);
+  }, [urlSessionId]);
 
+  // 2. Persistence
   useEffect(() => {
     if (sessions.length > 0) {
       localStorage.setItem('khalifa_all_sessions', JSON.stringify(sessions));
     }
   }, [sessions]);
 
+  // 3. Auto-scroll and focus
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     if (!activeThreadId) {
       mainInputRef.current?.focus();
     }
-  }, [messages, loading, activeSessionId, activeThreadId]);
+  }, [messages, loading, urlSessionId, activeThreadId]);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [threadMessages, isThreadLoading]);
 
-  const handleNewChat = () => {
+  // ── Handlers ──
+  const createNewChat = (existing?: ChatSession[]) => {
+    const list = existing || sessions;
     const newId = Date.now().toString();
     const newSession: ChatSession = { id: newId, title: t.newChat, messages: [], updatedAt: Date.now() };
-    setSessions(prev => [newSession, ...prev]);
-    setActiveSessionId(newId);
+    const filtered = list.filter(s => s.messages.length > 0 || s.title !== t.newChat);
+    setSessions([newSession, ...filtered]);
+    navigate(`/knowledge/chat/${newId}`);
     setQuery('');
   };
+
+  const handleNewChat = () => createNewChat();
 
   const deleteSession = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setMenuOpenId(null);
     const filtered = sessions.filter(s => s.id !== id);
     setSessions(filtered);
-    if (activeSessionId === id || filtered.length === 0) {
-      if (filtered.length > 0) setActiveSessionId(filtered[0].id);
+    if (urlSessionId === id) {
+      if (filtered.length > 0) navigate(`/knowledge/chat/${filtered[0].id}`);
       else handleNewChat();
     }
   };
@@ -134,35 +140,22 @@ export default function KnowledgeAssistant() {
     setEditingTitleValue(currentTitle);
   };
 
-  // ── Thread Handlers ──
+  const saveRename = (id: string, newTitle: string) => {
+    if (newTitle.trim()) {
+      setSessions(prev => prev.map(s =>
+        s.id === id ? { ...s, title: newTitle.trim() } : s
+      ));
+    }
+    setEditingTitleId(null);
+  };
+
   const openThread = (msg: Message) => {
     setActiveThreadId(msg.id);
-    
-    // If it's the first time opening this message's thread, we can auto-fill the query
     if (!msg.thread) {
       setThreadMessages([msg]);
-      
-      // If the answer was ungrounded, auto-fill the general question from the preceding user message
       if (msg.isGrounded === false) {
-        const session = sessions.find(s => s.id === activeSessionId);
-        if (session) {
-          const msgIdx = session.messages.findIndex(m => m.id === msg.id);
-          const userQuery = msgIdx > 0 ? session.messages[msgIdx - 1].content : '';
-          
-          let autoFillText = `Could you please provide a general scientific explanation for this question? I am specifically interested in how it relates to the Red Palm Weevil context mentioned in the documents.\n\nQuestion: ${userQuery}`;
-          
-          // Optionally add context snippets to help the general AI stay on topic
-          if (msg.sources && msg.sources.length > 0) {
-            autoFillText += "\n\nRelevant Context from PDF for reference:";
-            msg.sources.slice(0, 2).forEach((s, idx) => {
-              autoFillText += `\n- "${s.excerpt.substring(0, 150)}..."`;
-            });
-          }
-          
-          setThreadQuery(autoFillText);
-        } else {
-          setThreadQuery('');
-        }
+        const userQuery = messages.find((_, i, arr) => arr[i + 1]?.id === msg.id)?.content || '';
+        setThreadQuery(`Please provide a general scientific explanation for: ${userQuery}`);
       } else {
         setThreadQuery('');
       }
@@ -174,12 +167,10 @@ export default function KnowledgeAssistant() {
 
   const persistThread = (msgId: string, fullThread: Message[]) => {
     setSessions(prev => prev.map(s => {
-      if (s.id !== activeSessionId) return s;
+      if (s.id !== urlSessionId) return s;
       return {
         ...s,
-        messages: s.messages.map(m =>
-          m.id === msgId ? { ...m, thread: fullThread } : m
-        )
+        messages: s.messages.map(m => m.id === msgId ? { ...m, thread: fullThread } : m)
       };
     }));
   };
@@ -188,78 +179,67 @@ export default function KnowledgeAssistant() {
     e.preventDefault();
     if (!threadQuery.trim() || isThreadLoading || !activeThreadId) return;
 
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: threadQuery };
-    const currentQuery = threadQuery;
-    const newThreadBeforeResponse = [...threadMessages, userMessage];
-    setThreadMessages(newThreadBeforeResponse);
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: threadQuery };
+    const currentQ = threadQuery;
+    const newThread = [...threadMessages, userMsg];
+    setThreadMessages(newThread);
     setThreadQuery('');
     setIsThreadLoading(true);
 
     try {
-      // Get only the roles/contents for historical context
       const history = threadMessages.map(m => ({ role: m.role, content: m.content }));
       const { data } = await apiClient.post('/knowledge/ask', {
-        question: currentQuery,
+        question: currentQ,
         history,
         language: lang,
         mode: 'general'
       });
-      const resultObj = data.data;
-      const assistantMessage: Message = { id: resultObj.answerId, role: 'assistant', content: resultObj.answerText, isGrounded: false };
-      const finalizedThread = [...newThreadBeforeResponse, assistantMessage];
-      setThreadMessages(finalizedThread);
-      persistThread(activeThreadId, finalizedThread);
+      const assistantMsg: Message = { id: data.data.answerId, role: 'assistant', content: data.data.answerText, isGrounded: false };
+      const finalized = [...newThread, assistantMsg];
+      setThreadMessages(finalized);
+      persistThread(activeThreadId, finalized);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsThreadLoading(true); // Small delay feel
-      setTimeout(() => setIsThreadLoading(false), 300);
+      setIsThreadLoading(false);
     }
-  };
-
-  const saveRename = (id: string, newTitle: string) => {
-    if (newTitle.trim()) {
-      setSessions(prev => prev.map(s =>
-        s.id === id ? { ...s, title: newTitle.trim() } : s
-      ));
-    }
-    setEditingTitleId(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query.trim() || !activeSessionId) return;
-    const currentQuery = query;
+    if (!query.trim() || !urlSessionId) return;
+    const currentQ = query;
     setQuery('');
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: currentQuery };
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: currentQ };
+    
     setSessions(prev => prev.map(s => {
-      if (s.id === activeSessionId) {
-        // Only set the title from query if it's the very first message AND the title is still default.
+      if (s.id === urlSessionId) {
         const title = (s.messages.length === 0 && s.title === t.newChat)
-          ? (currentQuery.length > 50 ? currentQuery.substring(0, 50) + '…' : currentQuery)
+          ? (currentQ.length > 40 ? currentQ.substring(0, 40) + '…' : currentQ)
           : s.title;
-        return { ...s, title, messages: [...s.messages, userMessage], updatedAt: Date.now() };
+        return { ...s, title, messages: [...s.messages, userMsg], updatedAt: Date.now() };
       }
       return s;
     }));
+
     setLoading(true);
     try {
       const history = messages.slice(-5).map(m => ({ role: m.role, content: m.content }));
       const { data } = await apiClient.post('/knowledge/ask', {
-        question: userMessage.content,
+        question: currentQ,
         history,
         language: lang
       });
       const { answerId, answerText, isGrounded, sources, images } = data.data;
-      const assistantMessage: Message = { id: answerId, role: 'assistant', content: answerText, isGrounded, sources, images };
+      const assistantMsg: Message = { id: answerId, role: 'assistant', content: answerText, isGrounded, sources, images };
       setSessions(prev => prev.map(s => {
-        if (s.id === activeSessionId) return { ...s, messages: [...s.messages, assistantMessage], updatedAt: Date.now() };
+        if (s.id === urlSessionId) return { ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now() };
         return s;
       }));
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       setSessions(prev => prev.map(s => {
-        if (s.id === activeSessionId) return { ...s, messages: [...s.messages, { id: 'err-' + Date.now(), role: 'assistant' as const, content: t.errorGeneric }] };
+        if (s.id === urlSessionId) return { ...s, messages: [...s.messages, { id: 'err-' + Date.now(), role: 'assistant', content: t.errorGeneric }] };
         return s;
       }));
     } finally {
@@ -356,7 +336,7 @@ export default function KnowledgeAssistant() {
             </div>
 
             <button
-              onClick={handleNewChat}
+              onClick={() => handleNewChat()}
               title={t.newChat}
               className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all outline-none"
             >
@@ -371,8 +351,8 @@ export default function KnowledgeAssistant() {
           {sessions.map((s) => (
             <div
               key={s.id}
-              onClick={() => { setActiveSessionId(s.id); setMenuOpenId(null); }}
-              className={`sidebar-item group relative flex items-center cursor-pointer ${activeSessionId === s.id ? 'active' : ''}`}
+              onClick={() => { navigate(`/knowledge/chat/${s.id}`); setMenuOpenId(null); }}
+              className={`sidebar-item group relative flex items-center cursor-pointer ${urlSessionId === s.id ? 'active' : ''}`}
             >
               <svg className="w-4 h-4 flex-shrink-0 opacity-30 me-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
               <div className="flex-1 min-w-0">
@@ -402,7 +382,7 @@ export default function KnowledgeAssistant() {
                   </div>
                 ) : (
                   <>
-                    <p className="text-[13px] font-medium truncate" style={{ color: activeSessionId === s.id ? '#fff' : 'var(--color-text-secondary)' }}>{s.title}</p>
+                    <p className="text-[13px] font-medium truncate" style={{ color: urlSessionId === s.id ? '#fff' : 'var(--color-text-secondary)' }}>{s.title}</p>
                     <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{timeAgo(s.updatedAt)}</p>
                   </>
                 )}
@@ -512,8 +492,7 @@ export default function KnowledgeAssistant() {
                 }
               </svg>
             </button>
-            {/* Editable title */}
-            {editingTitleId === activeSessionId && activeSessionId ? (
+            {editingTitleId === urlSessionId && urlSessionId ? (
               <div className="flex items-center gap-2">
                 <input
                   autoFocus
@@ -521,7 +500,7 @@ export default function KnowledgeAssistant() {
                   onChange={(e) => setEditingTitleValue(e.target.value)}
                   onKeyDown={(e) => {
                     e.stopPropagation();
-                    if (e.key === 'Enter') saveRename(activeSessionId, editingTitleValue);
+                    if (e.key === 'Enter') saveRename(urlSessionId, editingTitleValue);
                     if (e.key === 'Escape') {
                       setEditingTitleValue(activeSession?.title || '');
                       setEditingTitleId(null);
@@ -531,7 +510,7 @@ export default function KnowledgeAssistant() {
                   style={{ color: '#fff', borderColor: '#22c55e', width: `${Math.max(250, editingTitleValue.length * 7.5)}px`, maxWidth: '60vw' }}
                 />
                 <button
-                  onClick={(e) => { e.stopPropagation(); saveRename(activeSessionId, editingTitleValue); }}
+                  onClick={(e) => { e.stopPropagation(); saveRename(urlSessionId, editingTitleValue); }}
                   className="p-1.5 rounded-md text-green-400 hover:bg-green-500/20 transition-colors"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
