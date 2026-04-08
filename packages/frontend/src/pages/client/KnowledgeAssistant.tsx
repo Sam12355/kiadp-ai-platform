@@ -241,14 +241,12 @@ export default function KnowledgeAssistant() {
       const isFirst = i === 0;
       const headerMatch = line.match(/^(#{1,4})\s+(.*)$/);
       if (headerMatch) {
-        return <h3 key={i} className={isFirst ? "!mt-0" : ""} style={isFirst ? { marginTop: 0 } : {}}>{processInline(headerMatch[2])}</h3>;
+         return <h3 key={i} className={isFirst ? "!mt-0" : ""} style={isFirst ? { marginTop: 0 } : {}}>{processInline(headerMatch[2])}</h3>;
       }
-
       const trimmed = line.trim();
       if (/^(\*\*)?[A-Z][^.!?]*:(\*\*)?$/.test(trimmed)) {
         return <h4 key={i} className={`${isFirst ? "!mt-0" : "mt-5"} mb-1 font-semibold`} style={isFirst ? { marginTop: 0, color: '#fff', fontSize: '0.95rem' } : { color: '#fff', fontSize: '0.95rem' }}>{processInline(trimmed.replace(/\*\*/g, ''))}</h4>;
       }
-
       const listMatch = line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)$/);
       if (listMatch) {
         const listText = listMatch[1].trim();
@@ -365,19 +363,19 @@ export default function KnowledgeAssistant() {
           </div>
         </header>
 
-        <div className={`flex-1 overflow-y-auto ${messages.length === 0 ? 'relative flex' : ''}`}>
-          <div className={`max-w-3xl mx-auto px-6 py-8 space-y-6 w-full ${messages.length === 0 ? 'h-full flex flex-col items-center justify-center relative' : ''}`}>
-            
+        <div className={`flex-1 overflow-y-auto ${messages.length === 0 ? 'relative flex flex-col items-center justify-center overflow-x-hidden' : ''}`}>
+          {messages.length === 0 && (
+             <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                {/* ── Background Planet Animation ── */}
+                <div className="planet-container">
+                  <div className="planet-glow-side" />
+                </div>
+             </div>
+          )}
+          
+          <div className={`max-w-3xl mx-auto px-6 py-8 space-y-6 w-full ${messages.length === 0 ? 'relative z-10' : ''}`}>
             {messages.length === 0 && (
-               <>
-                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                   {/* ── Background Planet Animation ── */}
-                   <div className="planet-container">
-                     <div className="planet-glow-side" />
-                   </div>
-                 </div>
-
-                 <div className="flex flex-col items-center justify-center animate-fade-in text-center relative z-10 w-full">
+                 <div className="flex flex-col items-center justify-center animate-fade-in text-center w-full">
                    <div className="orbit-wrapper orbit-hero">
                      <div className="sphere sphere-1" />
                      <div className="sphere sphere-2" />
@@ -391,7 +389,6 @@ export default function KnowledgeAssistant() {
                      ))}
                    </div>
                  </div>
-               </>
             )}
 
             {messages.map((m) => (
