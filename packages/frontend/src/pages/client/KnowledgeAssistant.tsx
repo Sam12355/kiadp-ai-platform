@@ -492,7 +492,21 @@ export default function KnowledgeAssistant() {
               <div className="glow-border-layer" />
               <div className="inner-bar px-4">
                 <span className="text-green-500/40 text-sm">✦</span>
-                <input ref={mainInputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.askQuestion} disabled={loading} className="flex-1 bg-transparent border-none outline-none text-[15px] p-3" />
+                <textarea 
+                  ref={mainInputRef as any} 
+                  value={query} 
+                  onChange={(e) => setQuery(e.target.value)} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(e as any);
+                    }
+                  }}
+                  placeholder={t.askQuestion} 
+                  disabled={loading} 
+                  rows={query.split('\n').length > 5 ? 5 : Math.max(1, query.split('\n').length)}
+                  className="flex-1 bg-transparent border-none outline-none text-[15px] p-3 resize-none max-h-48" 
+                />
                 <button disabled={!query.trim() || loading} className="ask-ai-btn flex-shrink-0">{t.askAi}</button>
               </div>
             </form>
