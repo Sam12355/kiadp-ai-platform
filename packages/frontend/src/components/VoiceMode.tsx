@@ -27,8 +27,12 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey })
     try {
       setStatus('connecting');
       setError(null);
+
+      // PROACTIVE PERMISSION: Request mic before connecting
+      await startMic();
+
       // Try v1beta as it is often more stable for Live API
-      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BiDiGenerateContent?key=${apiKey}`;
+      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.BiDiGenerateContent?key=${apiKey}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -48,7 +52,6 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey })
           
           if (response.setupComplete) {
             setStatus('ready');
-            startMic();
           }
 
           if (response.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
