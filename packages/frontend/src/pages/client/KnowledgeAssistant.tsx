@@ -5,6 +5,7 @@ import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
+import Portal from '../../components/Portal';
 
 interface Source {
   id: string;
@@ -58,6 +59,7 @@ export default function KnowledgeAssistant() {
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadQuery, setThreadQuery] = useState('');
   const [isThreadLoading, setIsThreadLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number } | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
@@ -659,7 +661,11 @@ export default function KnowledgeAssistant() {
                       {msg.images && msg.images.length > 0 && (
                         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
                           {msg.images.map((img) => (
-                            <div key={img.id} className="group relative rounded-2xl overflow-hidden border border-white/5 transition-all hover:border-[var(--color-palm-400)]">
+                            <div 
+                              key={img.id} 
+                              onClick={() => setSelectedImage(img)}
+                              className="group relative rounded-2xl overflow-hidden border border-white/5 transition-all hover:border-[var(--color-palm-400)] cursor-zoom-in"
+                            >
                               <img 
                                 src={img.url} 
                                 alt={img.description} 
@@ -667,7 +673,10 @@ export default function KnowledgeAssistant() {
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-end">
                                 <p className="text-[10px] text-white/90 line-clamp-2 leading-relaxed">{img.description}</p>
-                                <span className="text-[8px] font-bold uppercase tracking-tighter text-[var(--color-palm-400)] mt-1">PAGE {img.pageNumber}</span>
+                                <div className="flex items-center justify-between mt-1">
+                                  <span className="text-[8px] font-bold uppercase tracking-tighter text-[var(--color-palm-400)]">PAGE {img.pageNumber}</span>
+                                  <span className="text-[8px] text-white/40 uppercase tracking-widest bg-white/10 px-1.5 py-0.5 rounded">Click to enlarge</span>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -846,6 +855,43 @@ export default function KnowledgeAssistant() {
           </div>
         </div>
       </main>
+
+      {/* ════════ IMAGE LIGHTBOX ════════ */}
+      {selectedImage && (
+        <Portal id="modal-root">
+          <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 animate-fade-in backdrop-blur-sm"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div className="absolute top-6 right-6 flex items-center gap-4 z-[110]">
+              <div className="px-3 py-1.5 rounded-full bg-black/60 border border-white/10 text-[11px] font-bold tracking-widest text-[#22c55e] uppercase">
+                Page {selectedImage.pageNumber}
+              </div>
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all hover:rotate-90"
+              >
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+            
+            <div className="max-w-[90vw] max-h-[85vh] relative flex flex-col items-center gap-6" onClick={e => e.stopPropagation()}>
+              <img 
+                src={selectedImage.url} 
+                alt={selectedImage.description} 
+                className="w-auto h-auto max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl animate-scale-in"
+              />
+              {selectedImage.description && (
+                <div className="max-w-2xl px-6 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/5 text-center animate-slide-up">
+                  <p className="text-[14px] leading-relaxed text-white/90 italic">
+                    {selectedImage.description}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </Portal>
+      )}
     </div>
   );
 }
