@@ -376,7 +376,7 @@ export default function KnowledgeAssistant() {
                   value={editingTitleValue} 
                   onChange={(e) => setEditingTitleValue(e.target.value)} 
                   onKeyDown={(e) => { if (e.key === 'Enter') saveRename(urlSessionId, editingTitleValue); }} 
-                  className="text-[14px] font-medium bg-transparent border-b border-white/30 outline-none text-white w-full max-w-[400px] py-0.5" 
+                  className="text-[14px] font-medium bg-transparent border-b border-white/30 outline-none text-white flex-1 py-0.5 min-w-[200px]" 
                 />
                 <button 
                   onClick={() => saveRename(urlSessionId, editingTitleValue)}
