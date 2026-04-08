@@ -58,20 +58,30 @@ export async function processDocument(documentId: string, filePath: string): Pro
       let fullPageText = textItems.trim();
 
       // [VISUAL ANALYSIS] Use Cloudinary's pg_N transformation
-      const pageImageUrl = documentUrl ? documentUrl.replace('/upload/', `/upload/pg_${pageNum}/`).replace('.pdf', '.jpg') : null;
+      const dynamicImageUrl = documentUrl ? documentUrl.replace('/upload/', `/upload/pg_${pageNum}/`).replace('.pdf', '.jpg') : null;
       
-      // If the page has significant visual content (or just for every page to be safe), analyze it.
-      if (pageImageUrl && fullPageText.length > 50) {
-        // We'll run this in parallel for speed later, but one by one for reliability now
+      // If the page has significant visual content, analyze it.
+      if (dynamicImageUrl && fullPageText.length > 50) {
         try {
+          // 1. Fetch the rendered image from Cloudinary to get raw buffer
+          // (This ensures OpenAI doesn't have trouble accessing the URL)
+          const imgFetch = await fetch(dynamicImageUrl);
+          if (!imgFetch.ok) throw new Error(`Failed to fetch page image from Cloudinary: ${imgFetch.statusText}`);
+          const imgBuffer = Buffer.from(await imgFetch.arrayBuffer());
+          const base64Image = imgBuffer.toString('base64');
+
+          // 2. Clearer Permanent Upload (optional - saves a real JPG file in your folder)
+          const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
+
+          // 3. Ask OpenAI Vision using the Base64 data
           const visionResponse = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
               {
                 role: 'user',
                 content: [
-                  { type: 'text', text: "Identify and describe only INFORMATIVE scientific or research-related elements on this page (e.g., charts, data tables, system diagrams, or photographic evidence of pests/damage). IGNORE logos, decorative graphics, page borders, or generic cover art. If no scientific data or informative figures exist, respond simply 'No informative visuals found.' Be concise but precise for search indexing." },
-                  { type: 'image_url', image_url: { url: pageImageUrl } }
+                  { type: 'text', text: "Identify and describe only INFORMATIVE scientific elements (charts, tables, diagrams, or pest photos). IGNORE decorations/logos. If no info visuals exist, respond 'No informative visuals found.' Be concise for search." },
+                  { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
                 ]
               }
             ],
@@ -80,19 +90,17 @@ export async function processDocument(documentId: string, filePath: string): Pro
           
           const visualDescription = visionResponse.choices[0].message.content;
           if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
-            // Index this as a "Visual Chunk"
             chunks.push({
               pageNumber: pageNum,
               text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
-              chunkIndex: 999 + pageNum // High index to separate from text
+              chunkIndex: 999 + pageNum
             });
             
-            // Save as an Image record
             await prisma.documentImage.create({
               data: {
                 documentId,
                 pageNumber: pageNum,
-                filePath: pageImageUrl,
+                filePath: permanentImageUrl || dynamicImageUrl,
                 description: visualDescription,
                 altText: `Figure on page ${pageNum}`
               }
