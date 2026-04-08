@@ -26,42 +26,53 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey })
   const connect = async () => {
     try {
       setStatus('connecting');
+      setError(null);
+      // Use the specified endpoint for Gemini 2.0 Multimodal Live
       const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BiDiGenerateContent?key=${apiKey}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Send setup
-        ws.send(JSON.stringify({
+        // Updated setup format for Gemini 2.0 Live
+        const setupMsg = {
           setup: {
-            model: "models/gemini-2.0-flash-exp",
-            generation_config: {
-              response_modalities: ["AUDIO"]
-            }
+            model: "models/gemini-2.0-flash-exp"
           }
-        }));
+        };
+        ws.send(JSON.stringify(setupMsg));
       };
 
       ws.onmessage = async (event) => {
-        const response = JSON.parse(event.data);
-        
-        if (response.setupComplete) {
-          setStatus('ready');
-          startMic();
-        }
+        try {
+          const response = JSON.parse(event.data);
+          
+          if (response.setupComplete) {
+            setStatus('ready');
+            startMic();
+          }
 
-        if (response.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-          const base64Audio = response.serverContent.modelTurn.parts[0].inlineData.data;
-          playOutputAudio(base64Audio);
+          if (response.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
+            const base64Audio = response.serverContent.modelTurn.parts[0].inlineData.data;
+            playOutputAudio(base64Audio);
+          }
+        } catch (e) {
+          console.error("Parse Error", e);
         }
       };
 
-      ws.onerror = (e) => {
-        console.error("WS Error", e);
-        setError("Connection failed");
+      ws.onerror = () => {
+        setError("Network error: Could not reach Gemini servers.");
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
+        console.warn("WS Closed", e.code, e.reason);
+        if (e.code === 1006) {
+          setError("Connection failed (1006): Check internet or API key limits.");
+        } else if (e.code === 4003) {
+          setError("API Key Error (4003): Your key may not have access to Live mode.");
+        } else {
+          setError(`Connection closed: ${e.reason || 'Unknown reason'} (Code: ${e.code})`);
+        }
         setStatus('connecting');
       };
 
