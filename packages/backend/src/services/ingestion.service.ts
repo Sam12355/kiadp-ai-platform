@@ -62,53 +62,65 @@ export async function processDocument(documentId: string, filePath: string): Pro
       
       // If the page has significant visual content, analyze it.
       if (dynamicImageUrl && fullPageText.length > 50) {
-        try {
-          // 1. Fetch the rendered image from Cloudinary to get raw buffer
-          // (This ensures OpenAI doesn't have trouble accessing the URL)
-          const imgFetch = await fetch(dynamicImageUrl);
-          if (!imgFetch.ok) throw new Error(`Failed to fetch page image from Cloudinary: ${imgFetch.statusText}`);
-          const imgBuffer = Buffer.from(await imgFetch.arrayBuffer());
-          const base64Image = imgBuffer.toString('base64');
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            // 1. Fetch the rendered image from Cloudinary to get raw buffer
+            const imgFetch = await fetch(dynamicImageUrl);
+            if (!imgFetch.ok) throw new Error(`Failed to fetch page image: ${imgFetch.statusText}`);
+            const imgBuffer = Buffer.from(await imgFetch.arrayBuffer());
+            const base64Image = imgBuffer.toString('base64');
 
-          // 2. Clearer Permanent Upload (optional - saves a real JPG file in your folder)
-          const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
+            // 2. Clearer Permanent Upload (optional)
+            const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
 
-          // 3. Ask OpenAI Vision using the Base64 data
-          const visionResponse = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: "Identify and describe only INFORMATIVE scientific elements (charts, tables, diagrams, or pest photos). IGNORE decorations/logos. If no info visuals exist, respond 'No informative visuals found.' Be concise for search." },
-                  { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-                ]
-              }
-            ],
-            max_tokens: 300
-          });
-          
-          const visualDescription = visionResponse.choices[0].message.content;
-          if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
-            chunks.push({
-              pageNumber: pageNum,
-              text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
-              chunkIndex: 999 + pageNum
+            // 3. Ask OpenAI Vision using the Base64 data
+            const visionResponse = await openai.chat.completions.create({
+              model: 'gpt-4o-mini',
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: "Identify and describe only INFORMATIVE scientific elements (charts, tables, diagrams, or pest photos). IGNORE decorations/logos. If no info visuals exist, respond 'No informative visuals found.' Be concise for search." },
+                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                  ]
+                }
+              ],
+              max_tokens: 300
             });
             
-            await prisma.documentImage.create({
-              data: {
-                documentId,
+            const visualDescription = visionResponse.choices[0].message.content;
+            if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
+              chunks.push({
                 pageNumber: pageNum,
-                filePath: permanentImageUrl || dynamicImageUrl,
-                description: visualDescription,
-                altText: `Figure on page ${pageNum}`
-              }
-            });
+                text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
+                chunkIndex: 999 + pageNum
+              });
+              
+              await prisma.documentImage.create({
+                data: {
+                  documentId,
+                  pageNumber: pageNum,
+                  filePath: permanentImageUrl || dynamicImageUrl,
+                  description: visualDescription,
+                  altText: `Figure on page ${pageNum}`
+                }
+              });
+            }
+            break; // Success! Exit retry loop.
+          } catch (vErr: any) {
+            if (vErr.status === 429) {
+              logger.warn(`Rate limit hit on p${pageNum}, waiting 2s...`);
+              await new Promise(res => setTimeout(res, 2000));
+              retries--;
+            } else {
+              logger.warn(`Vision analysis failed for p${pageNum}: ${vErr}`);
+              break; // Other errors don't retry.
+            }
           }
-        } catch (vErr) {
-          logger.warn(`Vision analysis failed for p${pageNum}: ${vErr}`);
         }
+        // Small delay between pages to avoid TPM spike
+        await new Promise(res => setTimeout(res, 500));
       }
 
       if (fullPageText.length === 0) continue;
