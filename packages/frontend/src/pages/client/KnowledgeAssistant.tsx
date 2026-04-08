@@ -337,8 +337,16 @@ export default function KnowledgeAssistant() {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-        <header className="h-14 flex items-center justify-between px-4 z-30 border-b border-white/5">
+      <main className="flex-1 flex flex-col relative overflow-hidden h-full">
+        {messages.length === 0 && (
+           <div className="absolute inset-x-0 bottom-0 h-full overflow-hidden pointer-events-none z-0">
+              {/* ── Background Planet Animation ── */}
+              <div className="planet-container" style={{ bottom: '-5%' }}>
+                <div className="planet-glow-side" />
+              </div>
+           </div>
+        )}
+        <header className="h-14 flex items-center justify-between px-4 z-30 border-b border-white/5 bg-transparent">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-white/40 hover:text-white">
               <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -364,14 +372,6 @@ export default function KnowledgeAssistant() {
         </header>
 
         <div className={`flex-1 overflow-y-auto ${messages.length === 0 ? 'relative flex flex-col items-center justify-center overflow-x-hidden' : ''}`}>
-          {messages.length === 0 && (
-             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                {/* ── Background Planet Animation ── */}
-                <div className="planet-container" style={{ bottom: '0%' }}>
-                  <div className="planet-glow-side" />
-                </div>
-             </div>
-          )}
           
           <div className={`max-w-3xl mx-auto px-6 py-8 space-y-6 w-full ${messages.length === 0 ? 'relative z-10' : ''}`}>
             {messages.length === 0 && (
