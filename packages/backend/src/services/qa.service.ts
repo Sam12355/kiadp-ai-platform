@@ -84,11 +84,13 @@ export async function askQuestion(
     data: { userId, queryText },
   });
 
+  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|سلام|اهلا|مرحبا|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice|awesome|perfect|yep|yes|no)$/i;
+  const isChitChat = queryText.length < 15 && chitChatPatterns.test(queryText.trim().replace(/[?.!]/g, ''));
+
   let standaloneQuery = queryText;
 
-  // 2. Query Condensing (if history exists)
-  // If there is history, we ask OpenAI to rewrite the question into a solo query that doesn't need context
-  if (history.length > 0) {
+  // 2. Query Condensing (if history exists and NOT chit-chat)
+  if (history.length > 0 && !isChitChat) {
     const historyText = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join('\n');
     const condenseResponse = await openai.chat.completions.create({
       model: env.OPENAI_CHAT_MODEL,
@@ -127,10 +129,6 @@ export async function askQuestion(
     input: embeddingQuery,
   });
   const queryVector = embeddingResponse.data[0].embedding;
-
-  // 5. Detect Chit-Chat (Skip RAG for simple pleasantries)
-  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|سلام|اهلا|مرحبا|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice)$/i;
-  const isChitChat = chitChatPatterns.test(standaloneQuery.trim().replace(/[?.!]/g, ''));
 
   // 6. Query Pinecone (Only if grounded AND not chit-chat)
   let chunks: any[] = [];
