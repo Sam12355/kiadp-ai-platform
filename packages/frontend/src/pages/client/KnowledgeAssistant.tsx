@@ -60,6 +60,7 @@ export default function KnowledgeAssistant() {
   const [threadQuery, setThreadQuery] = useState('');
   const [isThreadLoading, setIsThreadLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number } | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
@@ -860,35 +861,83 @@ export default function KnowledgeAssistant() {
       {selectedImage && (
         <Portal id="modal-root">
           <div 
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 animate-fade-in backdrop-blur-sm"
-            onClick={() => setSelectedImage(null)}
+            className="fixed inset-0 z-[100] flex flex-col bg-black/95 animate-fade-in backdrop-blur-md overflow-hidden"
+            onWheel={(e) => {
+              if (e.deltaY < 0) setZoomScale(s => Math.min(s + 0.1, 3));
+              else setZoomScale(s => Math.max(s - 0.1, 0.5));
+            }}
           >
-            <div className="absolute top-6 right-6 flex items-center gap-4 z-[110]">
-              <div className="px-3 py-1.5 rounded-full bg-black/60 border border-white/10 text-[11px] font-bold tracking-widest text-[#22c55e] uppercase">
-                Page {selectedImage.pageNumber}
+            {/* Header Controls */}
+            <div className="flex-none p-4 flex items-center justify-between z-[110] bg-gradient-to-b from-black/60 to-transparent">
+              <div className="flex items-center gap-4">
+                <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-bold tracking-widest text-[#22c55e] uppercase">
+                  Page {selectedImage.pageNumber}
+                </div>
+                <div className="flex items-center gap-1 bg-white/5 rounded-xl p-1 border border-white/10">
+                  <button 
+                    onClick={() => setZoomScale(s => Math.max(s - 0.2, 0.5))}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-all"
+                    title="Zoom Out"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                  <span className="text-[10px] font-mono w-10 text-center text-white/40">{Math.round(zoomScale * 100)}%</span>
+                  <button 
+                    onClick={() => setZoomScale(s => Math.min(s + 0.2, 3))}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-all"
+                    title="Zoom In"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                  <button 
+                    onClick={() => setZoomScale(1)}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-all border-l border-white/5 ms-1"
+                    title="Reset Zoom"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  </button>
+                </div>
               </div>
+
               <button 
-                onClick={() => setSelectedImage(null)}
-                className="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all hover:rotate-90"
+                onClick={() => { setSelectedImage(null); setZoomScale(1); }}
+                className="p-2.5 rounded-full bg-white/5 hover:bg-white/20 text-white transition-all hover:rotate-90 border border-white/10"
               >
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
               </button>
             </div>
             
-            <div className="max-w-[90vw] max-h-[85vh] relative flex flex-col items-center gap-6" onClick={e => e.stopPropagation()}>
-              <img 
-                src={selectedImage.url} 
-                alt={selectedImage.description} 
-                className="w-auto h-auto max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl animate-scale-in"
-              />
-              {selectedImage.description && (
-                <div className="max-w-2xl px-6 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/5 text-center animate-slide-up">
-                  <p className="text-[14px] leading-relaxed text-white/90 italic">
+            {/* Image Container (Scrollable) */}
+            <div 
+              className="flex-1 overflow-auto flex items-center justify-center p-8 custom-scrollbar"
+              onClick={() => { setSelectedImage(null); setZoomScale(1); }}
+            >
+              <div 
+                className="relative transition-transform duration-200 ease-out shadow-2xl rounded-lg"
+                style={{ transform: `scale(${zoomScale})` }}
+                onClick={e => e.stopPropagation()}
+              >
+                <img 
+                  src={selectedImage.url} 
+                  alt={selectedImage.description} 
+                  className="max-w-[85vw] max-h-[70vh] w-auto h-auto object-contain rounded-lg animate-scale-in"
+                />
+              </div>
+            </div>
+
+            {/* Footer Caption (Fixed at bottom but readable) */}
+            {selectedImage.description && (
+              <div className="flex-none p-6 pt-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex justify-center">
+                <div 
+                  className="max-w-3xl w-full px-6 py-4 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/10 text-center animate-slide-up shadow-2xl"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <p className="text-[13px] leading-relaxed text-white/90 font-medium">
                     {selectedImage.description}
                   </p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </Portal>
       )}
