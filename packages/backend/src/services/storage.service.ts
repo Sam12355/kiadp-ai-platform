@@ -6,7 +6,7 @@ let isConfigured = false;
 /**
  * Configure Cloudinary using environment variables
  */
-const configure = () => {
+export const configureCloudinary = () => {
   if (isConfigured) return;
   
   const env = getEnv();
@@ -31,7 +31,7 @@ export const uploadToCloudinary = async (
   folder: string = 'kiadp',
   resourceType: 'auto' | 'image' | 'video' | 'raw' = 'auto'
 ): Promise<string | null> => {
-  configure();
+  configureCloudinary();
   
   if (!isConfigured) {
     console.warn('Cloudinary is not configured. Falling back to local storage URLs.');
@@ -61,7 +61,7 @@ export const uploadBufferToCloudinary = async (
   folder: string = 'kiadp/images',
   fileName?: string
 ): Promise<string | null> => {
-  configure();
+  configureCloudinary();
   if (!isConfigured) return null;
 
   return new Promise((resolve, reject) => {
@@ -89,7 +89,7 @@ export const uploadBufferToCloudinary = async (
  * @param publicId The public ID of the file in Cloudinary
  */
 export const deleteFromCloudinary = async (publicId: string): Promise<void> => {
-  configure();
+  configureCloudinary();
   if (!isConfigured) return;
 
   try {

@@ -111,6 +111,7 @@ router.post(
       const { title, category } = req.body;
       const prisma = getPrisma();
       
+      // 1. Initial record
       const newDoc = await prisma.document.create({
         data: {
           title: title || req.file.originalname.replace('.pdf', ''),
@@ -125,6 +126,22 @@ router.post(
         },
       });
 
+      // 2. Upload to Cloudinary for persistent storage (Force 'image' for PDFs)
+      let cloudinaryUrl: string | null = null;
+      try {
+        cloudinaryUrl = await uploadToCloudinary(req.file.path, 'kiadp/documents', 'image');
+        if (cloudinaryUrl) {
+          await prisma.document.update({
+            where: { id: newDoc.id },
+            data: { storedFilename: cloudinaryUrl }
+          });
+          logger.info(`Cloudinary backup successful for doc ${newDoc.id}`);
+        }
+      } catch (cloudErr) {
+        logger.error({ err: cloudErr }, `Cloudinary backup failed for doc ${newDoc.id}`);
+      }
+
+      // 3. Queue ingestion job
       const boss = await getBoss();
       try {
         const jobId = await boss.send(JOB_QUEUES.INGEST_DOCUMENT, {
@@ -141,22 +158,7 @@ router.post(
         throw sendErr;
       }
 
-      // 4. Also upload to Cloudinary for persistent storage (survives Render ephemeral disk resets)
-      try {
-        const cloudinaryUrl = await uploadToCloudinary(req.file.path);
-        if (cloudinaryUrl) {
-          const updatedDoc = await prisma.document.update({
-            where: { id: newDoc.id },
-            data: { storedFilename: cloudinaryUrl }
-          });
-          return res.status(201).json({ success: true, data: updatedDoc });
-        }
-      } catch (cloudErr) {
-        logger.error({ err: cloudErr }, `Cloudinary backup failed for doc ${newDoc.id}, but local ingestion continues`);
-        // We don't fail the whole request since local ingestion is already queued
-      }
-
-      res.status(201).json({ success: true, data: newDoc });
+      res.status(201).json({ success: true, data: { ...newDoc, storedFilename: cloudinaryUrl || newDoc.storedFilename } });
     } catch (err) {
       next(err);
     }

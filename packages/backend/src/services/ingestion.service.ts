@@ -6,10 +6,13 @@ import { getOpenAI } from '../config/openai.js';
 import { getPinecone } from '../config/pinecone.js';
 import { getEnv } from '../config/env.js';
 import { getLogger } from '../utils/logger.js';
-import { uploadToCloudinary, uploadBufferToCloudinary } from './storage.service.js';
+import { uploadToCloudinary, uploadBufferToCloudinary, configureCloudinary } from './storage.service.js';
+import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'node:crypto';
 const MAX_CHUNK_LENGTH = 1500; // rough approx for ~500 tokens
 const CHUNK_OVERLAP = 150;     // rough approx for ~50 tokens
+
+configureCloudinary();
 
 // ── Service Logic ──
 
@@ -28,7 +31,34 @@ export async function processDocument(documentId: string, filePath: string): Pro
     });
 
     // 2. Read PDF using pdf.js
-    const data = await fs.readFile(filePath);
+    const doc = await prisma.document.findUnique({ where: { id: documentId } });
+    if (!doc) throw new Error(`Document ${documentId} not found in database`);
+
+    let data: Buffer;
+    try {
+      data = await fs.readFile(filePath);
+    } catch (readErr) {
+      logger.info(`Local file not found at ${filePath}. Attempting Cloudinary fallback for doc ${documentId}...`);
+      if (doc.storedFilename && doc.storedFilename.startsWith('http')) {
+        // Extract Public ID for signing
+        const pdfPublicId = doc.storedFilename.split('/upload/')[1]?.split('/').slice(1).join('/').replace(/\.[^/.]+$/, '');
+        
+        // Generate a SIGNED URL for the fetch
+        configureCloudinary();
+        const signedFetchUrl = (cloudinary as any).url(pdfPublicId, {
+          resource_type: 'image',
+          secure: true,
+          sign_url: true
+        });
+
+        const fetchResp = await fetch(signedFetchUrl);
+        if (!fetchResp.ok) throw new Error(`Cloudinary fallback failed (${fetchResp.status}): ${signedFetchUrl}`);
+        data = Buffer.from(await fetchResp.arrayBuffer());
+      } else {
+        throw new Error(`File not found locally and no Cloudinary URL available for ${documentId}`);
+      }
+    }
+
     const pdf = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
     const pageCount = pdf.numPages;
     
