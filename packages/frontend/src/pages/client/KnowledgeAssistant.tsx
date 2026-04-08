@@ -370,24 +370,24 @@ export default function KnowledgeAssistant() {
               <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
             {editingTitleId === urlSessionId && isHeaderRenaming ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-1">
                 <input 
                   autoFocus 
                   value={editingTitleValue} 
                   onChange={(e) => setEditingTitleValue(e.target.value)} 
                   onKeyDown={(e) => { if (e.key === 'Enter') saveRename(urlSessionId, editingTitleValue); }} 
-                  className="text-[14px] font-medium bg-transparent border-b border-white/30 outline-none text-white flex-1 py-0.5 min-w-[200px]" 
+                  className="text-[14px] font-medium bg-transparent border-b border-white/30 outline-none text-white flex-1 py-0.5" 
                 />
                 <button 
                   onClick={() => saveRename(urlSessionId, editingTitleValue)}
-                  className="p-1 rounded bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all"
+                  className="p-1 rounded bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all flex-none"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>
                 </button>
               </div>
             ) : (
               <span 
-                className="text-[13px] font-medium truncate cursor-pointer hover:text-white transition-colors" 
+                className="text-[13px] font-medium cursor-pointer hover:text-white transition-colors whitespace-nowrap" 
                 onClick={() => urlSessionId && startRename(urlSessionId, activeSession?.title || '', 'header')}
               >
                 {activeSession?.title}
