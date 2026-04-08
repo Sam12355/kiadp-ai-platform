@@ -428,6 +428,7 @@ a:disabled,
   background: rgba(10, 11, 13, 0.95);
   backdrop-filter: blur(24px);
   border: 1px solid rgba(255, 255, 255, 0.03);
+  z-index: 5;
 }
 
 .sparkle-icon {
@@ -457,9 +458,6 @@ a:disabled,
   box-shadow: 0 0 25px rgba(34, 197, 94, 0.45);
 }
 
-@keyframes spinGlow {
-  to { transform: rotate(360deg); }
-}
 
 /* ── SF Pro typography feel ── */
 .premium-title {
