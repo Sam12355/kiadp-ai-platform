@@ -473,7 +473,16 @@ export default function KnowledgeAssistant() {
                 </div>
               </div>
             ))}
-            {loading && <div className="text-white/40 text-[12px] animate-pulse ms-11">{t.thinking}...</div>}
+            {loading && (
+              <div className="flex items-center gap-3 ms-11 animate-fade-in">
+                <div className="orbit-wrapper !w-6 !h-6 !mt-0">
+                  <div className="sphere sphere-1 !w-5 !h-5" />
+                  <div className="sphere sphere-2 !w-5 !h-5" />
+                  <div className="sphere sphere-3 !w-5 !h-5" />
+                </div>
+                <div className="text-white/40 text-[12px] font-medium tracking-wide animate-pulse">{t.thinking}...</div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
         </div>
