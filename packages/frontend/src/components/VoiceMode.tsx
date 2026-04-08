@@ -27,13 +27,13 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey })
     try {
       setStatus('connecting');
       setError(null);
-      // Use the specified endpoint for Gemini 2.0 Multimodal Live
-      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BiDiGenerateContent?key=${apiKey}`;
+      // Try v1beta as it is often more stable for Live API
+      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BiDiGenerateContent?key=${apiKey}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Updated setup format for Gemini 2.0 Live
+        // Minimal setup for v1beta
         const setupMsg = {
           setup: {
             model: "models/gemini-2.0-flash-exp"
