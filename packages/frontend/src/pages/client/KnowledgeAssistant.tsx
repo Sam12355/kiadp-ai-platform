@@ -61,6 +61,7 @@ export default function KnowledgeAssistant() {
   const [isThreadLoading, setIsThreadLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
+  const mainInputRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
@@ -98,7 +99,10 @@ export default function KnowledgeAssistant() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+    if (!activeThreadId) {
+      mainInputRef.current?.focus();
+    }
+  }, [messages, loading, activeSessionId, activeThreadId]);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -771,6 +775,7 @@ export default function KnowledgeAssistant() {
               <div className="inner-bar">
                 <span className="sparkle-icon">✦</span>
                 <input
+                  ref={mainInputRef}
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
