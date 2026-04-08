@@ -58,6 +58,7 @@ model User {
   refreshTokens RefreshToken[]
   documents     Document[]
   questions     Question[]
+  chatSessions  ChatSession[]
   auditLogs     AuditLog[]
 
   @@map("users")
@@ -192,20 +193,33 @@ model IngestionJob {
   @@map("ingestion_jobs")
 }
 
-// ================================================
-// Q&A Models
-// ================================================
+model ChatSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String   @default("New Chat")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions Question[]
+
+  @@index([userId])
+  @@map("chat_sessions")
+}
 
 model Question {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @map("user_id") @db.Uuid
+  sessionId String?  @map("session_id") @db.Uuid
   queryText String   @map("query_text") @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
-  user   User    @relation(fields: [userId], references: [id])
-  answer Answer?
+  user    User         @relation(fields: [userId], references: [id])
+  session ChatSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answer  Answer?
 
   @@index([userId])
+  @@index([sessionId])
   @@map("questions")
 }
 

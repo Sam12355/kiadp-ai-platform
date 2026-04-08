@@ -5,6 +5,7 @@ import { askQuestion } from '../services/qa.service.js';
 
 const askSchema = z.object({
   question: z.string().min(1, 'Question must be provided'),
+  sessionId: z.string().uuid().optional(),
   history: z.array(z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string(),
@@ -21,8 +22,8 @@ export async function ask(req: Request, res: Response, next: NextFunction): Prom
     }
 
     const userId = req.user!.userId;
-    const { question, history, language, mode } = parseResult.data;
-    const result = await askQuestion(userId, question, history || [], language, mode as any);
+    const { question, sessionId, history, language, mode } = parseResult.data;
+    const result = await askQuestion(userId, question, sessionId, history || [], language, mode as any);
     
     res.json({ success: true, data: result });
   } catch (err) {

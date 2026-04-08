@@ -1,10 +1,40 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { uploadUrl } from '../../api/urls';
-import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
+import apiClient from '../../api/client';
+import { uploadUrl } from '../../api/urls';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { 
+  Send, 
+  Plus, 
+  MessageSquare, 
+  History, 
+  Settings, 
+  LogOut, 
+  PanelLeftClose, 
+  PanelLeft, 
+  Globe, 
+  ChevronDown, 
+  Sparkles, 
+  CheckCircle2, 
+  AlertCircle, 
+  Search,
+  ExternalLink,
+  ChevronRight,
+  Loader2,
+  Trash2,
+  Edit2,
+  Check,
+  X,
+  FileText,
+  Layers,
+  Zap,
+  Download,
+  Maximize2
+} from 'lucide-react';
 
 interface Source {
   id: string;
@@ -38,38 +68,37 @@ interface ChatSession {
 }
 
 export default function KnowledgeAssistant() {
+  const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
   const { lang, setLanguage } = useLanguageStore();
   const t = translations[lang];
+
+  // ─── STATE ───
+  const [query, setQuery] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { user, logout } = useAuthStore();
-  const navigate = useNavigate();
 
   // Deep Dive Threading
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null); // Message ID
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null); 
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadQuery, setThreadQuery] = useState('');
   const [isThreadLoading, setIsThreadLoading] = useState(false);
+
+  // Zoomed Image
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+
+  const mainInputRef = useRef<HTMLTextAreaElement>(null);
+  const threadInputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
-  const activeSession = sessions.find(s => s.id === activeSessionId) || null;
-  const messages = activeSession?.messages || [];
-
-  useEffect(() => {
-    const saved = localStorage.getItem('khalifa_all_sessions');
-    let initialSessions: ChatSession[] = [];
-    if (saved) {
-      try {
-        initialSessions = JSON.parse(saved);
-      } catch (e) { console.error('Failed load', e); }
     }
 
     // Start with a new chat ONLY if there isn't already an empty "New Chat" at the top

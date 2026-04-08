@@ -81,53 +81,82 @@ export async function processDocument(documentId: string, filePath: string): Pro
             // 2. Clearer Permanent Upload (optional)
             const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
 
-            // 3. Ask OpenAI Vision using the Base64 data
+            // 3. Ask OpenAI Vision for spatial locations + captions
             const visionResponse = await openai.chat.completions.create({
               model: 'gpt-4o-mini',
               messages: [
                 {
+                  role: 'system',
+                  content: `Identify all INFORMATIVE scientific elements (charts, tables, diagrams, pest photos, or maps). 
+                  For each informative element found, provide:
+                  1. A concise, descriptive caption (look for text starting with 'Figure X' or 'Table X' nearby).
+                  2. A bounding box in percentages [y_top, x_left, width, height] relative to total image size.
+                  
+                  Respond ONLY with a valid JSON object: {"figures": [{"caption": "...", "box": [y, x, w, h]}]}.
+                  If no informative visuals exist, return {"figures": []}.`
+                },
+                {
                   role: 'user',
                   content: [
-                    { type: 'text', text: "Identify and describe only INFORMATIVE scientific elements (charts, tables, diagrams, or pest photos). IGNORE decorations/logos. If no info visuals exist, respond 'No informative visuals found.' Be concise for search." },
                     { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
                   ]
                 }
               ],
-              max_tokens: 300
+              response_format: { type: 'json_object' }
             });
             
-            const visualDescription = visionResponse.choices[0].message.content;
-            if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
-              const visualVectorId = `vis_${documentId}_p${pageNum}_${crypto.randomUUID()}`;
-              
-              // Upsert visual chunk to Pinecone
-              await pineconeIndex.upsert([{
-                id: visualVectorId,
-                values: (await openai.embeddings.create({ model: env.OPENAI_EMBEDDING_MODEL, input: visualDescription })).data[0].embedding,
-                metadata: {
-                  documentId,
-                  pageNumber: pageNum,
-                  text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
-                  type: 'visual'
-                }
-              }]);
+            const rawVisionContent = visionResponse.choices[0].message.content || '{"figures": []}';
+            let parsedVision: { figures: { caption: string; box: [number, number, number, number] }[] } = { figures: [] };
+            try {
+              parsedVision = JSON.parse(rawVisionContent);
+            } catch (pErr) {
+              logger.warn(`Failed to parse vision JSON: ${rawVisionContent}`);
+            }
 
-              chunks.push({
-                pageNumber: pageNum,
-                text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
-                chunkIndex: 999 + pageNum
-              });
-              
-              await prisma.documentImage.create({
-                data: {
-                  documentId,
+            const pageFigures = parsedVision.figures || [];
+
+            if (pageFigures.length > 0) {
+              for (const fig of pageFigures) {
+                const [y, x, w, h] = fig.box;
+                // Cloudinary surgical crop: c_crop,g_north_west,x_{x}p,y_{y}p,w_{w}p,h_{h}p (p = percent)
+                const cropParams = `c_crop,g_north_west,x_${Math.round(x)}p,y_${Math.round(y)}p,w_${Math.round(w)}p,h_${Math.round(h)}p`;
+                const croppedUrl = (permanentImageUrl || dynamicImageUrl).replace('/upload/', `/upload/${cropParams}/`);
+                
+                const visualVectorId = `fig_${documentId}_p${pageNum}_${crypto.randomUUID()}`;
+                
+                const embedding = await openai.embeddings.create({
+                  model: env.OPENAI_EMBEDDING_MODEL,
+                  input: `[Figure/Table on Page ${pageNum}]: ${fig.caption}`
+                });
+
+                await pineconeIndex.upsert([{
+                  id: visualVectorId,
+                  values: embedding.data[0].embedding,
+                  metadata: {
+                    documentId,
+                    pageNumber: pageNum,
+                    text: `[Visual from Page ${pageNum}]: ${fig.caption}`,
+                    type: 'visual'
+                  }
+                }]);
+
+                chunks.push({
                   pageNumber: pageNum,
-                  filePath: permanentImageUrl || dynamicImageUrl,
-                  description: visualDescription,
-                  altText: `Figure on page ${pageNum}`,
-                  pineconeVectorId: visualVectorId
-                }
-              });
+                  text: `[Figure/Table from Page ${pageNum}]: ${fig.caption}`,
+                  chunkIndex: 999 + pageNum
+                });
+                
+                await prisma.documentImage.create({
+                  data: {
+                    documentId,
+                    pageNumber: pageNum,
+                    filePath: croppedUrl,
+                    description: fig.caption,
+                    altText: fig.caption,
+                    pineconeVectorId: visualVectorId
+                  }
+                });
+              }
             }
             break; // Success! Exit retry loop.
           } catch (vErr: any) {

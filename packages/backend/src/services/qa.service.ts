@@ -8,6 +8,7 @@ import { NotFoundError } from '../utils/errors.js';
 export interface AnswerResponse {
   answerId: string;
   questionId: string;
+  sessionId?: string;
   answerText: string;
   isGrounded: boolean;
   sources: {
@@ -61,6 +62,7 @@ export interface ChatMessage {
 export async function askQuestion(
   userId: string, 
   queryText: string, 
+  sessionId?: string,
   history: ChatMessage[] = [], 
   language: string = 'en', 
   mode: 'grounded' | 'general' = 'grounded'
@@ -69,6 +71,21 @@ export async function askQuestion(
   const openai = getOpenAI();
   const pinecone = getPinecone();
   const env = getEnv();
+
+  // 1. Create Handle Session
+  let effectiveSessionId = sessionId;
+  if (!effectiveSessionId) {
+    const newSession = await prisma.chatSession.create({
+      data: { userId, title: queryText.substring(0, 50) + '...' }
+    });
+    effectiveSessionId = newSession.id;
+  } else {
+    // Update timestamp
+    await prisma.chatSession.update({
+      where: { id: effectiveSessionId },
+      data: { updatedAt: new Date() }
+    });
+  }
 
   const langMap: Record<string, string> = {
     'ar': 'Arabic',
@@ -81,7 +98,7 @@ export async function askQuestion(
 
   // 1. Create Question Record
   const question = await prisma.question.create({
-    data: { userId, queryText },
+    data: { userId, queryText, sessionId: effectiveSessionId },
   });
 
   let standaloneQuery = queryText;
@@ -237,8 +254,9 @@ export async function askQuestion(
       }
     },
     include: {
+      question: { select: { sessionId: true } },
       sources: {
-        include: { chunk: { include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } } } },
+        include: { chunk: { include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } } } } },
       },
       answerImages: {
         include: { image: true }
@@ -255,7 +273,10 @@ async function createEmptyAnswer(questionId: string, text: string): Promise<Answ
   const prisma = getPrisma();
   const answer = await prisma.answer.create({
     data: { questionId, answerText: text, isGrounded: false },
-    include: { sources: { include: { chunk: { include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } } } } } },
+    include: { 
+      question: { select: { sessionId: true } },
+      sources: { include: { chunk: { include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } } } } } 
+    },
   });
   return formatAnswerResponse(answer);
 }
@@ -264,6 +285,7 @@ function formatAnswerResponse(answer: any): AnswerResponse {
   return {
     answerId: answer.id,
     questionId: answer.questionId,
+    sessionId: answer.question.sessionId,
     answerText: answer.answerText,
     isGrounded: answer.isGrounded,
     sources: answer.sources.map((s: any) => ({

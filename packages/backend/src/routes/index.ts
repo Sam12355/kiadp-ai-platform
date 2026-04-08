@@ -4,6 +4,7 @@ import authRoutes from './auth.routes.js';
 import documentRoutes from './document.routes.js';
 import qaRoutes from './qa.routes.js';
 import adminRoutes from './admin.routes.js';
+import chatRoutes from './chat.routes.js';
 
 const router: Router = Router();
 
@@ -18,6 +19,9 @@ router.use('/documents', documentRoutes);
 
 // Knowledge / QA
 router.use('/knowledge', qaRoutes);
+
+// Chat / History
+router.use('/chat', chatRoutes);
 
 // Admin
 router.use('/admin', adminRoutes);
