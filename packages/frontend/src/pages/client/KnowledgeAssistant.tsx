@@ -388,7 +388,7 @@ export default function KnowledgeAssistant() {
               </div>
             ) : (
               <span 
-                className="text-[13px] font-medium cursor-pointer hover:text-white transition-colors whitespace-nowrap" 
+                className="text-[13px] font-medium cursor-pointer hover:text-white transition-colors truncate max-w-[250px]" 
                 onClick={() => urlSessionId && startRename(urlSessionId, activeSession?.title || '', 'header')}
               >
                 {activeSession?.title}
