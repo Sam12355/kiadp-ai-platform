@@ -204,8 +204,8 @@ export async function askQuestion(
     });
   }
 
-  // 6. Handle grounded mode with no results (Now checks both text and visual)
-  if (mode === 'grounded' && chunks.length === 0) {
+  // 6. Handle grounded mode with no results (EXCEPT for chit-chat)
+  if (mode === 'grounded' && chunks.length === 0 && !isChitChat) {
     const noInfoMap: Record<string, string> = {
       'en': "I couldn't find any relevant documents or visual evidence in the Khalifa repository to address your specific query.",
       'fr': "Je n'ai trouvé aucun document ou preuve visuelle pertinente dans le répertoire Khalifa pour répondre à votre demande spécifique.",
@@ -215,7 +215,11 @@ export async function askQuestion(
   }
 
   // 7. Construct Final Prompt
-  const finalSystemPrompt = (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
+  let finalSystemPrompt = (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
+  
+  if (isChitChat) {
+    finalSystemPrompt = `You are a polite assistant representing the Khalifa platform. The user is just being polite (greetings or thanks). Respond briefly and politely. DO NOT talk about technical limitations or deep dive modes. Just say "You're welcome" or "Hello, how can I help today?" or similar.` + LANGUAGE_PROMPT;
+  }
   
   let instructions = "";
   if (mode === 'grounded') {
