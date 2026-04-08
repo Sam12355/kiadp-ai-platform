@@ -84,8 +84,22 @@ export async function askQuestion(
     data: { userId, queryText },
   });
 
-  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|good evening|good morning|good night|have a (good|great) day|take care|see you|bye|سلام|اهلا|مرحبا|صباح الخير|مساء الخير|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice|awesome|perfect|yep|yes|no)$/i;
-  const isChitChat = queryText.length < 40 && chitChatPatterns.test(queryText.trim().replace(/[?.!]/g, '').toLowerCase());
+  // 1.5 Smart Intent Classifier (Bypass RAG for simple pleasantries in any language)
+  let isChitChat = false;
+  if (queryText.length < 100) {
+    const classification = await openai.chat.completions.create({
+      model: env.OPENAI_CHAT_MODEL_MINI,
+      messages: [
+        { 
+          role: 'system', 
+          content: 'Classify the users intent. If it is a greeting, farewell, thanks, apology, or simple acknowledgment (like "ok", "great", "thanks", "hello", "have a good day"), respond with "CHIT_CHAT". If it is a real question or request for information, respond with "QUERY". Return ONLY the word.' 
+        },
+        { role: 'user', content: queryText },
+      ],
+      temperature: 0,
+    });
+    isChitChat = classification.choices[0].message.content?.trim().toUpperCase() === 'CHIT_CHAT';
+  }
 
   // 1.5 Determine Brain Power
   // Complex keywords in English and Arabic that trigger the "Heavy" brain
