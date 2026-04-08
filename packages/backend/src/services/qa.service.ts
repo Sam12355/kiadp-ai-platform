@@ -84,8 +84,8 @@ export async function askQuestion(
     data: { userId, queryText },
   });
 
-  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|سلام|اهلا|مرحبا|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice|awesome|perfect|yep|yes|no)$/i;
-  const isChitChat = queryText.length < 15 && chitChatPatterns.test(queryText.trim().replace(/[?.!]/g, ''));
+  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|good evening|good morning|good night|سلام|اهلا|مرحبا|صباح الخير|مساء الخير|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice|awesome|perfect|yep|yes|no)$/i;
+  const isChitChat = queryText.length < 30 && chitChatPatterns.test(queryText.trim().replace(/[?.!]/g, ''));
 
   // 1.5 Determine Brain Power
   // Complex keywords in English and Arabic that trigger the "Heavy" brain
@@ -95,7 +95,7 @@ export async function askQuestion(
 
   let standaloneQuery = queryText;
 
-  // 2. Query Condensing (Always use MINI for efficiency)
+  // 2. Query Condensing (Only if NOT chit-chat)
   if (history.length > 0 && !isChitChat) {
     const historyText = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join('\n');
     const condenseResponse = await openai.chat.completions.create({
@@ -112,9 +112,9 @@ export async function askQuestion(
     standaloneQuery = condenseResponse.choices[0].message.content || queryText;
   }
 
-  // 3. Translate query to English for embedding (documents are stored in English)
+  // 3. Translate query (Only if NOT chit-chat)
   let embeddingQuery = standaloneQuery;
-  if (language !== 'en') {
+  if (language !== 'en' && !isChitChat) {
     const translationResponse = await openai.chat.completions.create({
       model: env.OPENAI_CHAT_MODEL_MINI,
       messages: [
@@ -129,12 +129,15 @@ export async function askQuestion(
     embeddingQuery = translationResponse.choices[0].message.content || standaloneQuery;
   }
 
-  // 4. Generate embedding for query using English text
-  const embeddingResponse = await openai.embeddings.create({
-    model: env.OPENAI_EMBEDDING_MODEL,
-    input: embeddingQuery,
-  });
-  const queryVector = embeddingResponse.data[0].embedding;
+  // 4. Generate embedding (Only if NOT chit-chat)
+  let queryVector: number[] = [];
+  if (!isChitChat) {
+    const embeddingResponse = await openai.embeddings.create({
+      model: env.OPENAI_EMBEDDING_MODEL,
+      input: embeddingQuery,
+    });
+    queryVector = embeddingResponse.data[0].embedding;
+  }
 
   // 6. Query Pinecone (Only if grounded AND not chit-chat)
   let chunks: any[] = [];
