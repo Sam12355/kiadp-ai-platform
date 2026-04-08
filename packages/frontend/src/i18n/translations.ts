@@ -124,6 +124,12 @@ const en = {
     MARKETING: 'Marketing',
     VALORISATION: 'Valorisation',
     PRODUCTION: 'Production Techniques',
+    PESTS_DISEASE_MANAGEMENT: 'Pests & Disease Management',
+    CULTIVATION_BIOLOGY: 'Cultivation & Biology',
+    EARLY_DETECTION_AI: 'Early Detection & AI',
+    IRRIGATION_SOIL_HEALTH: 'Irrigation & Soil Health',
+    POST_HARVEST_ECONOMICS: 'Post-Harvest & Economics',
+    ENVIRONMENTAL_IMPACT: 'Environmental Impact',
 
     // Settings
     profileSettings: 'Profile Settings',
@@ -297,6 +303,12 @@ const ar = {
     MARKETING: 'التسويق',
     VALORISATION: 'التثمين',
     PRODUCTION: 'تقنيات الإنتاج',
+    PESTS_DISEASE_MANAGEMENT: 'إدارة الآفات والأمراض',
+    CULTIVATION_BIOLOGY: 'الزراعة وعلوم الأحياء',
+    EARLY_DETECTION_AI: 'الكشف المبكر والذكاء الاصطناعي',
+    IRRIGATION_SOIL_HEALTH: 'الري وصحة التربة',
+    POST_HARVEST_ECONOMICS: 'ما بعد الحصاد والاقتصاد',
+    ENVIRONMENTAL_IMPACT: 'الأثر البيئي',
 
     // Settings
     profileSettings: 'إعدادات الملف الشخصي',

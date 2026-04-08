@@ -26,7 +26,11 @@ const configure = () => {
  * @param folder Cloudinary folder to store the file in
  * @returns The secure URL of the uploaded file, or null if Cloudinary is not configured or upload fails
  */
-export const uploadToCloudinary = async (filePath: string, folder: string = 'kiadp'): Promise<string | null> => {
+export const uploadToCloudinary = async (
+  filePath: string, 
+  folder: string = 'kiadp',
+  resourceType: 'auto' | 'image' | 'video' | 'raw' = 'auto'
+): Promise<string | null> => {
   configure();
   
   if (!isConfigured) {
@@ -37,7 +41,7 @@ export const uploadToCloudinary = async (filePath: string, folder: string = 'kia
   try {
     const result = await cloudinary.uploader.upload(filePath, {
       folder,
-      resource_type: 'auto',
+      resource_type: resourceType,
     });
     return result.secure_url;
   } catch (error) {

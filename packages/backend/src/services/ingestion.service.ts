@@ -44,7 +44,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
     // 3. Extract text & Visual analysis page by page
     const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
-    const documentUrl = await uploadToCloudinary(filePath, 'kiadp/documents');
+    const documentUrl = await uploadToCloudinary(filePath, 'kiadp/documents', 'image');
     
     if (!documentUrl) {
       logger.warn(`⚠️ Document ${documentId} is too large or failed to upload to Cloudinary. Vision analysis will be skipped, but text will be processed.`);
@@ -57,12 +57,10 @@ export async function processDocument(documentId: string, filePath: string): Pro
       const textItems = textContent.items.map((item: any) => item.str).join(' ');
       let fullPageText = textItems.trim();
 
-      // [VISUAL ANALYSIS] Use Cloudinary's URL-based PDF-to-Image transformation
-      // We convert the PDF page into a JPG URL and send it to GPT-4o-mini Vision
-      const pageImageUrl = documentUrl ? `${documentUrl.replace('.pdf', '.jpg')}?page=${pageNum}` : null;
+      // [VISUAL ANALYSIS] Use Cloudinary's pg_N transformation
+      const pageImageUrl = documentUrl ? documentUrl.replace('/upload/', `/upload/pg_${pageNum}/`).replace('.pdf', '.jpg') : null;
       
       // If the page has significant visual content (or just for every page to be safe), analyze it.
-      // For now, let's keep it to pages with text or do a sample.
       if (pageImageUrl && fullPageText.length > 50) {
         // We'll run this in parallel for speed later, but one by one for reliability now
         try {
@@ -194,13 +192,22 @@ export async function processDocument(documentId: string, filePath: string): Pro
         messages: [
           {
             role: 'system',
-            content: `You are an expert agricultural knowledge assistant. Analyze the following document excerpt and respond ONLY with a valid JSON object. No markdown, no code fences, just raw JSON.
+            content: `You are an expert agricultural knowledge assistant. Analyze the following document excerpt and categorize it into the most relevant "Smart Folders". respond ONLY with a valid JSON object.
+            
+Smart Folders keys:
+- "PESTS_DISEASE_MANAGEMENT"
+- "CULTIVATION_BIOLOGY"
+- "EARLY_DETECTION_AI"
+- "IRRIGATION_SOIL_HEALTH"
+- "POST_HARVEST_ECONOMICS"
+- "ENVIRONMENTAL_IMPACT"
 
-Format:
+Format (Strict JSON):
 {
-  "summary": "A clear 2-3 sentence overview of the document.",
-  "keyPoints": ["Point 1", "Point 2", "Point 3", "Point 4", "Point 5"],
-  "topics": ["topic1", "topic2", "topic3"]
+  "summary": "A 2-3 sentence overview.",
+  "keyPoints": ["Point 1", "Point 2", "Point 3"],
+  "topics": ["topic1", "topic2"],
+  "suggestedCategories": ["PESTS_DISEASE_MANAGEMENT", "EARLY_DETECTION_AI"]
 }`
           },
           {
@@ -213,7 +220,7 @@ Format:
       });
 
       const rawJson = summaryResponse.choices[0]?.message?.content?.trim() || '{}';
-      let aiMeta: Record<string, unknown> = {};
+      let aiMeta: any = {};
       try {
         aiMeta = JSON.parse(rawJson);
       } catch {
@@ -223,6 +230,7 @@ Format:
       await prisma.document.update({
         where: { id: documentId },
         data: {
+          categories: aiMeta.suggestedCategories || [],
           metadata: {
             summary: aiMeta.summary || null,
             keyPoints: aiMeta.keyPoints || [],
