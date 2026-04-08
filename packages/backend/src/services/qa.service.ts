@@ -84,21 +84,22 @@ export async function askQuestion(
     data: { userId, queryText },
   });
 
-  // 1.5 Smart Intent Classifier (Bypass RAG for simple pleasantries in any language)
+  // 1.5 Smart Intent Classifier (Bypass RAG for small talk and social questions)
   let isChitChat = false;
-  if (queryText.length < 100) {
+  if (queryText.length < 120) {
     const classification = await openai.chat.completions.create({
       model: env.OPENAI_CHAT_MODEL_MINI,
       messages: [
         { 
           role: 'system', 
-          content: 'Classify the users intent. If it is a greeting, farewell, thanks, apology, or simple acknowledgment (like "ok", "great", "thanks", "hello", "have a good day"), respond with "CHIT_CHAT". If it is a real question or request for information, respond with "QUERY". Return ONLY the word.' 
+          content: 'Classify the users intent. If it is a greeting, farewell, thanks, apology, social small-talk (like "how are you", "what is up", "how is your day"), or simple acknowledgment, respond with "CHIT_CHAT". If it is a real request for knowledge, data, or agricultural assistance, respond with "QUERY". Return ONLY the word.' 
         },
         { role: 'user', content: queryText },
       ],
       temperature: 0,
     });
-    isChitChat = classification.choices[0].message.content?.trim().toUpperCase() === 'CHIT_CHAT';
+    const result = classification.choices[0].message.content?.trim().toUpperCase();
+    isChitChat = result === 'CHIT_CHAT' || result === '"CHIT_CHAT"';
   }
 
   // 1.5 Determine Brain Power
