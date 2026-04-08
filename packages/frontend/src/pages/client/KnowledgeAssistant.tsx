@@ -365,19 +365,31 @@ export default function KnowledgeAssistant() {
           </div>
         </header>
 
-        <div className={`flex-1 overflow-y-auto ${messages.length === 0 ? 'flex items-center justify-center' : ''}`}>
-          <div className="max-w-3xl mx-auto px-6 py-8 space-y-6 w-full">
+        <div className={`flex-1 overflow-y-auto ${messages.length === 0 ? 'relative flex' : ''}`}>
+          <div className={`max-w-3xl mx-auto px-6 py-8 space-y-6 w-full ${messages.length === 0 ? 'h-full flex flex-col items-center justify-center relative' : ''}`}>
+            
             {messages.length === 0 && (
-               <div className="flex flex-col items-center justify-center animate-fade-in text-center">
-                 <div className="orbit-wrapper orbit-hero mb-8"><div className="sphere sphere-1" /><div className="sphere sphere-2" /><div className="sphere sphere-3" /></div>
-                 <h2 className="premium-title mb-4">{t.howCanIHelp}</h2>
-                 <p className="text-white/40 text-[14px] max-w-sm mb-8">{t.heroSubtitle}</p>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-                   {[t.prompt1, t.prompt2].map((p, i) => (
-                     <button key={i} onClick={() => setQuery(p)} className="text-start p-4 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/30 hover:text-white text-white/60 text-[13px] transition-all">{p}</button>
-                   ))}
+               <>
+                 {/* ── Background Planet Animation ── */}
+                 <div className="planet-container">
+                   <div className="planet-glow-side" />
                  </div>
-               </div>
+
+                 <div className="flex flex-col items-center justify-center animate-fade-in text-center relative z-10 w-full">
+                   <div className="orbit-wrapper orbit-hero">
+                     <div className="sphere sphere-1" />
+                     <div className="sphere sphere-2" />
+                     <div className="sphere sphere-3" />
+                   </div>
+                   <h2 className="premium-title mb-4">{t.howCanIHelp}</h2>
+                   <p className="text-white/40 text-[14px] max-w-sm mb-8">{t.heroSubtitle}</p>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                     {[t.prompt1, t.prompt2].map((p, i) => (
+                       <button key={i} onClick={() => setQuery(p)} className="text-start p-4 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/30 hover:text-white text-white/60 text-[13px] transition-all">{p}</button>
+                     ))}
+                   </div>
+                 </div>
+               </>
             )}
 
             {messages.map((m) => (
