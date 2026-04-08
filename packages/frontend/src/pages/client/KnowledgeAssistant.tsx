@@ -75,7 +75,6 @@ export default function KnowledgeAssistant() {
 
   // ─── STATE ───
   const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -99,11 +98,24 @@ export default function KnowledgeAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
+  const activeSession = sessions.find(s => s.id === activeSessionId) || null;
+  const messages = activeSession?.messages || [];
+
+  // ─── EFFECTS ───
+  useEffect(() => {
+    const saved = localStorage.getItem('khalifa_all_sessions');
+    let initialSessions: ChatSession[] = [];
+    if (saved) {
+      try {
+        initialSessions = JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to load sessions', e);
+      }
     }
 
     // Start with a new chat ONLY if there isn't already an empty "New Chat" at the top
     const firstSession = initialSessions[0];
-    const isFirstEmpty = firstSession && firstSession.messages.length === 0 && firstSession.title === t.newChat;
+    const isFirstEmpty = firstSession && (firstSession.messages || []).length === 0 && firstSession.title === t.newChat;
 
     if (isFirstEmpty) {
       setSessions(initialSessions);
@@ -114,7 +126,7 @@ export default function KnowledgeAssistant() {
       setSessions([newSession, ...initialSessions]);
       setActiveSessionId(newId);
     }
-  }, []);
+  }, [t.newChat]);
 
   useEffect(() => {
     if (sessions.length > 0) {
