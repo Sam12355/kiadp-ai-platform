@@ -53,15 +53,22 @@ export async function processDocument(documentId: string, filePath: string): Pro
     for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
+      const operatorList = await page.getOperatorList();
       
+      // Check if the page contains any image objects or complex graphics
+      const hasVisuals = operatorList.fnArray.some(fn => 
+        fn === (pdfjs as any).OPS.paintImageXObject || 
+        fn === (pdfjs as any).OPS.paintInlineImageXObject ||
+        fn === (pdfjs as any).OPS.shadingFill
+      );
+
       const textItems = textContent.items.map((item: any) => item.str).join(' ');
       let fullPageText = textItems.trim();
 
-      // [VISUAL ANALYSIS] Use Cloudinary's pg_N transformation
+      // [VISUAL ANALYSIS] Only run if page has potential visual elements
       const dynamicImageUrl = documentUrl ? documentUrl.replace('/upload/', `/upload/pg_${pageNum}/`).replace('.pdf', '.jpg') : null;
       
-      // If the page has significant visual content, analyze it.
-      if (dynamicImageUrl && fullPageText.length > 50) {
+      if (hasVisuals && dynamicImageUrl && fullPageText.length > 50) {
         let retries = 3;
         while (retries > 0) {
           try {
