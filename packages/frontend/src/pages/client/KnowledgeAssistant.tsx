@@ -539,16 +539,32 @@ export default function KnowledgeAssistant() {
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {threadMessages.map(m => (
               <div key={m.id} className={`${m.role === 'user' ? 'text-right' : 'text-left'}`}>
-                <div className={`inline-block max-w-[90%] p-4 rounded-2xl ${m.role === 'user' ? 'bg-green-600/10 text-green-100 border border-green-500/10' : 'bg-white/5 border border-white/5'}`}>
-                  {m.content}
+                <div className={`inline-block max-w-[95%] p-4 rounded-2xl ${m.role === 'user' ? 'bg-[#1a3a2a] text-[#d1fae5] border border-green-500/10' : 'bg-white/5 border border-white/5'}`}>
+                  <div className="prose prose-invert prose-emerald text-[0.85rem] leading-relaxed">
+                    {formatContent(m.content)}
+                  </div>
                 </div>
               </div>
             ))}
             {isThreadLoading && <div className="text-white/20 text-xs animate-pulse">Assistant is thinking...</div>}
             <div ref={threadEndRef} />
           </div>
-          <form onSubmit={handleThreadSubmit} className="p-6 border-t border-white/5">
-            <input value={threadQuery} onChange={e => setThreadQuery(e.target.value)} className="w-full bg-white/5 rounded-xl px-4 py-3 outline-none border border-white/10" placeholder="Ask follow up..." />
+          <form onSubmit={handleThreadSubmit} className="p-6 border-t border-white/5 bg-[#0a0b0d]">
+            <div className="flex gap-2">
+              <input 
+                value={threadQuery} 
+                onChange={e => setThreadQuery(e.target.value)} 
+                className="flex-1 bg-white/5 rounded-xl px-4 py-3 outline-none border border-white/10 text-sm focus:border-green-500/50 transition-all" 
+                placeholder="Ask follow up..." 
+              />
+              <button 
+                type="submit" 
+                disabled={!threadQuery.trim() || isThreadLoading}
+                className="p-3 rounded-xl bg-green-600 text-white hover:bg-green-500 disabled:opacity-30 transition-all shadow-lg shadow-green-900/20"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              </button>
+            </div>
           </form>
       </div>
     </div>
