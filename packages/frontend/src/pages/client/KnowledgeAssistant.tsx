@@ -322,9 +322,24 @@ export default function KnowledgeAssistant() {
                   </>
                 )}
               </div>
-              <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:bg-red-500/10 rounded transition-all">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
-              </button>
+              <div className="relative">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === s.id ? null : s.id); }} 
+                  className="opacity-0 group-hover:opacity-100 p-1 text-white/40 hover:text-white rounded transition-all"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                </button>
+                {menuOpenId === s.id && (
+                  <div className="absolute end-0 top-full mt-1 w-32 bg-[#0f110c] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl animate-fade-in">
+                    <button onClick={(e) => { e.stopPropagation(); startRename(s.id, s.title); }} className="w-full text-left px-4 py-2.5 text-[12px] font-medium hover:bg-white/5 transition-colors border-b border-white/5">
+                      {t.rename || 'Rename'}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="w-full text-left px-4 py-2.5 text-[12px] font-medium hover:bg-red-500/10 text-red-500 transition-colors">
+                      {t.delete || 'Delete'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -351,7 +366,12 @@ export default function KnowledgeAssistant() {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-white/40 hover:text-white">
               <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
-            <span className="text-[13px] font-medium truncate text-white/60">{activeSession?.title}</span>
+            <span 
+              className="text-[13px] font-medium truncate cursor-pointer hover:text-white transition-colors" 
+              onClick={() => urlSessionId && startRename(urlSessionId, activeSession?.title || '')}
+            >
+              {activeSession?.title}
+            </span>
           </div>
 
           <div className="relative">
