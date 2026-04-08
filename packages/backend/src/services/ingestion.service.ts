@@ -84,20 +84,23 @@ export async function processDocument(documentId: string, filePath: string): Pro
       const textContent = await page.getTextContent();
       const operatorList = await page.getOperatorList();
       
-      // Check if the page contains any image objects or complex graphics
-      const hasVisuals = operatorList.fnArray.some(fn => 
+      const textItems = textContent.items.map((item: any) => item.str).join(' ');
+      let fullPageText = textItems.trim();
+
+      // Check if the page contains any image objects OR keywords like Figure/Table
+      const hasVisualsInOps = operatorList.fnArray.some(fn => 
         fn === (pdfjs as any).OPS.paintImageXObject || 
         fn === (pdfjs as any).OPS.paintInlineImageXObject ||
         fn === (pdfjs as any).OPS.shadingFill
       );
-
-      const textItems = textContent.items.map((item: any) => item.str).join(' ');
-      let fullPageText = textItems.trim();
-
-      // [VISUAL ANALYSIS] Only run if page has potential visual elements
+      
+      const hasKeywords = /figure|table|chart|illustration|plate/i.test(fullPageText);
+      const shouldAnalyzeVisuals = hasVisualsInOps || hasKeywords;
+ 
+      // [VISUAL ANALYSIS] Run if page has potential visual elements or figure keywords
       const dynamicImageUrl = documentUrl ? documentUrl.replace('/upload/', `/upload/pg_${pageNum}/`).replace('.pdf', '.jpg') : null;
       
-      if (hasVisuals && dynamicImageUrl && fullPageText.length > 50) {
+      if (shouldAnalyzeVisuals && dynamicImageUrl && fullPageText.length > 50) {
         let retries = 3;
         while (retries > 0) {
           try {
@@ -106,10 +109,10 @@ export async function processDocument(documentId: string, filePath: string): Pro
             if (!imgFetch.ok) throw new Error(`Failed to fetch page image: ${imgFetch.statusText}`);
             const imgBuffer = Buffer.from(await imgFetch.arrayBuffer());
             const base64Image = imgBuffer.toString('base64');
-
+ 
             // 2. Clearer Permanent Upload (optional)
             const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
-
+ 
             // 3. Ask OpenAI Vision using the Base64 data (Upgraded to gpt-4o for better caption extraction)
             const visionResponse = await openai.chat.completions.create({
               model: 'gpt-4o',
@@ -117,12 +120,12 @@ export async function processDocument(documentId: string, filePath: string): Pro
                 {
                   role: 'user',
                   content: [
-                    { type: 'text', text: "Identify and describe every informative visual element on this page (charts, tables, scientific maps, photos of pests/crops). MANDATORY: If there is a caption like 'Figure 1' or 'Table 2' or any descriptive label under the visual, you MUST include it word-for-word in the description. If no informative visuals exist, respond 'No informative visuals found.'." },
+                    { type: 'text', text: "Describe ALL visual elements on this page (photos, charts, tables, maps, diagrams). MANDATORY: If an element is labeled (e.g., 'Figure 5:', 'Table 1:'), you MUST transcribe that label word-for-word at the beginning of its description. we need to match user questions exactly." },
                     { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
                   ]
                 }
               ],
-              max_tokens: 500
+              max_tokens: 600
             });
             
             const visualDescription = visionResponse.choices[0].message.content;
