@@ -159,10 +159,36 @@ export async function askQuestion(
     
     // Combine both for common processing
     chunks = textChunks;
-    (chunks as any).visualImages = visualImages;
+    const visualHits = visualImages;
 
-    // Add visual descriptions to the context if any
-    visualImages.forEach((img: any) => {
+    // ── Proactive Page Mapping ──
+    // Get all (docId, pageNum) pairs from retrieved text chunks
+    const chunkPagePairs = textChunks.map(c => ({ documentId: c.documentId, pageNumber: c.pageNumber }));
+    
+    // Fetch any images that exist on the SAME pages as our text sources
+    // This allows proactive display of visuals related to the text context!
+    const contextImages = await prisma.documentImage.findMany({
+      where: {
+        OR: chunkPagePairs.map(p => ({
+          documentId: p.documentId,
+          pageNumber: p.pageNumber
+        }))
+      },
+      include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
+    });
+
+    // Merge visualHits (direct matches) and contextImages (page-based matches)
+    const allImages = [...visualHits];
+    contextImages.forEach(ci => {
+      if (!allImages.find(ai => ai.id === ci.id)) {
+        allImages.push(ci);
+      }
+    });
+
+    (chunks as any).visualImages = allImages;
+
+    // Add visual descriptions to the context if they were direct hits or highly relevant
+    visualHits.forEach((img: any) => {
       chunks.push({
         id: `vis_${img.id}`,
         content: `[Visual Evidence from Page ${img.pageNumber}]: ${img.description}`,
