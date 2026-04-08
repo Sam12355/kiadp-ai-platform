@@ -84,8 +84,8 @@ export async function askQuestion(
     data: { userId, queryText },
   });
 
-  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|good evening|good morning|good night|سلام|اهلا|مرحبا|صباح الخير|مساء الخير|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice|awesome|perfect|yep|yes|no)$/i;
-  const isChitChat = queryText.length < 30 && chitChatPatterns.test(queryText.trim().replace(/[?.!]/g, ''));
+  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|good evening|good morning|good night|have a (good|great) day|take care|see you|bye|سلام|اهلا|مرحبا|صباح الخير|مساء الخير|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice|awesome|perfect|yep|yes|no)$/i;
+  const isChitChat = queryText.length < 40 && chitChatPatterns.test(queryText.trim().replace(/[?.!]/g, '').toLowerCase());
 
   // 1.5 Determine Brain Power
   // Complex keywords in English and Arabic that trigger the "Heavy" brain
