@@ -12,6 +12,7 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   OPENAI_CHAT_MODEL: z.string().default('gpt-4o'),
+  OPENAI_CHAT_MODEL_MINI: z.string().default('gpt-4o-mini'),
 
   // Auth
   JWT_SECRET: z.string().min(16),

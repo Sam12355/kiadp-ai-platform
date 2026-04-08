@@ -87,13 +87,19 @@ export async function askQuestion(
   const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|سلام|اهلا|مرحبا|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice|awesome|perfect|yep|yes|no)$/i;
   const isChitChat = queryText.length < 15 && chitChatPatterns.test(queryText.trim().replace(/[?.!]/g, ''));
 
+  // 1.5 Determine Brain Power
+  // Complex keywords in English and Arabic that trigger the "Heavy" brain
+  const complexKeywords = /invent|design|synthesize|analyze|compare|calculate|solve|deep dive|connect|summary|summarize|creative|ابتكار|تصميم|تحليل|مقارنة|حساب|حل|تعمق|ربط|ملخص|تلخيص|إبداع/i;
+  const isComplex = complexKeywords.test(queryText) || queryText.length > 300;
+  const selectedModel = (isChitChat || !isComplex) ? env.OPENAI_CHAT_MODEL_MINI : env.OPENAI_CHAT_MODEL;
+
   let standaloneQuery = queryText;
 
-  // 2. Query Condensing (if history exists and NOT chit-chat)
+  // 2. Query Condensing (Always use MINI for efficiency)
   if (history.length > 0 && !isChitChat) {
     const historyText = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join('\n');
     const condenseResponse = await openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL,
+      model: env.OPENAI_CHAT_MODEL_MINI,
       messages: [
         { 
           role: 'system', 
@@ -110,7 +116,7 @@ export async function askQuestion(
   let embeddingQuery = standaloneQuery;
   if (language !== 'en') {
     const translationResponse = await openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL,
+      model: env.OPENAI_CHAT_MODEL_MINI,
       messages: [
         {
           role: 'system',
@@ -232,7 +238,7 @@ export async function askQuestion(
   const historyMessages = history.map(h => ({ role: h.role, content: h.content } as const));
 
   const completion = await openai.chat.completions.create({
-    model: env.OPENAI_CHAT_MODEL,
+    model: selectedModel,
     messages: [
       { role: 'system', content: finalSystemPrompt },
       ...historyMessages,
