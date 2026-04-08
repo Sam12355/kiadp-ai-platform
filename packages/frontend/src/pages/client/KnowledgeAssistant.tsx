@@ -50,6 +50,7 @@ export default function KnowledgeAssistant() {
   const [editingTitleValue, setEditingTitleValue] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
+  const [isHeaderRenaming, setIsHeaderRenaming] = useState(false);
   
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
@@ -115,11 +116,12 @@ export default function KnowledgeAssistant() {
     }
   };
 
-  const startRename = (id: string, currentTitle: string, e?: React.MouseEvent) => {
+  const startRename = (id: string, currentTitle: string, source: 'sidebar' | 'header' = 'sidebar', e?: React.MouseEvent) => {
     e?.stopPropagation();
     setMenuOpenId(null);
     setEditingTitleId(id);
     setEditingTitleValue(currentTitle);
+    setIsHeaderRenaming(source === 'header');
   };
 
   const saveRename = (id: string, newTitle: string) => {
@@ -129,6 +131,7 @@ export default function KnowledgeAssistant() {
       ));
     }
     setEditingTitleId(null);
+    setIsHeaderRenaming(false);
   };
 
   const openThread = (msg: Message) => {
@@ -313,8 +316,8 @@ export default function KnowledgeAssistant() {
             <div key={s.id} onClick={() => navigate(`/knowledge/chat/${s.id}`)} className={`sidebar-item group relative flex items-center cursor-pointer ${urlSessionId === s.id ? 'active' : ''}`}>
               <svg className="w-4 h-4 flex-shrink-0 opacity-30 me-3" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
               <div className="flex-1 min-w-0">
-                {editingTitleId === s.id ? (
-                  <input autoFocus value={editingTitleValue} onChange={(e) => setEditingTitleValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveRename(s.id, editingTitleValue); }} className="w-full text-[13px] bg-transparent border-b outline-none" />
+                {editingTitleId === s.id && !isHeaderRenaming ? (
+                  <input autoFocus value={editingTitleValue} onChange={(e) => setEditingTitleValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveRename(s.id, editingTitleValue); }} className="w-full text-[13px] bg-transparent border-b outline-none text-white" />
                 ) : (
                   <>
                     <p className="text-[13px] font-medium truncate" style={{ color: urlSessionId === s.id ? '#fff' : 'var(--color-text-secondary)' }}>{s.title}</p>
@@ -331,7 +334,7 @@ export default function KnowledgeAssistant() {
                 </button>
                 {menuOpenId === s.id && (
                   <div className="absolute end-0 top-full mt-1 w-32 bg-[#0f110c] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl animate-fade-in">
-                    <button onClick={(e) => { e.stopPropagation(); startRename(s.id, s.title); }} className="w-full text-left px-4 py-2.5 text-[12px] font-medium hover:bg-white/5 transition-colors border-b border-white/5">
+                    <button onClick={(e) => { e.stopPropagation(); startRename(s.id, s.title, 'sidebar'); }} className="w-full text-left px-4 py-2.5 text-[12px] font-medium hover:bg-white/5 transition-colors border-b border-white/5">
                       {t.rename || 'Rename'}
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }} className="w-full text-left px-4 py-2.5 text-[12px] font-medium hover:bg-red-500/10 text-red-500 transition-colors">
@@ -366,18 +369,26 @@ export default function KnowledgeAssistant() {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-white/40 hover:text-white">
               <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
-            {editingTitleId === urlSessionId ? (
-              <input 
-                autoFocus 
-                value={editingTitleValue} 
-                onChange={(e) => setEditingTitleValue(e.target.value)} 
-                onKeyDown={(e) => { if (e.key === 'Enter') saveRename(urlSessionId, editingTitleValue); }} 
-                className="text-[13px] font-medium bg-transparent border-b border-white/20 outline-none text-white w-full max-w-[200px]" 
-              />
+            {editingTitleId === urlSessionId && isHeaderRenaming ? (
+              <div className="flex items-center gap-2">
+                <input 
+                  autoFocus 
+                  value={editingTitleValue} 
+                  onChange={(e) => setEditingTitleValue(e.target.value)} 
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveRename(urlSessionId, editingTitleValue); }} 
+                  className="text-[14px] font-medium bg-transparent border-b border-white/30 outline-none text-white w-full max-w-[400px] py-0.5" 
+                />
+                <button 
+                  onClick={() => saveRename(urlSessionId, editingTitleValue)}
+                  className="p-1 rounded bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>
+                </button>
+              </div>
             ) : (
               <span 
                 className="text-[13px] font-medium truncate cursor-pointer hover:text-white transition-colors" 
-                onClick={() => urlSessionId && startRename(urlSessionId, activeSession?.title || '')}
+                onClick={() => urlSessionId && startRename(urlSessionId, activeSession?.title || '', 'header')}
               >
                 {activeSession?.title}
               </span>
