@@ -21,14 +21,14 @@ export function setupVoiceBridge(server: any) {
       return;
     }
 
-    // Match HeyGPT's proven URL and naming conventions
-    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${env.GEMINI_API_KEY}`;
+    // Use v1alpha for the experimental 2.0 Live features with Bidi naming
+    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${env.GEMINI_API_KEY}`;
     const geminiWs = new WebSocket(geminiUrl);
 
     geminiWs.on('open', () => {
-      logger.info('Voice bridge: Connected to Google Gemini Live API (HeyGPT Mode)');
+      logger.info('Voice bridge: Connected to Google Gemini Live API');
       
-      // Mirror the working setup configuration from HeyGPT
+      // Send SETUP message using the experimental 2.0 flash model
       const setupMsg = {
         setup: {
           model: "models/gemini-2.0-flash-exp"
