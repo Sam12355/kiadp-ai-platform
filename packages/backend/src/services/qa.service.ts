@@ -128,11 +128,15 @@ export async function askQuestion(
   });
   const queryVector = embeddingResponse.data[0].embedding;
 
-  // 5. Query Pinecone (Only if grounded)
+  // 5. Detect Chit-Chat (Skip RAG for simple pleasantries)
+  const chitChatPatterns = /^(ok|okay|thanks|thank you|thx|cool|great|hello|hi|hey|سلام|اهلا|مرحبا|شكرا|شكرًا|تمام|أوكي|اوكي|good|nice)$/i;
+  const isChitChat = chitChatPatterns.test(standaloneQuery.trim().replace(/[?.!]/g, ''));
+
+  // 6. Query Pinecone (Only if grounded AND not chit-chat)
   let chunks: any[] = [];
   let scoreMap = new Map<string, number>();
 
-  if (mode === 'grounded') {
+  if (mode === 'grounded' && !isChitChat) {
     const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
     const searchResults = await pineconeIndex.query({
       vector: queryVector,
