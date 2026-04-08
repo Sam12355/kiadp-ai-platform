@@ -38,10 +38,11 @@ FORMATTING INSTRUCTIONS (CRITICAL):
 
 CONTENT RULES (ABSOLUTE GROUNDING - NO EXCEPTIONS):
 1. MANDATORY: Every single word of your answer must be derived ONLY from the CONTEXT DOCUMENTS provided below.
-2. STRICT PROHIBITION: You are forbidden from using your internal training, general knowledge, or common sense to supplement, explain, or interpret information.
-3. If the answer to the user's question is not explicitly stated in the provided documents, you MUST trigger the [UNGROUNDED] protocol immediately. 
-4. Do NOT attempt to be helpful by providing external context or definitions. Your ONLY goal is to accurately represent the provided data.
-5. This rule applies to ALL questions, descriptions, definitions, and summaries.
+2. VISUALS: You can see and describe images/figures mentioned in the context. Do NOT apologize or say you cannot show images; simply describe them, and the system will automatically display the relevant image files in the gallery.
+3. STRICT PROHIBITION: You are forbidden from using your internal training, general knowledge, or common sense to supplement, explain, or interpret information.
+4. If the answer to the user's question is not explicitly stated in the provided documents, you MUST trigger the [UNGROUNDED] protocol immediately. 
+5. Do NOT attempt to be helpful by providing external context or definitions. Your ONLY goal is to accurately represent the provided data.
+6. This rule applies to ALL questions, descriptions, definitions, and summaries.
 `;
 
 const GENERAL_SYSTEM_PROMPT = `
