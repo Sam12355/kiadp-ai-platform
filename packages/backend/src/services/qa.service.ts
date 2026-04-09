@@ -1,9 +1,91 @@
 import { getPrisma } from '../config/database.js';
 import { getOpenAI } from '../config/openai.js';
-import { getPinecone } from '../config/pinecone.js';
 import { getEnv } from '../config/env.js';
 import { NotFoundError } from '../utils/errors.js';
- // Removed prisma explicit imports that were failing compilation
+import { getLogger } from '../utils/logger.js';
+
+// ── Reranking utility ──
+// Uses GPT-4o-mini to score chunk relevance against a query
+// Returns chunks sorted by relevance score, top N only
+async function rerankChunks<T extends { text: string }>(
+  query: string,
+  chunks: T[],
+  topN: number = 6
+): Promise<(T & { rerankScore: number })[]> {
+  if (chunks.length === 0) return [];
+  if (chunks.length <= topN) {
+    return chunks.map(c => ({ ...c, rerankScore: 1 }));
+  }
+
+  const openai = getOpenAI();
+  const env = getEnv();
+
+  // Build a numbered list of chunk excerpts (truncated to save tokens)
+  const chunkList = chunks.map((c, i) => 
+    `[${i}] ${c.text.substring(0, 300)}`
+  ).join('\n\n');
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: env.OPENAI_CHAT_MODEL_MINI,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a relevance scoring assistant. Given a user query and numbered text passages, rate each passage's relevance to answering the query.
+
+Score each passage 0-10:
+- 9-10: Directly answers the query with specific facts
+- 6-8: Contains clearly related information
+- 3-5: Tangentially related
+- 0-2: Not relevant
+
+Return a JSON object with a "rankings" key containing an array of {index, score} objects. Example:
+{"rankings": [{"index": 3, "score": 9}, {"index": 0, "score": 7}, {"index": 1, "score": 2}]}
+
+Include ALL passages in the rankings. Be strict — only passages with direct, useful information should score 7+.`
+        },
+        {
+          role: 'user',
+          content: `Query: "${query}"\n\nPassages:\n${chunkList}`
+        }
+      ],
+      temperature: 0,
+    });
+
+    const content = response.choices[0].message.content || '{}';
+    // Extract JSON from the response (may be wrapped in markdown code blocks)
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
+    }
+    const parsed = JSON.parse(jsonMatch[0]);
+    // Handle various response formats
+    const scores: { index: number; score: number }[] = 
+      Array.isArray(parsed) ? parsed : 
+      (parsed.rankings || parsed.results || parsed.scores || []);
+
+    if (!Array.isArray(scores) || scores.length === 0) {
+      // Fallback: return original order
+      return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
+    }
+
+    // Map scores back to chunks
+    const scored = scores
+      .filter(s => typeof s.index === 'number' && s.index >= 0 && s.index < chunks.length)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN)
+      .map(s => ({
+        ...chunks[s.index],
+        rerankScore: s.score / 10, // normalize to 0-1
+      }));
+
+    return scored.length > 0 ? scored : chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
+  } catch (err) {
+    // If reranking fails, fall back to original order
+    console.error('Reranking failed, using original order:', err);
+    return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
+  }
+}
 
 export interface AnswerResponse {
   answerId: string;
@@ -63,48 +145,67 @@ export interface ChatMessage {
  */
 export async function searchKnowledge(queryText: string): Promise<{ results: { title: string; pageNumber: number; text: string; score: number }[] }> {
   const openai = getOpenAI();
-  const pinecone = getPinecone();
   const env = getEnv();
   const prisma = getPrisma();
+
+  // Query expansion: rewrite the raw voice query into a better search query
+  const expansionResponse = await openai.chat.completions.create({
+    model: env.OPENAI_CHAT_MODEL_MINI,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.'
+      },
+      { role: 'user', content: queryText }
+    ],
+    temperature: 0,
+  });
+  const expandedQuery = expansionResponse.choices[0].message.content?.trim() || queryText;
+  getLogger().debug({ original: queryText, expanded: expandedQuery }, 'searchKnowledge: query expanded');
 
   // Run vector search and keyword search in parallel
   const embeddingPromise = openai.embeddings.create({
     model: env.OPENAI_EMBEDDING_MODEL,
-    input: queryText,
+    input: expandedQuery,
   });
 
-  // Extract significant words for keyword fallback (3+ chars, skip stop words)
+  // Extract significant words for keyword fallback
   const stopWords = new Set(['the','and','for','are','but','not','you','all','can','her','was','one','our','out','has','had','how','its','may','who','did','get','let','say','she','too','use','what','when','where','which','why','with','this','that','from','they','been','have','will','each','make','like','just','over','such','take','than','them','very','some','into','most','other','about','after','would','these','could','their','there','should','between','before']);
-  const keywords = queryText.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+  // Use ORIGINAL query keywords for AND search (short, focused)
+  const originalKeywords = [...new Set(queryText.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w)))];
+  // Use BOTH original + expanded for OR search (broader net)
+  const allWords = `${queryText} ${expandedQuery}`.toLowerCase().split(/\s+/);
+  const allKeywords = [...new Set(allWords.filter(w => w.length >= 3 && !stopWords.has(w)))];
 
-  // Keyword search: find chunks containing the keywords using PostgreSQL ILIKE
-  // First try AND (all keywords), then fall back to OR (any keyword)
+  // Keyword search: AND with original keywords (max 4), OR with all keywords
   let keywordPromise: Promise<any[]>;
-  if (keywords.length >= 2) {
+  const andKeywords = originalKeywords.slice(0, 4);
+  if (andKeywords.length >= 2) {
     keywordPromise = prisma.documentChunk.findMany({
       where: {
-        AND: keywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+        AND: andKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
       },
       include: { document: { select: { title: true } } },
-      take: 12,
+      take: 15,
     }).then(async (andResults) => {
-      if (andResults.length >= 3) return andResults;
-      // Not enough AND matches — supplement with OR matches
+      if (andResults.length >= 5) return andResults;
       const orResults = await prisma.documentChunk.findMany({
         where: {
-          OR: keywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+          OR: allKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
         },
         include: { document: { select: { title: true } } },
         take: 20,
       });
       const seenIds = new Set(andResults.map(r => r.id));
-      return [...andResults, ...orResults.filter(r => !seenIds.has(r.id))].slice(0, 12);
+      return [...andResults, ...orResults.filter(r => !seenIds.has(r.id))].slice(0, 15);
     });
-  } else if (keywords.length === 1) {
+  } else if (allKeywords.length >= 1) {
     keywordPromise = prisma.documentChunk.findMany({
-      where: { content: { contains: keywords[0], mode: 'insensitive' as const } },
+      where: {
+        OR: allKeywords.slice(0, 6).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+      },
       include: { document: { select: { title: true } } },
-      take: 12,
+      take: 15,
     });
   } else {
     keywordPromise = Promise.resolve([]);
@@ -112,33 +213,38 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
 
   const [embeddingResponse, keywordChunks] = await Promise.all([embeddingPromise, keywordPromise]);
   const queryVector = embeddingResponse.data[0].embedding;
+  const vectorStr = `[${queryVector.join(',')}]`;
 
-  const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
-  const searchResults = await pineconeIndex.query({
-    vector: queryVector,
-    topK: 12,
-    includeMetadata: true,
+  // pgvector cosine similarity search — returns top 30 chunks with embedding populated
+  type VectorRow = { id: string; document_id: string; content: string; page_number: number; similarity: number };
+  const vectorRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
+    SELECT dc.id, dc.document_id, dc.content, dc.page_number,
+           1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
+    FROM document_chunks dc
+    WHERE dc.embedding IS NOT NULL
+    ORDER BY dc.embedding <=> '${vectorStr}'::vector
+    LIMIT 30
+  `);
+
+  // Fetch document titles for pgvector results
+  const docIds = [...new Set(vectorRows.map(r => r.document_id))];
+  const docTitles = await prisma.document.findMany({
+    where: { id: { in: docIds } },
+    select: { id: true, title: true },
   });
-
-  const textIds = searchResults.matches.filter(m => m.metadata?.type !== 'visual').map(m => m.id);
-  const scoreMap = new Map(searchResults.matches.map(m => [m.id, m.score ?? 0]));
-
-  const textChunks = await prisma.documentChunk.findMany({
-    where: { pineconeVectorId: { in: textIds } },
-    include: { document: { select: { title: true } } },
-  });
+  const titleMap = new Map(docTitles.map(d => [d.id, d.title]));
 
   // Merge vector results and keyword results, deduplicating by chunk ID
   const seenIds = new Set<string>();
   const results: { title: string; pageNumber: number; text: string; score: number }[] = [];
 
-  for (const chunk of textChunks) {
-    seenIds.add(chunk.id);
+  for (const row of vectorRows) {
+    seenIds.add(row.id);
     results.push({
-      title: chunk.document.title,
-      pageNumber: chunk.pageNumber,
-      text: chunk.content,
-      score: scoreMap.get(chunk.pineconeVectorId) ?? 0,
+      title: titleMap.get(row.document_id) ?? 'Unknown',
+      pageNumber: row.page_number,
+      text: row.content,
+      score: row.similarity,
     });
   }
 
@@ -146,20 +252,23 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
   for (const chunk of keywordChunks) {
     if (!seenIds.has(chunk.id)) {
       seenIds.add(chunk.id);
-      // Count how many keywords match for a rough relevance score
-      const matchCount = keywords.filter(kw => chunk.content.toLowerCase().includes(kw)).length;
+      const matchCount = allKeywords.filter(kw => chunk.content.toLowerCase().includes(kw)).length;
       results.push({
         title: chunk.document.title,
         pageNumber: chunk.pageNumber,
         text: chunk.content,
-        score: 0.3 + (matchCount / keywords.length) * 0.2, // 0.3-0.5 range for keyword matches
+        score: 0.3 + (matchCount / allKeywords.length) * 0.2,
       });
     }
   }
 
   results.sort((a, b) => b.score - a.score);
+  getLogger().debug({ count: results.length }, 'searchKnowledge: pre-rerank candidates');
 
-  return { results };
+  // Rerank: use GPT-4o-mini to pick the most relevant chunks
+  const reranked = await rerankChunks(queryText, results, 8);
+
+  return { results: reranked };
 }
 
 export async function askQuestion(
@@ -171,7 +280,6 @@ export async function askQuestion(
 ): Promise<AnswerResponse> {
   const prisma = getPrisma();
   const openai = getOpenAI();
-  const pinecone = getPinecone();
   const env = getEnv();
 
   const langMap: Record<string, string> = {
@@ -258,37 +366,66 @@ export async function askQuestion(
     queryVector = embeddingResponse.data[0].embedding;
   }
 
-  // 6. Query Pinecone (Only if grounded AND not chit-chat)
+  // 6. Query pgvector (Only if grounded AND not chit-chat)
   let chunks: any[] = [];
-  let scoreMap = new Map<string, number>();
 
   if (mode === 'grounded' && !isChitChat) {
-    const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
-    const searchResults = await pineconeIndex.query({
-      vector: queryVector,
-      topK: 12,
-      includeMetadata: true,
+    const vectorStr = `[${queryVector.join(',')}]`;
+
+    // pgvector cosine similarity — top 30 text chunks
+    type VectorRow = { id: string; document_id: string; content: string; page_number: number; chunk_index: number; similarity: number };
+    const vectorRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
+      SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
+             1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
+      FROM document_chunks dc
+      WHERE dc.embedding IS NOT NULL
+        AND dc.chunk_index < 999
+      ORDER BY dc.embedding <=> '${vectorStr}'::vector
+      LIMIT 30
+    `);
+
+    // Also search for visual chunks via pgvector
+    const visualRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
+      SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
+             1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
+      FROM document_chunks dc
+      WHERE dc.embedding IS NOT NULL
+        AND dc.chunk_index >= 999
+      ORDER BY dc.embedding <=> '${vectorStr}'::vector
+      LIMIT 10
+    `);
+
+    const allDocIds = [...new Set([...vectorRows, ...visualRows].map(r => r.document_id))];
+    const docList = await prisma.document.findMany({
+      where: { id: { in: allDocIds } },
+      select: { id: true, title: true, originalFilename: true, storedFilename: true },
     });
+    const docMap = new Map(docList.map(d => [d.id, d]));
 
-    const textIds = searchResults.matches.filter(m => m.metadata?.type !== 'visual').map(m => m.id);
-    const visualIds = searchResults.matches.filter(m => m.metadata?.type === 'visual').map(m => m.id);
+    const textChunks = vectorRows.map(r => ({
+      id: r.id,
+      documentId: r.document_id,
+      content: r.content,
+      pageNumber: r.page_number,
+      chunkIndex: r.chunk_index,
+      similarity: r.similarity,
+      document: docMap.get(r.document_id) ?? { title: 'Unknown', originalFilename: '', storedFilename: '' },
+    }));
 
-    // Fetch Text Chunks
-    const textChunks = await prisma.documentChunk.findMany({
-      where: { pineconeVectorId: { in: textIds } },
-      include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
-    });
+    // Fetch Images for visual chunk matches
+    const visualPageNums = visualRows.map(r => ({ documentId: r.document_id, pageNumber: r.page_number }));
+    const visualImages = visualPageNums.length > 0
+      ? await prisma.documentImage.findMany({
+          where: { OR: visualPageNums.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+          include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
+        })
+      : [];
 
-    // Fetch Images for Visual Matches
-    const visualImages = await prisma.documentImage.findMany({
-      where: { pineconeVectorId: { in: visualIds } },
-      include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
-    });
+    // Rerank text chunks for better relevance
+    const textChunksForRerank = textChunks.map(c => ({ ...c, text: c.content }));
+    const rerankedTextChunks = await rerankChunks(embeddingQuery, textChunksForRerank, 10);
 
-    scoreMap = new Map(searchResults.matches.map(m => [m.id, m.score ?? 0]));
-    
-    // Combine both for common processing
-    chunks = textChunks;
+    chunks = rerankedTextChunks;
     const visualHits = visualImages;
 
     // ── Proactive Page Mapping ──
@@ -401,7 +538,7 @@ export async function askQuestion(
           documentId: chunk.documentId,
           pageNumber: chunk.pageNumber,
           excerpt: chunk.content.substring(0, 200) + '...',
-          relevanceScore: scoreMap.get(chunk.pineconeVectorId!) ?? 0,
+          relevanceScore: chunk.similarity ?? chunk.rerankScore ?? 0,
           rank: idx + 1,
         })) : [],
       },

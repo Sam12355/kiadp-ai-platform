@@ -199,19 +199,6 @@ Instructions:
           onmessage: async (message: any) => {
             if (isStale()) return;
 
-            // Debug: log all message types to diagnose tool call issues
-            const msgKeys = Object.keys(message).filter(k => message[k] != null);
-            console.log('[VoiceMode] message keys:', msgKeys);
-            if (message.toolCall) {
-              console.log('[VoiceMode] TOOL CALL received:', JSON.stringify(message.toolCall));
-            }
-            if (message.serverContent?.modelTurn?.parts) {
-              const partTypes = message.serverContent.modelTurn.parts.map((p: any) =>
-                p.inlineData ? `audio(${p.inlineData.data?.length || 0})` : p.text ? `text(${p.text.substring(0,100)})` : 'other'
-              );
-              console.log('[VoiceMode] model parts:', partTypes);
-            }
-
             // Handle interruption
             if (message.serverContent?.interrupted) {
               activeSourcesRef.current.forEach(src => {
@@ -245,7 +232,7 @@ Instructions:
                           const results = res.data?.data?.results || res.data?.results || [];
                           console.log('[VoiceMode] search returned', results.length, 'results, raw keys:', Object.keys(res.data || {}));
                           const resultText = results.length > 0
-                            ? results.map((r: any) =>
+                              ? results.map((r: any) =>
                                 `From "${r.title}" (page ${r.pageNumber}):\n${r.text}`
                               ).join('\n\n')
                             : "No relevant information found in the knowledge base for this query.";

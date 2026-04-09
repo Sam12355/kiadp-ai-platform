@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 // ================================================
@@ -126,20 +128,21 @@ model DocumentPage {
 }
 
 /// Chunk text and metadata stored in PostgreSQL.
-/// The embedding vector is stored in Pinecone, linked via pineconeVectorId.
+/// The embedding vector is stored in Pinecone (legacy) and pgvector (embedding column).
 model DocumentChunk {
-  id               String   @id @default(uuid()) @db.Uuid
-  documentId       String   @map("document_id") @db.Uuid
-  pageId           String?  @map("page_id") @db.Uuid
-  chunkIndex       Int      @map("chunk_index")
-  content          String   @db.Text
-  tokenCount       Int      @map("token_count")
-  pageNumber       Int      @map("page_number")
-  sectionHeading   String?  @map("section_heading")
+  id               String                 @id @default(uuid()) @db.Uuid
+  documentId       String                 @map("document_id") @db.Uuid
+  pageId           String?                @map("page_id") @db.Uuid
+  chunkIndex       Int                    @map("chunk_index")
+  content          String                 @db.Text
+  tokenCount       Int                    @map("token_count")
+  pageNumber       Int                    @map("page_number")
+  sectionHeading   String?                @map("section_heading")
   language         String?
-  pineconeVectorId String?  @map("pinecone_vector_id")
-  metadata         Json?    @default("{}")
-  createdAt        DateTime @default(now()) @map("created_at")
+  pineconeVectorId String?                @map("pinecone_vector_id")
+  embedding        Unsupported("vector(1536)")?
+  metadata         Json?                  @default("{}")
+  createdAt        DateTime               @default(now()) @map("created_at")
 
   document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
   page          DocumentPage?  @relation(fields: [pageId], references: [id])

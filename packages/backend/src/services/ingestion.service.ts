@@ -205,6 +205,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
       const vectorsToUpsert = [];
       const chunkRecords = [];
+      const chunkEmbeddings: { idx: number; vector: number[] }[] = [];
       
       for (let idx = 0; idx < batchChunks.length; idx++) {
         const chunk = batchChunks[idx];
@@ -230,6 +231,8 @@ export async function processDocument(documentId: string, filePath: string): Pro
           tokenCount: Math.ceil(chunk.text.length / 4),
         });
 
+        chunkEmbeddings.push({ idx, vector: embeddingResponse.data[idx].embedding });
+
         // CRITICAL: If this is a visual chunk, update the corresponding documentImage record with the vector ID
         if (chunk.chunkIndex >= 999) {
           await prisma.documentImage.updateMany({
@@ -245,6 +248,19 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
       await pineconeIndex.upsert(vectorsToUpsert);
       await prisma.documentChunk.createMany({ data: chunkRecords });
+
+      // Store embeddings in pgvector for each newly created chunk
+      for (const { idx, vector } of chunkEmbeddings) {
+        const rec = chunkRecords[idx];
+        await prisma.$executeRaw`
+          UPDATE document_chunks
+          SET embedding = ${JSON.stringify(vector)}::vector
+          WHERE document_id = ${documentId}::uuid
+            AND page_number = ${rec.pageNumber}
+            AND chunk_index = ${rec.chunkIndex}
+            AND pinecone_vector_id = ${rec.pineconeVectorId}
+        `;
+      }
 
       // Progress from 40% to 95% based on batches
       const batchProgress = Math.floor(40 + (i / chunks.length) * 55);
