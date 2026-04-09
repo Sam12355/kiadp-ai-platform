@@ -483,33 +483,12 @@ export async function askQuestion(
       getLogger().debug({ neighbors: neighborChunks.length }, 'parent-child: neighbor chunks added');
     }
 
-    const visualHits = visualImages;
+    // Only show images that are truly visual (charts, tables, maps, figures, photos etc.)
+    // — not plain text pages that happen to have an image record.
+    const VISUAL_KEYWORDS = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+show|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms)\b/i;
+    const visualHits = visualImages.filter((img: any) => VISUAL_KEYWORDS.test(img.description ?? ''));
 
-    // ── Proactive Page Mapping ──
-    // Get all (docId, pageNum) pairs from retrieved text chunks
-    const chunkPagePairs = textChunks.map(c => ({ documentId: c.documentId, pageNumber: c.pageNumber }));
-    
-    // Fetch any images that exist on the SAME pages as our text sources
-    // This allows proactive display of visuals related to the text context!
-    const contextImages = await prisma.documentImage.findMany({
-      where: {
-        OR: chunkPagePairs.map(p => ({
-          documentId: p.documentId,
-          pageNumber: p.pageNumber
-        }))
-      },
-      include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
-    });
-
-    // Merge visualHits (direct matches) and contextImages (page-based matches)
-    const allImages = [...visualHits];
-    contextImages.forEach(ci => {
-      if (!allImages.find(ai => ai.id === ci.id)) {
-        allImages.push(ci);
-      }
-    });
-
-    (chunks as any).visualImages = allImages;
+    (chunks as any).visualImages = visualHits;
 
     // Add visual descriptions to the context if they were direct hits or highly relevant
     visualHits.forEach((img: any) => {
