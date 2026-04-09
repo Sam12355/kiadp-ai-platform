@@ -17,6 +17,9 @@ const envSchema = z.object({
   // Gemini
   GEMINI_API_KEY: z.string().optional(),
 
+  // Cohere (optional — used for reranking when provided)
+  COHERE_API_KEY: z.string().optional(),
+
   // Auth
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRY: z.string().default('15m'),

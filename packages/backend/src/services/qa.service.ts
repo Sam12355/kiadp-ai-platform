@@ -3,10 +3,10 @@ import { getOpenAI } from '../config/openai.js';
 import { getEnv } from '../config/env.js';
 import { NotFoundError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
+import { CohereClient } from 'cohere-ai';
 
 // ── Reranking utility ──
-// Uses GPT-4o-mini to score chunk relevance against a query
-// Returns chunks sorted by relevance score, top N only
+// Uses Cohere Rerank API when COHERE_API_KEY is set, falls back to GPT-4o-mini
 async function rerankChunks<T extends { text: string }>(
   query: string,
   chunks: T[],
@@ -17,11 +17,30 @@ async function rerankChunks<T extends { text: string }>(
     return chunks.map(c => ({ ...c, rerankScore: 1 }));
   }
 
-  const openai = getOpenAI();
   const env = getEnv();
 
-  // Build a numbered list of chunk excerpts (truncated to save tokens)
-  const chunkList = chunks.map((c, i) => 
+  // ── Path A: Cohere Rerank (fast, purpose-built, ~200ms) ──
+  if (env.COHERE_API_KEY) {
+    try {
+      const cohere = new CohereClient({ token: env.COHERE_API_KEY });
+      const response = await cohere.v2.rerank({
+        model: 'rerank-v3.5',
+        query,
+        documents: chunks.map(c => c.text.substring(0, 800)),
+        topN,
+      });
+      return response.results.map(r => ({
+        ...chunks[r.index],
+        rerankScore: r.relevanceScore,
+      }));
+    } catch (err) {
+      getLogger().warn({ err }, 'Cohere rerank failed, falling back to GPT-4o-mini');
+    }
+  }
+
+  // ── Path B: GPT-4o-mini fallback ──
+  const openai = getOpenAI();
+  const chunkList = chunks.map((c, i) =>
     `[${i}] ${c.text.substring(0, 300)}`
   ).join('\n\n');
 
@@ -53,36 +72,27 @@ Include ALL passages in the rankings. Be strict — only passages with direct, u
     });
 
     const content = response.choices[0].message.content || '{}';
-    // Extract JSON from the response (may be wrapped in markdown code blocks)
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
-    }
+    if (!jsonMatch) return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
+
     const parsed = JSON.parse(jsonMatch[0]);
-    // Handle various response formats
-    const scores: { index: number; score: number }[] = 
-      Array.isArray(parsed) ? parsed : 
+    const scores: { index: number; score: number }[] =
+      Array.isArray(parsed) ? parsed :
       (parsed.rankings || parsed.results || parsed.scores || []);
 
     if (!Array.isArray(scores) || scores.length === 0) {
-      // Fallback: return original order
       return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
     }
 
-    // Map scores back to chunks
     const scored = scores
       .filter(s => typeof s.index === 'number' && s.index >= 0 && s.index < chunks.length)
       .sort((a, b) => b.score - a.score)
       .slice(0, topN)
-      .map(s => ({
-        ...chunks[s.index],
-        rerankScore: s.score / 10, // normalize to 0-1
-      }));
+      .map(s => ({ ...chunks[s.index], rerankScore: s.score / 10 }));
 
     return scored.length > 0 ? scored : chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
   } catch (err) {
-    // If reranking fails, fall back to original order
-    console.error('Reranking failed, using original order:', err);
+    getLogger().error({ err }, 'GPT-4o-mini reranking failed, using original order');
     return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
   }
 }
@@ -183,7 +193,10 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
   if (andKeywords.length >= 2) {
     keywordPromise = prisma.documentChunk.findMany({
       where: {
-        AND: andKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+        AND: [
+          { chunkIndex: { lt: 999 } },
+          ...andKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+        ],
       },
       include: { document: { select: { title: true } } },
       take: 15,
@@ -191,7 +204,10 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
       if (andResults.length >= 5) return andResults;
       const orResults = await prisma.documentChunk.findMany({
         where: {
-          OR: allKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+          AND: [
+            { chunkIndex: { lt: 999 } },
+            { OR: allKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })) },
+          ],
         },
         include: { document: { select: { title: true } } },
         take: 20,
@@ -202,7 +218,10 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
   } else if (allKeywords.length >= 1) {
     keywordPromise = prisma.documentChunk.findMany({
       where: {
-        OR: allKeywords.slice(0, 6).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+        AND: [
+          { chunkIndex: { lt: 999 } },
+          { OR: allKeywords.slice(0, 6).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })) },
+        ],
       },
       include: { document: { select: { title: true } } },
       take: 15,
@@ -215,13 +234,14 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
   const queryVector = embeddingResponse.data[0].embedding;
   const vectorStr = `[${queryVector.join(',')}]`;
 
-  // pgvector cosine similarity search — returns top 30 chunks with embedding populated
+  // pgvector cosine similarity search — text chunks only (exclude visual evidence, chunk_index >= 999)
   type VectorRow = { id: string; document_id: string; content: string; page_number: number; similarity: number };
   const vectorRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
     SELECT dc.id, dc.document_id, dc.content, dc.page_number,
            1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
     FROM document_chunks dc
     WHERE dc.embedding IS NOT NULL
+      AND dc.chunk_index < 999
     ORDER BY dc.embedding <=> '${vectorStr}'::vector
     LIMIT 30
   `);
