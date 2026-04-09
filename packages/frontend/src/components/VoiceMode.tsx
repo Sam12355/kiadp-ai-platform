@@ -1,18 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Modality, GoogleGenAI, Type } from '@google/genai';
+import apiClient from '../api/client';
 
 interface VoiceModeProps {
   isOpen: boolean;
   onClose: () => void;
   apiKey: string;
+  chatMessages?: { role: 'user' | 'assistant'; content: string; sources?: { excerpt: string; sourceDocument: { title: string }; pageNumber: number }[] }[];
 }
 
-export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey }) => {
+export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey, chatMessages }) => {
   const [status, setStatus] = useState<'connecting'|'ready'|'listening'|'speaking'>('connecting');
   const [error, setError] = useState<string|null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const nextPlayTimeRef = useRef<number>(0);
+  const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const connectionIdRef = useRef<number>(0);
+  const sessionAliveRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (isOpen && apiKey) {
@@ -25,166 +32,349 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose, apiKey })
 
   const connect = async () => {
     try {
+      // Increment connection ID so stale callbacks from previous mounts are ignored
+      const thisConnectionId = ++connectionIdRef.current;
+      const isStale = () => connectionIdRef.current !== thisConnectionId;
+
       setStatus('connecting');
       setError(null);
 
-      // PROACTIVE PERMISSION: Request mic before connecting
-      await startMic();
+      // Create AudioContext at 16kHz for mic input (same as working Examx project)
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
+      if (isStale()) { audioContext.close(); return; }
+      audioContextRef.current = audioContext;
 
-      // Connect to the local backend bridge instead of direct Google API
-      // This bypasses browser-side CORS and 1006 errors
-      // Use a hardcoded loopback IP and simple path to avoid resolution and routing issues
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${protocol}//127.0.0.1:3001/voice`;
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
+      // Play a tiny silent buffer to unlock AudioContext on iOS Safari
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0;
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.1);
 
-      ws.onopen = () => {
-        // Minimal setup for v1beta
-        const setupMsg = {
-          setup: {
-            model: "models/gemini-2.0-flash-exp"
+      nextPlayTimeRef.current = audioContext.currentTime;
+
+      // Request microphone access during user gesture
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      if (isStale()) { stream.getTracks().forEach(t => t.stop()); audioContext.close(); return; }
+      streamRef.current = stream;
+
+      // Build knowledge context from chat history and retrieved sources
+      let knowledgeContext = '';
+      if (chatMessages && chatMessages.length > 0) {
+        // Collect unique source excerpts from assistant messages
+        const sourceChunks: string[] = [];
+        const seenExcerpts = new Set<string>();
+        for (const msg of chatMessages) {
+          if (msg.sources) {
+            for (const src of msg.sources) {
+              const key = src.excerpt.substring(0, 100);
+              if (!seenExcerpts.has(key)) {
+                seenExcerpts.add(key);
+                sourceChunks.push(`[${src.sourceDocument.title} - Page ${src.pageNumber}]\n${src.excerpt}`);
+              }
+            }
           }
-        };
-        ws.send(JSON.stringify(setupMsg));
-      };
-
-      ws.onmessage = async (event) => {
-        try {
-          const response = JSON.parse(event.data);
-          
-          if (response.setupComplete) {
-            setStatus('ready');
-          }
-
-          if (response.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-            const base64Audio = response.serverContent.modelTurn.parts[0].inlineData.data;
-            playOutputAudio(base64Audio);
-          }
-        } catch (e) {
-          console.error("Parse Error", e);
         }
-      };
 
-      ws.onerror = () => {
-        setError("Network error: Could not reach Gemini servers.");
-      };
+        // Build conversation summary
+        const recentMessages = chatMessages.slice(-6);
+        const conversationSummary = recentMessages
+          .map(m => `${m.role.toUpperCase()}: ${m.content.substring(0, 500)}`)
+          .join('\n');
 
-      ws.onclose = (e) => {
-        console.warn("WS Closed", e.code, e.reason);
-        if (e.code === 1006) {
-          setError("Connection failed (1006): Check internet or API key limits.");
-        } else if (e.code === 4003) {
-          setError("API Key Error (4003): Your key may not have access to Live mode.");
-        } else {
-          setError(`Connection closed: ${e.reason || 'Unknown reason'} (Code: ${e.code})`);
+        if (sourceChunks.length > 0) {
+          // Limit context to ~4000 chars to stay within limits
+          let contextText = '';
+          for (const chunk of sourceChunks) {
+            if (contextText.length + chunk.length > 4000) break;
+            contextText += chunk + '\n\n';
+          }
+          knowledgeContext = `\n\nKNOWLEDGE BASE CONTEXT (from retrieved documents):\n${contextText}`;
         }
-        setStatus('connecting');
-      };
 
+        if (conversationSummary) {
+          knowledgeContext += `\n\nRECENT CONVERSATION:\n${conversationSummary}`;
+        }
+      }
+
+      // Connect directly to Gemini Live API using the SDK (no backend bridge)
+      const ai = new GoogleGenAI({ apiKey });
+
+      const sessionPromise = ai.live.connect({
+        model: "gemini-2.5-flash-native-audio-preview-12-2025",
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } }
+          },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          systemInstruction: `You are a prestige AI agricultural scientist voice assistant representing the Khalifa International Award for Date Palm and Agricultural Innovation.
+
+You have access to files and documents uploaded by the user via the "search_knowledge" tool. You MUST use this tool to look up information when the user asks any factual question.
+
+Instructions:
+1. CRITICAL: When the user asks ANY question about facts, data, statistics, documents, reports, agriculture, date palms, locations, populations, food, culture, or any specific topic — you MUST call the "search_knowledge" tool FIRST. Do NOT try to answer from memory.
+2. If the first search doesn't find a good answer, try searching again with DIFFERENT keywords. For example, if "dish in Siwa" returns nothing useful, try "Siwan food" or "cuisine Siwa" or "traditional dish". You can call search_knowledge multiple times.
+3. Once you get search results, answer based ONLY on the retrieved document context. Mention the document name and page.
+4. If multiple searches return no results, tell the user honestly that you couldn't find it in their documents.
+5. Keep responses concise and natural — you are in a live voice conversation.
+6. DO NOT output any "thinking" text, "plan" text, or "internal reasoning". ONLY speak the direct response.
+7. RESPOND IMMEDIATELY when you hear a question. Do not wait.
+8. If the user asks about something that sounds like it could be in their documents (e.g. "what is the population of...", "tell me about...", "what do they eat..."), ALWAYS search first.${knowledgeContext}`,
+          tools: [
+            {
+              functionDeclarations: [
+                {
+                  name: "search_knowledge",
+                  description: "Search the uploaded knowledge base documents for relevant information. Use this for ANY factual question. You can call this tool multiple times with different keywords to find better results. Try synonyms and rephrased queries if first search is not sufficient.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      query: {
+                        type: Type.STRING,
+                        description: "The search query — the topic, question, or keywords to look up in the knowledge base."
+                      }
+                    },
+                    required: ["query"]
+                  }
+                }
+              ]
+            }
+          ],
+        },
+        callbacks: {
+          onopen: async () => {
+            if (isStale()) return;
+            setStatus('listening');
+
+            try {
+              const session = await sessionPromise;
+              if (isStale()) return;
+              
+              sessionRef.current = session;
+              sessionAliveRef.current = true;
+
+              // Setup mic capture
+              const source = audioContext.createMediaStreamSource(stream);
+              const processor = audioContext.createScriptProcessor(4096, 1, 1);
+              processorRef.current = processor;
+
+              processor.onaudioprocess = (e) => {
+                if (isStale() || !sessionAliveRef.current) return;
+                try {
+                  const inputData = e.inputBuffer.getChannelData(0);
+                  const pcm16 = new Int16Array(inputData.length);
+                  for (let i = 0; i < inputData.length; i++) {
+                    const s = Math.max(-1, Math.min(1, inputData[i]));
+                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                  }
+                  const buffer = new Uint8Array(pcm16.buffer);
+                  let binary = '';
+                  for (let i = 0; i < buffer.byteLength; i++) {
+                    binary += String.fromCharCode(buffer[i]);
+                  }
+                  const base64 = btoa(binary);
+
+                  session.sendRealtimeInput({ audio: { mimeType: "audio/pcm;rate=16000", data: base64 } });
+                } catch (err) {
+                  // Session closed, ignore
+                }
+              };
+
+              source.connect(processor);
+              processor.connect(audioContext.destination);
+            } catch (err) {
+              console.error("Mic setup error", err);
+              if (!isStale()) setError("Microphone setup failed");
+            }
+          },
+          onmessage: async (message: any) => {
+            if (isStale()) return;
+
+            // Debug: log all message types to diagnose tool call issues
+            const msgKeys = Object.keys(message).filter(k => message[k] != null);
+            console.log('[VoiceMode] message keys:', msgKeys);
+            if (message.toolCall) {
+              console.log('[VoiceMode] TOOL CALL received:', JSON.stringify(message.toolCall));
+            }
+            if (message.serverContent?.modelTurn?.parts) {
+              const partTypes = message.serverContent.modelTurn.parts.map((p: any) =>
+                p.inlineData ? `audio(${p.inlineData.data?.length || 0})` : p.text ? `text(${p.text.substring(0,100)})` : 'other'
+              );
+              console.log('[VoiceMode] model parts:', partTypes);
+            }
+
+            // Handle interruption
+            if (message.serverContent?.interrupted) {
+              activeSourcesRef.current.forEach(src => {
+                try { src.stop(); } catch (e) {}
+              });
+              activeSourcesRef.current = [];
+              if (audioContextRef.current) {
+                nextPlayTimeRef.current = audioContextRef.current.currentTime;
+              }
+            }
+
+            // Handle tool calls (search_knowledge)
+            if (message.toolCall) {
+              const session = sessionRef.current;
+              if (session && sessionAliveRef.current) {
+                try {
+                  const responses = await Promise.all(
+                    message.toolCall.functionCalls.map(async (call: any) => {
+                      if (call.name === 'search_knowledge') {
+                        const query = (call.args?.query || '').trim();
+                        console.log('[VoiceMode] search_knowledge called with query:', query);
+                        if (!query || query.length < 2) {
+                          return {
+                            id: call.id,
+                            name: call.name,
+                            response: { output: "Query too short. Please be more specific." }
+                          };
+                        }
+                        try {
+                          const res = await apiClient.post('/knowledge/search', { query });
+                          const results = res.data?.data?.results || res.data?.results || [];
+                          console.log('[VoiceMode] search returned', results.length, 'results, raw keys:', Object.keys(res.data || {}));
+                          const resultText = results.length > 0
+                            ? results.map((r: any) =>
+                                `From "${r.title}" (page ${r.pageNumber}):\n${r.text}`
+                              ).join('\n\n')
+                            : "No relevant information found in the knowledge base for this query.";
+                          return {
+                            id: call.id,
+                            name: call.name,
+                            response: { output: resultText.slice(0, 4000) }
+                          };
+                        } catch (apiErr: any) {
+                          console.error("Knowledge search API error:", apiErr?.response?.status, apiErr?.response?.data, apiErr?.message);
+                          return {
+                            id: call.id,
+                            name: call.name,
+                            response: { output: `Search error: ${apiErr?.response?.data?.message || apiErr?.message || 'temporarily unavailable'}` }
+                          };
+                        }
+                      }
+                      return { id: call.id, name: call.name, response: { error: "Unknown function" } };
+                    })
+                  );
+                  if (sessionRef.current && sessionAliveRef.current) {
+                    session.sendToolResponse({ functionResponses: responses });
+                  }
+                } catch (toolErr) {
+                  console.error("Tool execution error:", toolErr);
+                  if (sessionRef.current && sessionAliveRef.current) {
+                    session.sendToolResponse({
+                      functionResponses: message.toolCall.functionCalls.map((c: any) => ({
+                        id: c.id,
+                        response: { error: "Internal tool error" }
+                      }))
+                    });
+                  }
+                }
+              }
+            }
+
+            // Handle audio response
+            if (message.serverContent?.modelTurn?.parts) {
+              for (const part of message.serverContent.modelTurn.parts) {
+                const base64Audio = part.inlineData?.data;
+                if (base64Audio && audioContextRef.current) {
+                  setStatus('speaking');
+
+                  const binary = atob(base64Audio);
+                  const bytes = new Uint8Array(binary.length);
+                  for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                  }
+                  const pcm16 = new Int16Array(bytes.buffer);
+                  const audioBuffer = audioContextRef.current.createBuffer(1, pcm16.length, 24000);
+                  const channelData = audioBuffer.getChannelData(0);
+                  for (let i = 0; i < pcm16.length; i++) {
+                    channelData[i] = pcm16[i] / 32768;
+                  }
+
+                  const source = audioContextRef.current.createBufferSource();
+                  source.buffer = audioBuffer;
+                  source.connect(audioContextRef.current.destination);
+
+                  const startTime = Math.max(audioContextRef.current.currentTime, nextPlayTimeRef.current);
+                  source.start(startTime);
+                  nextPlayTimeRef.current = startTime + audioBuffer.duration;
+
+                  activeSourcesRef.current.push(source);
+                  source.onended = () => {
+                    activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
+                    if (activeSourcesRef.current.length === 0) {
+                      setStatus('listening');
+                    }
+                  };
+                }
+              }
+            }
+          },
+          onerror: (err: any) => {
+            sessionAliveRef.current = false;
+            if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+            if (isStale()) return;
+            console.error("Gemini Live API error:", err?.message || err);
+            setError("Voice connection error. Please try again.");
+            setStatus('connecting');
+          },
+          onclose: () => {
+            sessionAliveRef.current = false;
+            if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+            console.log("Gemini Live session closed");
+          }
+        }
+      });
+
+      if (isStale()) {
+        const s = await sessionPromise;
+        try { s.close(); } catch(e) {}
+        return;
+      }
+
+      sessionRef.current = await sessionPromise;
     } catch (err: any) {
-      setError(err.message);
+      console.error("Failed to start voice session:", err);
+      setError(err.message || "Failed to connect");
+      setStatus('connecting');
     }
   };
 
   const disconnect = () => {
-    if (wsRef.current) wsRef.current.close();
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    if (audioContextRef.current) audioContextRef.current.close();
-    wsRef.current = null;
+    connectionIdRef.current++;
+    sessionAliveRef.current = false;
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (sessionRef.current) {
+      try { sessionRef.current.close(); } catch (e) {}
+      sessionRef.current = null;
+    }
+    activeSourcesRef.current.forEach(src => {
+      try { src.stop(); } catch (e) {}
+    });
+    activeSourcesRef.current = [];
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
     setStatus('connecting');
-  };
-
-  const startMic = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      audioContextRef.current = audioContext;
-
-      // In a real production app, we would use an AudioWorklet for better performance
-      // Here we will use ScriptProcessor for simplicity in this demo, though it's deprecated
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-
-      processor.onaudioprocess = (e) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN && status !== 'speaking') {
-          const inputData = e.inputBuffer.getChannelData(0);
-          const pcmData = floatTo16BitPCM(inputData);
-          const base64Data = arrayBufferToBase64(pcmData);
-          
-          wsRef.current.send(JSON.stringify({
-            realtimeInput: {
-              mediaChunks: [{
-                mimeType: "audio/pcm",
-                data: base64Data
-              }]
-            }
-          }));
-        }
-      };
-    } catch (err: any) {
-      setError("Microphone access denied");
-    }
-  };
-
-  const playOutputAudio = async (base64: string) => {
-    if (!audioContextRef.current) return;
-    setStatus('speaking');
-    
-    const arrayBuffer = base64ToArrayBuffer(base64);
-    const float32Data = pcm16ToFloat32(arrayBuffer);
-    
-    const buffer = audioContextRef.current.createBuffer(1, float32Data.length, 24000); // Gemini uses 24kHz out
-    buffer.getChannelData(0).set(float32Data);
-    
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioContextRef.current.destination);
-    source.onended = () => setStatus('listening');
-    source.start();
-  };
-
-  // Helper functions
-  const floatTo16BitPCM = (input: Float32Array) => {
-    const output = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      const s = Math.max(-1, Math.min(1, input[i]));
-      output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    return output.buffer;
-  };
-
-  const pcm16ToFloat32 = (input: ArrayBuffer) => {
-    const int16 = new Int16Array(input);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
-      float32[i] = int16[i] / 32768;
-    }
-    return float32;
-  };
-
-  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-  };
-
-  const base64ToArrayBuffer = (base64: string) => {
-    const binary = window.atob(base64);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
   };
 
   if (!isOpen) return null;

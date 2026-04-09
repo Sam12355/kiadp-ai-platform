@@ -10,6 +10,7 @@ import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
 import { getLogger } from './utils/logger.js';
 import { disconnectPrisma } from './config/database.js';
+import { setupVoiceBridge } from './services/voice.service.js';
 import fs from 'node:fs';
 
 async function main() {
@@ -32,6 +33,8 @@ async function main() {
     logger.info(`📚 API docs: http://localhost:${env.PORT}/api/docs`);
     logger.info(`Environment: ${env.NODE_ENV}`);
   });
+
+  setupVoiceBridge(server);
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {

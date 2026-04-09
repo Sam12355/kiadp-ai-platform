@@ -21,38 +21,49 @@ export function setupVoiceBridge(server: any) {
       return;
     }
 
-    // Use v1alpha for the experimental 2.0 Live features with Bidi naming
-    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${env.GEMINI_API_KEY}`;
+    // The EXACT HeyGPT "Secret Recipe" that works for you
+    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${env.GEMINI_API_KEY}`;
     const geminiWs = new WebSocket(geminiUrl);
 
     geminiWs.on('open', () => {
-      logger.info('Voice bridge: Connected to Google Gemini Live API');
+      logger.info('Voice bridge: Connected to Google Gemini Live API (HeyGPT Mode)');
       
-      // Send SETUP message using the experimental 2.0 flash model
+      // Send a COMPLETE setup message with the HeyGPT-verified model
       const setupMsg = {
         setup: {
-          model: "models/gemini-2.0-flash-exp"
+          model: "models/gemini-2.5-flash-native-audio-preview-12-2025",
+          generationConfig: {
+            responseModalities: ["AUDIO"]
+          }
         }
       };
       geminiWs.send(JSON.stringify(setupMsg));
+
+      // Also tell the frontend that we are ready
+      ws.send(JSON.stringify({ setupComplete: true }));
     });
 
-    // RESTORE PIPING: user -> Gemini
+    // Piping: browser -> Gemini
     ws.on('message', (data) => {
       if (geminiWs.readyState === WebSocket.OPEN) {
         geminiWs.send(data);
       }
     });
 
-    // RESTORE PIPING: Gemini -> user
-    geminiWs.on('message', (data) => {
+    // Piping: Gemini -> browser (preserve text/binary frame type)
+    geminiWs.on('message', (data: Buffer, isBinary: boolean) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
+        if (isBinary) {
+          logger.info(`Voice bridge: Gemini sent BINARY frame, ${data.length} bytes`);
+          ws.send(data);
+        } else {
+          const text = data.toString();
+          // Log a truncated preview of the JSON structure
+          const preview = text.length > 300 ? text.substring(0, 300) + '...' : text;
+          logger.info(`Voice bridge: Gemini sent TEXT frame (${text.length} chars): ${preview}`);
+          ws.send(text);
+        }
       }
-    });
-
-    geminiWs.on('open', () => {
-      logger.info('Voice bridge: Connected to Google Gemini Live API');
     });
 
     geminiWs.on('error', (err) => {

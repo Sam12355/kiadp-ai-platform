@@ -14,6 +14,9 @@ const envSchema = z.object({
   OPENAI_CHAT_MODEL: z.string().default('gpt-4o'),
   OPENAI_CHAT_MODEL_MINI: z.string().default('gpt-4o-mini'),
 
+  // Gemini
+  GEMINI_API_KEY: z.string().optional(),
+
   // Auth
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRY: z.string().default('15m'),

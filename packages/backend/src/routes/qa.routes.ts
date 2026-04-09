@@ -14,5 +14,6 @@ const router: Router = Router();
  *       - BearerAuth: []
  */
 router.post('/ask', authenticate, qaController.ask);
+router.post('/search', authenticate, qaController.search);
 
 export default router;

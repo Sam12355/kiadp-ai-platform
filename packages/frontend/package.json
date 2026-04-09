@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^1.49.0",
     "@khalifa/shared": "workspace:*",
     "@tanstack/react-query": "^5.62.0",
     "axios": "^1.7.0",

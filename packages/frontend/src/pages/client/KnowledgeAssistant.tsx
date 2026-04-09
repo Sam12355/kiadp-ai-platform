@@ -531,7 +531,8 @@ export default function KnowledgeAssistant() {
         <VoiceMode 
           isOpen={isVoiceModeOpen} 
           onClose={() => setIsVoiceModeOpen(false)} 
-          apiKey="AIzaSyBi-jHV2-gliX38HZLdh6boCS39SxM1-M0" 
+          apiKey={import.meta.env.VITE_GEMINI_API_KEY || ""} 
+          chatMessages={messages}
         />
 
         {/* Lightbox / Tooltips etc omitted for brevity or re-implementing if needed */}

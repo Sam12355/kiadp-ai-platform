@@ -58,6 +58,110 @@ export interface ChatMessage {
   content: string;
 }
 
+/**
+ * Lightweight vector search for voice mode — returns relevant document chunks without LLM processing
+ */
+export async function searchKnowledge(queryText: string): Promise<{ results: { title: string; pageNumber: number; text: string; score: number }[] }> {
+  const openai = getOpenAI();
+  const pinecone = getPinecone();
+  const env = getEnv();
+  const prisma = getPrisma();
+
+  // Run vector search and keyword search in parallel
+  const embeddingPromise = openai.embeddings.create({
+    model: env.OPENAI_EMBEDDING_MODEL,
+    input: queryText,
+  });
+
+  // Extract significant words for keyword fallback (3+ chars, skip stop words)
+  const stopWords = new Set(['the','and','for','are','but','not','you','all','can','her','was','one','our','out','has','had','how','its','may','who','did','get','let','say','she','too','use','what','when','where','which','why','with','this','that','from','they','been','have','will','each','make','like','just','over','such','take','than','them','very','some','into','most','other','about','after','would','these','could','their','there','should','between','before']);
+  const keywords = queryText.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+
+  // Keyword search: find chunks containing the keywords using PostgreSQL ILIKE
+  // First try AND (all keywords), then fall back to OR (any keyword)
+  let keywordPromise: Promise<any[]>;
+  if (keywords.length >= 2) {
+    keywordPromise = prisma.documentChunk.findMany({
+      where: {
+        AND: keywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+      },
+      include: { document: { select: { title: true } } },
+      take: 12,
+    }).then(async (andResults) => {
+      if (andResults.length >= 3) return andResults;
+      // Not enough AND matches — supplement with OR matches
+      const orResults = await prisma.documentChunk.findMany({
+        where: {
+          OR: keywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+        },
+        include: { document: { select: { title: true } } },
+        take: 20,
+      });
+      const seenIds = new Set(andResults.map(r => r.id));
+      return [...andResults, ...orResults.filter(r => !seenIds.has(r.id))].slice(0, 12);
+    });
+  } else if (keywords.length === 1) {
+    keywordPromise = prisma.documentChunk.findMany({
+      where: { content: { contains: keywords[0], mode: 'insensitive' as const } },
+      include: { document: { select: { title: true } } },
+      take: 12,
+    });
+  } else {
+    keywordPromise = Promise.resolve([]);
+  }
+
+  const [embeddingResponse, keywordChunks] = await Promise.all([embeddingPromise, keywordPromise]);
+  const queryVector = embeddingResponse.data[0].embedding;
+
+  const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
+  const searchResults = await pineconeIndex.query({
+    vector: queryVector,
+    topK: 12,
+    includeMetadata: true,
+  });
+
+  const textIds = searchResults.matches.filter(m => m.metadata?.type !== 'visual').map(m => m.id);
+  const scoreMap = new Map(searchResults.matches.map(m => [m.id, m.score ?? 0]));
+
+  const textChunks = await prisma.documentChunk.findMany({
+    where: { pineconeVectorId: { in: textIds } },
+    include: { document: { select: { title: true } } },
+  });
+
+  // Merge vector results and keyword results, deduplicating by chunk ID
+  const seenIds = new Set<string>();
+  const results: { title: string; pageNumber: number; text: string; score: number }[] = [];
+
+  for (const chunk of textChunks) {
+    seenIds.add(chunk.id);
+    results.push({
+      title: chunk.document.title,
+      pageNumber: chunk.pageNumber,
+      text: chunk.content,
+      score: scoreMap.get(chunk.pineconeVectorId) ?? 0,
+    });
+  }
+
+  // Add keyword matches that weren't in vector results (with a baseline score)
+  for (const chunk of keywordChunks) {
+    if (!seenIds.has(chunk.id)) {
+      seenIds.add(chunk.id);
+      // Count how many keywords match for a rough relevance score
+      const matchCount = keywords.filter(kw => chunk.content.toLowerCase().includes(kw)).length;
+      results.push({
+        title: chunk.document.title,
+        pageNumber: chunk.pageNumber,
+        text: chunk.content,
+        score: 0.3 + (matchCount / keywords.length) * 0.2, // 0.3-0.5 range for keyword matches
+      });
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+
+  return { results };
+}
+
 export async function askQuestion(
   userId: string, 
   queryText: string, 
