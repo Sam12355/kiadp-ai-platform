@@ -199,7 +199,7 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
         ],
       },
       include: { document: { select: { title: true } } },
-      take: 15,
+      take: 25,
     }).then(async (andResults) => {
       if (andResults.length >= 5) return andResults;
       const orResults = await prisma.documentChunk.findMany({
@@ -210,10 +210,10 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
           ],
         },
         include: { document: { select: { title: true } } },
-        take: 20,
+        take: 30,
       });
       const seenIds = new Set(andResults.map(r => r.id));
-      return [...andResults, ...orResults.filter(r => !seenIds.has(r.id))].slice(0, 15);
+      return [...andResults, ...orResults.filter(r => !seenIds.has(r.id))].slice(0, 25);
     });
   } else if (allKeywords.length >= 1) {
     keywordPromise = prisma.documentChunk.findMany({
@@ -224,7 +224,7 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
         ],
       },
       include: { document: { select: { title: true } } },
-      take: 15,
+      take: 25,
     });
   } else {
     keywordPromise = Promise.resolve([]);
@@ -243,7 +243,7 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
     WHERE dc.embedding IS NOT NULL
       AND dc.chunk_index < 999
     ORDER BY dc.embedding <=> '${vectorStr}'::vector
-    LIMIT 30
+    LIMIT 60
   `);
 
   // Fetch document titles for pgvector results
