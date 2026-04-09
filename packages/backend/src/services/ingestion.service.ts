@@ -19,9 +19,29 @@ function splitIntoSentences(text: string): string[] {
 }
 
 /**
+ * Detect the last section heading in a page's text.
+ * Matches patterns like: "1.4 Traditional Foods", "6.2.1 Red Palm Weevil", "CHAPTER 3"
+ * Returns the heading string or null if none found.
+ */
+function detectHeading(text: string): string | null {
+  // Numbered section requires at least one decimal: "1.4 Title" or "1.4.2 Title"
+  // Rejects bare integers like "9 Section" which are footnotes/page numbers
+  const numbered = text.match(/\b(\d+\.\d+(?:\.\d+)?)\s+([A-Z][A-Za-z ,'-]{3,50})(?=[\s\n]|$)/g);
+  if (numbered && numbered.length > 0) {
+    const last = numbered[numbered.length - 1].trim();
+    // Reject if followed by a digit (measurement like "27,500 t" or "2.5 km")
+    if (!/^\d+\.\d+\s+\d/.test(last)) return last.substring(0, 60);
+  }
+  // ALL-CAPS heading: "CHAPTER 3", "INTRODUCTION" (min 5 chars, not ALL single words that appear mid-sentence)
+  const caps = text.match(/(?:^|\n)([A-Z]{5,}(?:\s+[A-Z]{2,}){0,4})/);
+  if (caps) return caps[1].substring(0, 60);
+  return null;
+}
+
+/**
  * Group sentences into semantic chunks targeting ~800 chars with 1-sentence overlap.
  * Processes each page independently — chunks never cross page boundaries.
- * Never cuts mid-word or mid-sentence.
+ * Prefixes each chunk with the nearest detected section heading.
  */
 function buildSemanticChunks(
   pageTexts: { pageNumber: number; text: string }[]
@@ -32,8 +52,13 @@ function buildSemanticChunks(
 
   const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
   let chunkIdx = 0;
+  let currentHeading: string | null = null;
 
   for (const { pageNumber, text } of pageTexts) {
+    // Update heading from this page if a new one is detected
+    const pageHeading = detectHeading(text);
+    if (pageHeading) currentHeading = pageHeading;
+
     const sentences = splitIntoSentences(text);
     if (sentences.length === 0) continue;
 
@@ -42,6 +67,13 @@ function buildSemanticChunks(
       const picked: string[] = [];
       let totalLen = 0;
       let j = i;
+
+      // Check if any sentence in this window introduces a new heading
+      let chunkHeading = currentHeading;
+      for (let k = i; k < Math.min(i + 3, sentences.length); k++) {
+        const h = detectHeading(sentences[k]);
+        if (h) { chunkHeading = h; currentHeading = h; break; }
+      }
 
       while (j < sentences.length) {
         const slen = sentences[j].length + 1;
@@ -54,7 +86,9 @@ function buildSemanticChunks(
 
       if (picked.length === 0) { i++; continue; }
 
-      chunks.push({ pageNumber, text: picked.join(' '), chunkIndex: chunkIdx++ });
+      const body = picked.join(' ');
+      const text_with_heading = chunkHeading ? `[${chunkHeading}] ${body}` : body;
+      chunks.push({ pageNumber, text: text_with_heading, chunkIndex: chunkIdx++ });
       i = Math.max(i + 1, j - OVERLAP);
     }
   }

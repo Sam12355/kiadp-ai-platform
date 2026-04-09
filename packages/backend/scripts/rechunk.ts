@@ -39,6 +39,17 @@ function splitIntoSentences(text: string): string[] {
   return parts.map(s => s.trim()).filter(s => s.length >= 25);
 }
 
+function detectHeading(text: string): string | null {
+  const numbered = text.match(/\b(\d+\.\d+(?:\.\d+)?)\s+([A-Z][A-Za-z ,'-]{3,50})(?=[\s\n]|$)/g);
+  if (numbered && numbered.length > 0) {
+    const last = numbered[numbered.length - 1].trim();
+    if (!/^\d+\.\d+\s+\d/.test(last)) return last.substring(0, 60);
+  }
+  const caps = text.match(/(?:^|\n)([A-Z]{5,}(?:\s+[A-Z]{2,}){0,4})/);
+  if (caps) return caps[1].substring(0, 60);
+  return null;
+}
+
 function buildSemanticChunks(
   pageTexts: { pageNumber: number; text: string }[]
 ): { pageNumber: number; text: string; chunkIndex: number }[] {
@@ -48,8 +59,12 @@ function buildSemanticChunks(
 
   const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
   let chunkIdx = 0;
+  let currentHeading: string | null = null;
 
   for (const { pageNumber, text } of pageTexts) {
+    const pageHeading = detectHeading(text);
+    if (pageHeading) currentHeading = pageHeading;
+
     const sentences = splitIntoSentences(text);
     if (sentences.length === 0) continue;
 
@@ -58,6 +73,12 @@ function buildSemanticChunks(
       const picked: string[] = [];
       let totalLen = 0;
       let j = i;
+
+      let chunkHeading = currentHeading;
+      for (let k = i; k < Math.min(i + 3, sentences.length); k++) {
+        const h = detectHeading(sentences[k]);
+        if (h) { chunkHeading = h; currentHeading = h; break; }
+      }
 
       while (j < sentences.length) {
         const slen = sentences[j].length + 1;
@@ -70,7 +91,9 @@ function buildSemanticChunks(
 
       if (picked.length === 0) { i++; continue; }
 
-      chunks.push({ pageNumber, text: picked.join(' '), chunkIndex: chunkIdx++ });
+      const body = picked.join(' ');
+      const text_with_heading = chunkHeading ? `[${chunkHeading}] ${body}` : body;
+      chunks.push({ pageNumber, text: text_with_heading, chunkIndex: chunkIdx++ });
       i = Math.max(i + 1, j - OVERLAP);
     }
   }
