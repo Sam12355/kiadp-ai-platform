@@ -9,8 +9,58 @@ import { getLogger } from '../utils/logger.js';
 import { uploadToCloudinary, uploadBufferToCloudinary, configureCloudinary } from './storage.service.js';
 import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'node:crypto';
-const MAX_CHUNK_LENGTH = 1500; // rough approx for ~500 tokens
-const CHUNK_OVERLAP = 150;     // rough approx for ~50 tokens
+// ── Semantic chunking helpers ──
+
+/** Split text into sentences at punctuation followed by whitespace + uppercase/Arabic/digit. */
+function splitIntoSentences(text: string): string[] {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  const parts = cleaned.split(/(?<=[.!?\u060C\u061B\u061F])\s+(?=[A-Z0-9"'(\u0600-\u06FF])/);
+  return parts.map(s => s.trim()).filter(s => s.length >= 25);
+}
+
+/**
+ * Group sentences into semantic chunks targeting ~800 chars with 1-sentence overlap.
+ * Processes each page independently — chunks never cross page boundaries.
+ * Never cuts mid-word or mid-sentence.
+ */
+function buildSemanticChunks(
+  pageTexts: { pageNumber: number; text: string }[]
+): { pageNumber: number; text: string; chunkIndex: number }[] {
+  const TARGET_CHARS = 800;
+  const MAX_CHARS = 1300;
+  const OVERLAP = 1;
+
+  const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
+  let chunkIdx = 0;
+
+  for (const { pageNumber, text } of pageTexts) {
+    const sentences = splitIntoSentences(text);
+    if (sentences.length === 0) continue;
+
+    let i = 0;
+    while (i < sentences.length) {
+      const picked: string[] = [];
+      let totalLen = 0;
+      let j = i;
+
+      while (j < sentences.length) {
+        const slen = sentences[j].length + 1;
+        if (picked.length > 0 && totalLen + slen > MAX_CHARS) break;
+        picked.push(sentences[j]);
+        totalLen += slen;
+        j++;
+        if (totalLen >= TARGET_CHARS) break;
+      }
+
+      if (picked.length === 0) { i++; continue; }
+
+      chunks.push({ pageNumber, text: picked.join(' '), chunkIndex: chunkIdx++ });
+      i = Math.max(i + 1, j - OVERLAP);
+    }
+  }
+
+  return chunks;
+}
 
 configureCloudinary();
 
@@ -73,6 +123,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
     // 3. Extract text & Visual analysis page by page
     const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
+    const pageTexts: { pageNumber: number; text: string }[] = [];
     const documentUrl = await uploadToCloudinary(filePath, 'kiadp/documents', 'image');
     
     if (!documentUrl) {
@@ -164,18 +215,15 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
       if (fullPageText.length === 0) continue;
 
-      // Extract chunks
-      let startIndex = 0;
-      let chunkIdx = 0;
-      while (startIndex < fullPageText.length) {
-        const chunkText = fullPageText.slice(startIndex, startIndex + MAX_CHUNK_LENGTH);
-        chunks.push({
-          pageNumber: pageNum,
-          text: chunkText,
-          chunkIndex: chunkIdx++,
-        });
-        startIndex += (MAX_CHUNK_LENGTH - CHUNK_OVERLAP);
-      }
+      // Collect raw page text for semantic chunking after all pages are processed
+      pageTexts.push({ pageNumber: pageNum, text: fullPageText });
+
+      // Persist raw page text for future rechunking without re-fetching the PDF
+      await prisma.documentPage.upsert({
+        where: { documentId_pageNumber: { documentId, pageNumber: pageNum } },
+        create: { documentId, pageNumber: pageNum, rawText: fullPageText, wordCount: fullPageText.split(/\s+/).length, isOcr: false },
+        update: { rawText: fullPageText },
+      });
 
       // Progress from 10% to 40% based on pages
       const extractionProgress = Math.floor(10 + (pageNum / pageCount) * 30);
@@ -185,11 +233,15 @@ export async function processDocument(documentId: string, filePath: string): Pro
       });
     }
 
+    // Build semantic text chunks from all collected page text, then merge with visual chunks
+    const textChunks = buildSemanticChunks(pageTexts);
+    for (const tc of textChunks) chunks.push(tc);
+
     if (chunks.length === 0) {
       throw new Error('No valid text could be extracted from this PDF');
     }
 
-    logger.info(`Extracted ${chunks.length} chunks. Generating embeddings...`);
+    logger.info(`Extracted ${textChunks.length} semantic text chunks + ${chunks.length - textChunks.length} visual chunks. Generating embeddings...`);
 
     // Process in batches of 100 to avoid OpenAI rate limits
     const BATCH_SIZE = 100;
