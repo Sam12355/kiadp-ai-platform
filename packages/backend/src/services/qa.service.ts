@@ -446,6 +446,43 @@ export async function askQuestion(
     const rerankedTextChunks = await rerankChunks(embeddingQuery, textChunksForRerank, 10);
 
     chunks = rerankedTextChunks;
+
+    // ── Parent-child retrieval ──
+    // For each top-ranked chunk, fetch the immediately adjacent chunks (±1 by chunkIndex)
+    // from the same document. These neighbors are injected into the LLM context so it has a
+    // fuller picture, but they are NOT saved as sources or shown in the UI.
+    if (rerankedTextChunks.length > 0) {
+      const alreadyIncluded = new Set(rerankedTextChunks.map(c => c.id));
+      const neighborChunks = await prisma.documentChunk.findMany({
+        where: {
+          AND: [
+            { chunkIndex: { lt: 999 } },
+            {
+              OR: rerankedTextChunks.flatMap(c => [
+                { documentId: c.documentId, chunkIndex: c.chunkIndex - 1 },
+                { documentId: c.documentId, chunkIndex: c.chunkIndex + 1 },
+              ]),
+            },
+          ],
+        },
+        select: {
+          id: true,
+          documentId: true,
+          content: true,
+          pageNumber: true,
+          chunkIndex: true,
+          document: { select: { title: true, originalFilename: true, storedFilename: true } },
+        },
+      });
+      for (const n of neighborChunks) {
+        if (!alreadyIncluded.has(n.id)) {
+          (chunks as any[]).push({ ...n, similarity: 0, rerankScore: 0, isNeighbor: true });
+          alreadyIncluded.add(n.id);
+        }
+      }
+      getLogger().debug({ neighbors: neighborChunks.length }, 'parent-child: neighbor chunks added');
+    }
+
     const visualHits = visualImages;
 
     // ── Proactive Page Mapping ──
@@ -508,7 +545,7 @@ export async function askQuestion(
   if (mode === 'grounded') {
     instructions = "CONTEXT DOCUMENTS (Including Visual Evidence descriptions):\n\n";
     chunks.forEach((chunk: any, idx: number) => {
-      instructions += `[Source ${idx + 1}] Filename: ${chunk.document.originalFilename} | Page: ${chunk.pageNumber}\n`;
+      instructions += `[${chunk.isNeighbor ? 'Context' : 'Source'} ${idx + 1}] Filename: ${chunk.document.originalFilename} | Page: ${chunk.pageNumber}\n`;
       instructions += `${chunk.content}\n\n`;
     });
   }
@@ -553,7 +590,7 @@ export async function askQuestion(
       modelUsed: env.OPENAI_CHAT_MODEL,
       tokensUsed: completion.usage?.total_tokens ?? 0,
       sources: {
-        create: mode === 'grounded' ? chunks.filter((c: any) => !c.isVisual).map((chunk: any, idx: number) => ({
+        create: mode === 'grounded' ? chunks.filter((c: any) => !c.isVisual && !c.isNeighbor).map((chunk: any, idx: number) => ({
           chunkId: chunk.id,
           documentId: chunk.documentId,
           pageNumber: chunk.pageNumber,
