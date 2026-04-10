@@ -139,7 +139,7 @@ CONTENT RULES (Grounded Intelligence):
 1. LITERAL PRIORITY: If a direct answer exists in the CONTEXT DOCUMENTS, provide it as the primary response.
 2. SYNTHETIC ANALYSIS: When no single chunk has a complete answer, weave information from multiple chunks — but every woven fact must still carry its [Source N] citation.
 3. GROUNDED REASONING: You may use logic to connect facts across sources, but every factual input to that reasoning must be cited.
-4. VISUALS: Describe context-provided images accurately with citations.
+4. VISUALS: When [Visual Evidence from Page X] entries appear in your context, those images are AUTOMATICALLY DISPLAYED to the user in the chat interface as actual photos/figures. DO NOT say "I cannot provide a photo" or "I cannot show an image" — the image IS already being shown. Instead write "Here is an image showing..." or "As shown in the figure above..." and briefly describe what it depicts, with the relevant [Source N] citation.
 5. ZERO OUTSIDE KNOWLEDGE: Do not add ANY facts, numbers, names, properties, or descriptions not present in the sources. If the sources don't mention it, you don't mention it.
 6. REFUSAL: If the context is entirely irrelevant, trigger the [UNGROUNDED] protocol.
 `;
@@ -160,10 +160,149 @@ export interface ChatMessage {
 /**
  * Lightweight vector search for voice mode — returns relevant document chunks without LLM processing
  */
-export async function searchKnowledge(queryText: string): Promise<{ results: { title: string; pageNumber: number; text: string; score: number }[] }> {
+export async function searchKnowledge(queryText: string, fast = false): Promise<{ results: { title: string; pageNumber: number; text: string; score: number }[]; images: { id: string; url: string; description: string; pageNumber: number }[] }> {
   const openai = getOpenAI();
   const env = getEnv();
   const prisma = getPrisma();
+
+  // ── Fast path (voice mode): skip expansion + reranking, but keep keyword search ──
+  if (fast) {
+    // Query expansion: same as normal path — rewrite the noisy voice query into focused search terms
+    const expansionPromise = openai.chat.completions.create({
+      model: env.OPENAI_CHAT_MODEL_MINI,
+      messages: [
+        { role: 'system', content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.' },
+        { role: 'user', content: queryText },
+      ],
+      temperature: 0,
+    });
+    const expansionResult = await expansionPromise;
+    const expandedQueryFast = expansionResult.choices[0].message.content?.trim() || queryText;
+    getLogger().debug({ original: queryText, expanded: expandedQueryFast }, 'fast path: query expanded');
+
+    const stopWords = new Set(['the','and','for','are','but','not','you','all','can','her','was','one','our','out','has','had','how','its','may','who','did','get','let','say','she','too','use','what','when','where','which','why','with','this','that','from','they','been','have','will','each','make','like','just','over','such','take','than','them','very','some','into','most','other','about','after','would','these','could','their','there','should','between','before','tell','does','know']);
+    const keywords = [...new Set(expandedQueryFast.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w)))];
+
+    // Run embedding + keyword search in parallel (use expanded query for embedding too)
+    const embeddingPromise = openai.embeddings.create({
+      model: env.OPENAI_EMBEDDING_MODEL,
+      input: expandedQueryFast,
+    });
+
+    const keywordPromise = keywords.length >= 1
+      ? prisma.documentChunk.findMany({
+          where: {
+            AND: [
+              { chunkIndex: { lt: 999 } },
+              ...(keywords.length >= 2
+                ? keywords.slice(0, 4).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } }))
+                : [{ OR: keywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })) }]),
+            ],
+          },
+          include: { document: { select: { title: true } } },
+          take: 15,
+        })
+      : Promise.resolve([]);
+
+    const [embeddingResponse, keywordChunks] = await Promise.all([embeddingPromise, keywordPromise]);
+    const queryVector = embeddingResponse.data[0].embedding;
+    const vectorStr = `[${queryVector.join(',')}]`;
+    type VectorRow = { id: string; document_id: string; content: string; page_number: number; similarity: number };
+    const vectorRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
+      SELECT dc.id, dc.document_id, dc.content, dc.page_number,
+             1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
+      FROM document_chunks dc
+      WHERE dc.embedding IS NOT NULL AND dc.chunk_index < 999
+      ORDER BY dc.embedding <=> '${vectorStr}'::vector
+      LIMIT 60
+    `);
+
+    // Merge: dedup vector + keyword results
+    const seenIds = new Set<string>();
+    const docIds = [...new Set([...vectorRows.map((r: VectorRow) => r.document_id), ...keywordChunks.map(c => c.documentId)])];
+    const docTitles = await prisma.document.findMany({
+      where: { id: { in: docIds } },
+      select: { id: true, title: true },
+    });
+    const titleMap = new Map(docTitles.map(d => [d.id, d.title]));
+
+    // Include documentId internally so image lookup can use exact (doc, page) pairs
+    const vectorMapped = vectorRows.map((row: VectorRow) => ({ title: titleMap.get(row.document_id) ?? 'Unknown', pageNumber: row.page_number, text: row.content, score: row.similarity, documentId: row.document_id }));
+
+    // Keyword results that are NOT in vector results
+    const vectorIdSet = new Set(vectorRows.map((r: VectorRow) => r.id));
+    const keywordOnly = keywordChunks
+      .filter(c => !vectorIdSet.has(c.id))
+      .map(chunk => {
+        const matchCount = keywords.filter(kw => chunk.content.toLowerCase().includes(kw)).length;
+        return { title: chunk.document.title, pageNumber: chunk.pageNumber, text: chunk.content, score: 0.3 + (matchCount / keywords.length) * 0.2, documentId: chunk.documentId };
+      });
+
+    const allMerged = [...vectorMapped, ...keywordOnly];
+
+    // Rerank with Cohere (same as normal path) to surface truly relevant chunks
+    const reranked = await rerankChunks(expandedQueryFast, allMerged, 10);
+    const final = reranked.slice(0, 8);
+
+    // ── Image selection: same logic as normal Q&A path ──
+    const VISUAL_KEYWORDS_FAST = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+shows?|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms|bowl|glass\s+bowl|paste)\b/i;
+    const VISUAL_BLOCKLIST_FAST = /\b(table of contents|bibliography|references|acknowledgment|copyright|title page)\b/i;
+
+    // 1) Visual-chunk embedding search (chunk_index >= 999, similarity > 0.32) — same as normal path
+    const visualRowsFast = await prisma.$queryRawUnsafe<{ id: string; document_id: string; content: string; page_number: number; similarity: number }[]>(`
+      SELECT dc.id, dc.document_id, dc.content, dc.page_number,
+             1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
+      FROM document_chunks dc
+      WHERE dc.embedding IS NOT NULL
+        AND dc.chunk_index >= 999
+        AND 1 - (dc.embedding <=> '${vectorStr}'::vector) > 0.32
+      ORDER BY dc.embedding <=> '${vectorStr}'::vector
+      LIMIT 5
+    `);
+
+    // 2) Fetch images for visual-chunk page matches
+    const visualPagePairs = visualRowsFast.map(r => ({ documentId: r.document_id, pageNumber: r.page_number }));
+    const visualChunkImages = visualPagePairs.length > 0
+      ? await prisma.documentImage.findMany({
+          where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+          select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true },
+        })
+      : [];
+
+    // 3) Filter visual-chunk images with keywords + blocklist
+    const filteredVisualChunkImages = visualChunkImages.filter(img => {
+      const desc = img.description ?? '';
+      return VISUAL_KEYWORDS_FAST.test(desc) && !VISUAL_BLOCKLIST_FAST.test(desc);
+    });
+
+    // 4) Secondary: fetch images on pages of top 5 TEXT results (same as normal path)
+    const textPagePairs = final.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber }));
+    const alreadyFoundKeys = new Set(filteredVisualChunkImages.map(img => `${img.documentId}:${img.pageNumber}`));
+    const missingTextPairs = textPagePairs.filter(p => !alreadyFoundKeys.has(`${p.documentId}:${p.pageNumber}`));
+    const textPageImages = missingTextPairs.length > 0
+      ? await prisma.documentImage.findMany({
+          where: { OR: missingTextPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+          select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true },
+        })
+      : [];
+    const filteredTextPageImages = textPageImages.filter(img => {
+      const desc = img.description ?? '';
+      return VISUAL_KEYWORDS_FAST.test(desc) && !VISUAL_BLOCKLIST_FAST.test(desc);
+    });
+
+    // 5) Priority merge: text-page images first (relevance validated by text ranking), then visual-chunk images
+    const allFastImages = [...filteredTextPageImages, ...filteredVisualChunkImages].slice(0, 3);
+
+    return {
+      results: final.map(({ documentId: _docId, rerankScore, ...r }) => ({ ...r, score: rerankScore })),
+      images: allFastImages.map(img => ({
+        id: img.id,
+        url: img.filePath,
+        description: img.description || '',
+        pageNumber: img.pageNumber,
+      })),
+    };
+  }
 
   // Query expansion: rewrite the raw voice query into a better search query
   const expansionResponse = await openai.chat.completions.create({
@@ -295,7 +434,175 @@ export async function searchKnowledge(queryText: string): Promise<{ results: { t
   // Rerank: use GPT-4o-mini to pick the most relevant chunks
   const reranked = await rerankChunks(queryText, results, 8);
 
-  return { results: reranked };
+  return { results: reranked, images: [] };
+}
+
+/**
+ * Voice-optimised ask: fast search (2-3s) + quick GPT-mini answer synthesis (3-5s).
+ * Returns the same shape as askQuestion but without DB persistence, chitchat detection,
+ * query condensing, or parent-child retrieval — keeping latency under ~8s for Gemini Live.
+ */
+export async function voiceAsk(
+  queryText: string,
+  language: string = 'en'
+): Promise<{ answerText: string; images: { id: string; url: string; description: string; pageNumber: number }[] }> {
+  const openai = getOpenAI();
+  const env = getEnv();
+  const prisma = getPrisma();
+  const t0 = Date.now();
+
+  const langMap: Record<string, string> = { 'ar': 'Arabic', 'fr': 'French', 'en': 'English' };
+  const targetLanguage = langMap[language] || 'English';
+
+  // ── Step 1: Embed original query directly (skip expansion — saves ~4s) ──
+  const embeddingResponse = await openai.embeddings.create({
+    model: env.OPENAI_EMBEDDING_MODEL,
+    input: queryText,
+  });
+  const queryVector = embeddingResponse.data[0].embedding;
+  const vectorStr = `[${queryVector.join(',')}]`;
+  getLogger().debug({ ms: Date.now() - t0 }, 'voiceAsk: embedding done');
+
+  // ── Step 2: Vector + keyword + visual search in parallel ──
+  const stopWords = new Set(['the','and','for','are','but','not','you','all','can','her','was','one','our','out','has','had','how','its','may','who','did','get','let','say','she','too','use','what','when','where','which','why','with','this','that','from','they','been','have','will','each','make','like','just','over','such','take','than','them','very','some','into','most','other','about','after','would','these','could','their','there','should','between','before','tell','does','know']);
+  const keywords = [...new Set(queryText.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w)))];
+
+  type VectorRow = { id: string; document_id: string; content: string; page_number: number; chunk_index: number; similarity: number };
+  const vectorPromise = prisma.$queryRawUnsafe<VectorRow[]>(`
+    SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
+           1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
+    FROM document_chunks dc
+    WHERE dc.embedding IS NOT NULL AND dc.chunk_index < 999
+    ORDER BY dc.embedding <=> '${vectorStr}'::vector
+    LIMIT 25
+  `);
+
+  const keywordPromise = keywords.length >= 2
+    ? prisma.documentChunk.findMany({
+        where: { AND: [{ chunkIndex: { lt: 999 } }, ...keywords.slice(0, 3).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } }))] },
+        select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
+        take: 10,
+      })
+    : Promise.resolve([]);
+
+  const visualPromise = prisma.$queryRawUnsafe<VectorRow[]>(`
+    SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
+           1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
+    FROM document_chunks dc
+    WHERE dc.embedding IS NOT NULL AND dc.chunk_index >= 999
+      AND 1 - (dc.embedding <=> '${vectorStr}'::vector) > 0.32
+    ORDER BY dc.embedding <=> '${vectorStr}'::vector
+    LIMIT 5
+  `);
+
+  const [vectorRows, keywordChunks, visualRows] = await Promise.all([vectorPromise, keywordPromise, visualPromise]);
+  getLogger().debug({ ms: Date.now() - t0, vectors: vectorRows.length, keywords: keywordChunks.length, visuals: visualRows.length }, 'voiceAsk: search done');
+
+  // ── Step 3: Merge + dedupe then Cohere rerank (small set = fast) ──
+  const seenIds = new Set<string>();
+  interface MergedChunk { id: string; documentId: string; text: string; pageNumber: number; chunkIndex: number; score: number }
+  const allMerged: MergedChunk[] = [];
+  for (const row of vectorRows) {
+    if (!seenIds.has(row.id)) { seenIds.add(row.id); allMerged.push({ id: row.id, documentId: row.document_id, text: row.content, pageNumber: row.page_number, chunkIndex: row.chunk_index, score: row.similarity }); }
+  }
+  for (const c of keywordChunks) {
+    if (!seenIds.has(c.id)) { seenIds.add(c.id); allMerged.push({ id: c.id, documentId: c.documentId, text: c.content, pageNumber: c.pageNumber, chunkIndex: c.chunkIndex, score: 0.35 }); }
+  }
+
+  const reranked = await rerankChunks(queryText, allMerged, 8);
+  getLogger().debug({ ms: Date.now() - t0, rerankedCount: reranked.length }, 'voiceAsk: rerank done');
+
+  // Fetch doc metadata (same format as askQuestion)
+  const docIds = [...new Set([...reranked.map(r => r.documentId), ...visualRows.map(r => r.document_id)])];
+  const docList = await prisma.document.findMany({ where: { id: { in: docIds } }, select: { id: true, title: true, originalFilename: true } });
+  const docMap = new Map(docList.map(d => [d.id, d]));
+
+  // ── Step 4: Parent-child neighbor chunks (same as askQuestion) ──
+  const alreadyIncluded = new Set(reranked.map(c => c.id));
+  const top5 = reranked.slice(0, 5);
+  const neighborChunks = top5.length > 0 ? await prisma.documentChunk.findMany({
+    where: {
+      AND: [
+        { chunkIndex: { lt: 999 } },
+        { OR: top5.flatMap(c => [
+            { documentId: c.documentId, chunkIndex: c.chunkIndex - 1 },
+            { documentId: c.documentId, chunkIndex: c.chunkIndex + 1 },
+          ]),
+        },
+      ],
+    },
+    select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
+  }) : [];
+
+  // ── Step 5: Image retrieval + answer generation in parallel ──
+  const VISUAL_KW = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+shows?|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms|bowl|glass\s+bowl|paste)\b/i;
+  const VISUAL_BL = /\b(table of contents|bibliography|references|acknowledgment|copyright|title page)\b/i;
+
+  const imagePromise = (async () => {
+    const visualPagePairs = visualRows.map(r => ({ documentId: r.document_id, pageNumber: r.page_number }));
+    const vcImages = visualPagePairs.length > 0
+      ? await prisma.documentImage.findMany({ where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true } })
+      : [];
+    const filteredVc = vcImages.filter(img => VISUAL_KW.test(img.description ?? '') && !VISUAL_BL.test(img.description ?? ''));
+
+    const textPairs = reranked.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber }));
+    const vcKeys = new Set(filteredVc.map(img => `${img.documentId}:${img.pageNumber}`));
+    const missingPairs = textPairs.filter(p => !vcKeys.has(`${p.documentId}:${p.pageNumber}`));
+    const textImgs = missingPairs.length > 0
+      ? await prisma.documentImage.findMany({ where: { OR: missingPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true } })
+      : [];
+    const filteredText = textImgs.filter(img => VISUAL_KW.test(img.description ?? '') && !VISUAL_BL.test(img.description ?? ''));
+
+    // Priority: text-page images first (relevance proven by text reranking), then visual-chunk images
+    return [...filteredText, ...filteredVc.filter(img => !filteredText.some(t => t.documentId === img.documentId && t.pageNumber === img.pageNumber))].slice(0, 3).map(img => ({
+      id: img.id, url: img.filePath, description: img.description || '', pageNumber: img.pageNumber, documentId: img.documentId,
+    }));
+  })();
+
+  // Resolve images first so we can include visual evidence in the LLM context
+  const images = await imagePromise;
+
+  // ── Build context in the SAME format as askQuestion ──
+  let instructions = "CONTEXT DOCUMENTS (Including Visual Evidence descriptions):\n\n";
+  let sourceIdx = 1;
+  for (const chunk of reranked) {
+    const doc = docMap.get(chunk.documentId);
+    instructions += `[Source ${sourceIdx}] Filename: ${doc?.originalFilename ?? doc?.title ?? 'Unknown'} | Page: ${chunk.pageNumber}\n`;
+    instructions += `${chunk.text}\n\n`;
+    sourceIdx++;
+  }
+  // Add neighbor chunks as context
+  for (const n of neighborChunks) {
+    if (!alreadyIncluded.has(n.id)) {
+      const doc = docMap.get(n.documentId);
+      instructions += `[Context ${sourceIdx}] Filename: ${doc?.originalFilename ?? doc?.title ?? 'Unknown'} | Page: ${n.pageNumber}\n`;
+      instructions += `${n.content}\n\n`;
+      sourceIdx++;
+    }
+  }
+  // Add visual evidence descriptions (same as askQuestion)
+  for (const img of images) {
+    instructions += `[Visual Evidence from Page ${img.pageNumber}]: ${img.description}\n\n`;
+  }
+
+  // Use the SAME system prompt as askQuestion (SYSTEM_PROMPT + language instruction)
+  const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
+
+  const answerResp = await openai.chat.completions.create({
+    model: env.OPENAI_CHAT_MODEL_MINI,
+    messages: [
+      { role: 'system', content: finalSystemPrompt },
+      { role: 'user', content: instructions + "USER QUESTION: " + queryText },
+    ],
+    temperature: 0,
+  });
+
+  let answerText = answerResp.choices[0].message.content || '';
+  // Clean citation markers (same as askQuestion)
+  answerText = answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
+  getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length }, 'voiceAsk: complete');
+
+  return { answerText, images };
 }
 
 export async function askQuestion(
@@ -319,6 +626,7 @@ export async function askQuestion(
 
 
   // 1. Create Question Record
+  const t0 = Date.now();
   const question = await prisma.question.create({
     data: { userId, queryText },
   });
@@ -340,6 +648,7 @@ export async function askQuestion(
     const result = classification.choices[0].message.content?.trim().toUpperCase();
     isChitChat = result === 'CHIT_CHAT' || result === '"CHIT_CHAT"';
   }
+  getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: chitchat classification');
 
   // 1.5 Determine Brain Power
   // Complex keywords in English and Arabic that trigger the "Heavy" brain
@@ -392,6 +701,7 @@ export async function askQuestion(
     });
     queryVector = embeddingResponse.data[0].embedding;
   }
+  getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after embedding');
 
   // 6. Query pgvector (Only if grounded AND not chit-chat)
   let chunks: any[] = [];
@@ -489,21 +799,22 @@ export async function askQuestion(
     // Rerank text chunks for better relevance
     const textChunksForRerank = textChunks.map(c => ({ ...c, text: c.content }));
     const rerankedTextChunks = await rerankChunks(embeddingQuery, textChunksForRerank, 10);
+    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after reranking');
 
     chunks = rerankedTextChunks;
 
     // ── Parent-child retrieval ──
-    // For each top-ranked chunk, fetch the immediately adjacent chunks (±1 by chunkIndex)
-    // from the same document. These neighbors are injected into the LLM context so it has a
-    // fuller picture, but they are NOT saved as sources or shown in the UI.
+    // For the top 5 ranked chunks, fetch immediately adjacent chunks (±1 by chunkIndex).
+    // These neighbors provide fuller context but are NOT saved as sources.
     if (rerankedTextChunks.length > 0) {
       const alreadyIncluded = new Set(rerankedTextChunks.map(c => c.id));
+      const top5 = rerankedTextChunks.slice(0, 5);
       const neighborChunks = await prisma.documentChunk.findMany({
         where: {
           AND: [
             { chunkIndex: { lt: 999 } },
             {
-              OR: rerankedTextChunks.flatMap(c => [
+              OR: top5.flatMap(c => [
                 { documentId: c.documentId, chunkIndex: c.chunkIndex - 1 },
                 { documentId: c.documentId, chunkIndex: c.chunkIndex + 1 },
               ]),
@@ -530,25 +841,52 @@ export async function askQuestion(
 
     // Only show images that are truly visual (charts, tables, maps, figures, photos etc.)
     // — not plain text pages that happen to have an image record.
-    const VISUAL_KEYWORDS = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+show|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms)\b/i;
+    const VISUAL_KEYWORDS = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+shows?|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms|bowl|glass\s+bowl|paste)\b/i;
     const VISUAL_BLOCKLIST = /\b(table of contents|bibliography|references|acknowledgment|copyright|title page)\b/i;
     let visualHits = visualImages.filter((img: any) => {
       const desc = img.description ?? '';
       return VISUAL_KEYWORDS.test(desc) && !VISUAL_BLOCKLIST.test(desc);
     });
 
-    // Rerank images by description relevance — keep only the top 3 truly relevant ones
-    if (visualHits.length > 3) {
-      const imgForRerank = visualHits.map((img: any) => ({ ...img, text: img.description ?? '' }));
-      const rerankedImgs = await rerankChunks(embeddingQuery, imgForRerank, 3);
-      // Only keep images scored above 0.15 by the reranker
-      visualHits = rerankedImgs.filter((img: any) => img.rerankScore > 0.15);
+    getLogger().debug({ visualBefore: visualImages.length, visualAfter: visualHits.length }, 'visual image filtering');
+    const initialVisualHits = [...visualHits]; // snapshot before merging text-page images
+
+    // ── Secondary: also find images on pages of top-ranked TEXT chunks ──
+    // Visual-chunk embedding search fails when image descriptions are purely visual
+    // (e.g. "brown paste in a bowl") while the user asks about a topic ("tagellah dish").
+    // The text chunks DO rank high for the topic, so fetch images on those pages too.
+    const textChunkPagePairs = rerankedTextChunks.slice(0, 5).map((c: any) => ({
+      documentId: c.documentId, pageNumber: c.pageNumber,
+    }));
+    const alreadyFoundPageKeys = new Set(visualHits.map((img: any) => `${img.documentId}:${img.pageNumber}`));
+    const missingPairs = textChunkPagePairs.filter(
+      (p: any) => !alreadyFoundPageKeys.has(`${p.documentId}:${p.pageNumber}`)
+    );
+    if (missingPairs.length > 0) {
+      const textPageImages = await prisma.documentImage.findMany({
+        where: { OR: missingPairs.map((p: any) => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+        include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
+      });
+      const extraVisual = textPageImages.filter((img: any) => {
+        const desc = img.description ?? '';
+        return VISUAL_KEYWORDS.test(desc) && !VISUAL_BLOCKLIST.test(desc);
+      });
+      if (extraVisual.length > 0) {
+        getLogger().debug({ extraVisualFromTextPages: extraVisual.length }, 'found images on text-chunk pages');
+        visualHits.push(...extraVisual);
+      }
     }
 
-    getLogger().debug({ visualBefore: visualImages.length, visualAfter: visualHits.length }, 'visual image filtering');
+    // Cap to 3 images, prioritizing text-page images (relevance already validated by text chunk reranking)
+    // then fill remaining slots with visual-chunk-based images
+    const initialIds = new Set(initialVisualHits.map((img: any) => img.id));
+    const textPageImgs = visualHits.filter((img: any) => !initialIds.has(img.id));
+    const visualChunkImgs = visualHits.filter((img: any) => initialIds.has(img.id));
+    visualHits = [...textPageImgs, ...visualChunkImgs].slice(0, 3);
+
     (chunks as any).visualImages = visualHits;
 
-    // Add visual descriptions to the context if they were direct hits or highly relevant
+    // Add visual descriptions to the LLM context so it knows images are being shown
     visualHits.forEach((img: any) => {
       chunks.push({
         id: `vis_${img.id}`,
@@ -556,7 +894,7 @@ export async function askQuestion(
         pageNumber: img.pageNumber,
         documentId: img.documentId,
         document: img.document,
-        isVisual: true
+        isVisual: true,
       });
     });
   }
@@ -593,8 +931,8 @@ export async function askQuestion(
   let answerText: string;
   let totalTokens = 0;
 
-  if (mode === 'grounded' && !isChitChat && chunks.length > 0) {
-    // ── 2-Step Extract-then-Answer (anti-hallucination) ──
+  if (mode === 'grounded' && !isChitChat && chunks.length > 0 && isComplex) {
+    // ── 2-Step Extract-then-Answer (anti-hallucination) for COMPLEX queries ──
     // Step 1: Extract relevant passages from the sources (cheap model, fast)
     const extractResp = await openai.chat.completions.create({
       model: env.OPENAI_CHAT_MODEL_MINI,
@@ -620,6 +958,7 @@ Rules:
     totalTokens += extractResp.usage?.total_tokens ?? 0;
     const extractedQuotes = extractResp.choices[0].message.content || '';
     getLogger().info({ standaloneQuery, extractLength: extractedQuotes.length, extractPreview: extractedQuotes.substring(0, 300) }, 'extract-then-answer: step 1 result');
+    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after extract step');
 
     // Step 2: Answer using ONLY the extracted quotes (main model, no access to training data as "confirmation")
     const answerResp = await openai.chat.completions.create({
@@ -636,6 +975,23 @@ Rules:
     });
     totalTokens += answerResp.usage?.total_tokens ?? 0;
     answerText = answerResp.choices[0].message.content || 'No response generated.';
+    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after answer step (2-step)');
+  } else if (mode === 'grounded' && !isChitChat && chunks.length > 0) {
+    // ── Direct single-step answer for SIMPLE queries (skip extract for speed) ──
+    // The system prompt already enforces "only use provided context" for anti-hallucination.
+    // Cohere reranking ensures the top chunks are highly relevant.
+    const answerResp = await openai.chat.completions.create({
+      model: selectedModel,
+      messages: [
+        { role: 'system', content: finalSystemPrompt },
+        ...historyMessages,
+        { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery }
+      ],
+      temperature: 0,
+    });
+    totalTokens += answerResp.usage?.total_tokens ?? 0;
+    answerText = answerResp.choices[0].message.content || 'No response generated.';
+    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after direct answer step (extract skipped)');
   } else {
     // Non-grounded / chit-chat / general mode — single pass
     const completion = await openai.chat.completions.create({

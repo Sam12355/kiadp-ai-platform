@@ -6,7 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 import Portal from '../../components/Portal';
-import { VoiceMode } from '../../components/VoiceMode';
+import { VoiceMode, VoiceModeHandle } from '../../components/VoiceMode';
 
 interface Source {
   id: string;
@@ -60,6 +60,70 @@ export default function KnowledgeAssistant() {
   const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
+  const [isMuted, setIsMuted] = useState(false);
+  const [pendingVoiceText, setPendingVoiceText] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isVoiceModeOpen) { setIsMuted(false); setPendingVoiceText(null); }
+  }, [isVoiceModeOpen]);
+
+  const voiceModeRef = useRef<VoiceModeHandle>(null);
+  // Tracks the session created by voice (so transcripts go somewhere even without URL session)
+  const voiceSessionIdRef = useRef<string | null>(null);
+  const lastVoiceUserMsgIdRef = useRef<string | null>(null);
+  const lastVoiceAssistantMsgIdRef = useRef<string | null>(null);
+  useEffect(() => { if (!isVoiceModeOpen) { voiceSessionIdRef.current = null; lastVoiceUserMsgIdRef.current = null; lastVoiceAssistantMsgIdRef.current = null; } }, [isVoiceModeOpen]);
+
+  const handleTranscript = (role: 'user' | 'assistant', text: string) => {
+    if (!text.trim()) return;
+    // New user turn: commit the previous AI bubble (reset its live-update ID)
+    if (role === 'user') lastVoiceAssistantMsgIdRef.current = null;
+    // Assistant transcript: commit the previous live user message
+    if (role === 'assistant') lastVoiceUserMsgIdRef.current = null;
+    const targetId = urlSessionId || voiceSessionIdRef.current;
+    if (!targetId) {
+      // No active session — create one for this voice conversation
+      const newId = `voice-${Date.now()}`;
+      voiceSessionIdRef.current = newId;
+      const msgId = `vm-${Date.now()}`;
+      if (role === 'user') lastVoiceUserMsgIdRef.current = msgId;
+      if (role === 'assistant') lastVoiceAssistantMsgIdRef.current = msgId;
+      const firstMsg: Message = { id: msgId, role, content: text };
+      setSessions(prev => [{ id: newId, title: role === 'user' ? text.substring(0, 100) : 'Voice session', messages: [firstMsg], updatedAt: Date.now() }, ...prev]);
+      navigate(`/knowledge/chat/${newId}`, { replace: true });
+      return;
+    }
+    // User: update existing live message in-place (so speech appears live), or append if new turn
+    if (role === 'user' && lastVoiceUserMsgIdRef.current) {
+      const liveId = lastVoiceUserMsgIdRef.current;
+      setSessions(prev => prev.map(s => {
+        if (s.id !== targetId) return s;
+        const exists = s.messages.some(m => m.id === liveId);
+        if (!exists) return s;
+        return { ...s, messages: s.messages.map(m => m.id === liveId ? { ...m, content: text } : m), updatedAt: Date.now() };
+      }));
+      return;
+    }
+    // Assistant: update existing live bubble in-place (streaming transcript)
+    if (role === 'assistant' && lastVoiceAssistantMsgIdRef.current) {
+      const liveId = lastVoiceAssistantMsgIdRef.current;
+      setSessions(prev => prev.map(s => {
+        if (s.id !== targetId) return s;
+        const exists = s.messages.some(m => m.id === liveId);
+        if (!exists) return s;
+        return { ...s, messages: s.messages.map(m => m.id === liveId ? { ...m, content: text } : m), updatedAt: Date.now() };
+      }));
+      return;
+    }
+    const msgId = `vm-${Date.now()}`;
+    if (role === 'user') lastVoiceUserMsgIdRef.current = msgId;
+    if (role === 'assistant') lastVoiceAssistantMsgIdRef.current = msgId;
+    setSessions(prev => prev.map(s => {
+      if (s.id !== targetId) return s;
+      return { ...s, messages: [...s.messages, { id: msgId, role, content: text }], updatedAt: Date.now() };
+    }));
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainInputRef = useRef<HTMLInputElement>(null);
@@ -195,6 +259,14 @@ export default function KnowledgeAssistant() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
+
+    // When voice session is active, send text to the voice AI instead of the REST endpoint
+    if (isVoiceModeOpen) {
+      setPendingVoiceText(query);
+      setQuery('');
+      return;
+    }
+
     const currentQ = query;
     setQuery('');
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: currentQ };
@@ -493,46 +565,177 @@ export default function KnowledgeAssistant() {
             <form onSubmit={handleSubmit} className="glow-prompt-bar">
               <div className="glow-border-layer" />
               <div className="inner-bar px-4">
-                <span className="text-green-500/40 text-sm">✦</span>
-                <textarea 
-                  ref={mainInputRef as any} 
-                  value={query} 
-                  onChange={(e) => setQuery(e.target.value)} 
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSubmit(e as any);
-                    }
-                  }}
-                  placeholder={t.askQuestion} 
-                  disabled={loading} 
-                  rows={query.split('\n').length > 5 ? 5 : Math.max(1, query.split('\n').length)}
-                  className="flex-1 bg-transparent border-none outline-none text-[15px] p-3 resize-none max-h-48" 
-                />
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button 
-                    type="button"
-                    onClick={() => setIsVoiceModeOpen(true)}
-                    className="p-2.5 rounded-xl text-green-500/60 hover:text-green-500 hover:bg-green-500/5 transition-all"
-                    title="Live Voice Mode"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 18.5V23M8 23h8"/>
-                    </svg>
-                  </button>
-                  <button disabled={!query.trim() || loading} className="ask-ai-btn">{t.askAi}</button>
-                </div>
+                {isVoiceModeOpen ? (
+                  /* ── Voice active: status strip + live textarea ── */
+                  <div className="flex flex-col flex-1 gap-1.5 py-2">
+                    {/* Status strip */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        {voiceStatus === 'thinking' ? (
+                          // Thinking = 3 amber dots pulsing like ellipsis
+                          [0,1,2].map(i => (
+                            <div
+                              key={i}
+                              className="w-1.5 h-1.5 rounded-full bg-amber-400"
+                              style={{ animation: `pulse 0.6s ease-in-out ${i * 0.2}s infinite alternate` }}
+                            />
+                          ))
+                        ) : (
+                          [0, 1, 2, 3].map(i => (
+                            <div
+                              key={i}
+                              className={`rounded-full transition-all duration-300 ${
+                                isMuted
+                                  ? 'w-1.5 bg-yellow-400/60'
+                                  : voiceStatus === 'speaking'
+                                  ? 'w-1.5 bg-emerald-400'
+                                  : voiceStatus === 'connecting'
+                                  ? 'w-1.5 bg-white/20'
+                                  : 'w-1.5 bg-green-400'
+                              }`}
+                              style={{
+                                height: voiceStatus === 'speaking' ? `${8 + Math.sin(i * 1.2) * 6}px` : '6px',
+                                animation: !isMuted && (voiceStatus === 'listening' || voiceStatus === 'speaking')
+                                  ? `pulse 0.8s ease-in-out ${i * 0.15}s infinite alternate`
+                                  : 'none',
+                              }}
+                            />
+                          ))
+                        )}
+                      </div>
+
+                      <span className="flex-1 text-xs font-medium text-white/50">
+                        {isMuted ? 'Muted — mic off'
+                          : voiceStatus === 'thinking' ? 'Checking knowledge base…'
+                          : voiceStatus === 'connecting' ? 'Connecting…'
+                          : voiceStatus === 'listening' ? 'Listening…'
+                          : voiceStatus === 'speaking' ? 'Speaking…'
+                          : 'Voice ready'}
+                      </span>
+
+                      {/* Mute / Unmute toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setIsMuted(m => !m)}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                          isMuted
+                            ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20'
+                            : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70 hover:bg-white/10'
+                        }`}
+                        title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+                      >
+                        {isMuted ? (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <line x1="2" y1="2" x2="22" y2="22" />
+                            <path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2M5 10v2a7 7 0 0 0 12 4.93M15 9.34V5a3 3 0 0 0-5.68-1.33M9 9v3a3 3 0 0 0 5.12 2.12" />
+                            <line x1="12" y1="19" x2="12" y2="23" />
+                            <line x1="8" y1="23" x2="16" y2="23" />
+                          </svg>
+                        )}
+                        {isMuted ? 'Unmute' : 'Mute'}
+                      </button>
+
+                      {/* End voice session */}
+                      <button
+                        type="button"
+                        onClick={() => voiceModeRef.current?.stop()}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all text-xs font-semibold"
+                        title="End voice session"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                        End
+                      </button>
+                    </div>
+
+                    {/* Typing area — sends typed text to the voice AI as context */}
+                    <div className="flex items-end gap-2">
+                      <textarea
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSubmit(e as any);
+                          }
+                        }}
+                        placeholder="Type to add context or ask a follow-up…"
+                        rows={1}
+                        className="flex-1 bg-transparent border-none outline-none text-[15px] py-1 resize-none max-h-24"
+                      />
+                      <button disabled={!query.trim()} className="ask-ai-btn">Send</button>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Normal text input ── */
+                  <>
+                    <span className="text-green-500/40 text-sm">✦</span>
+                    <textarea
+                      ref={mainInputRef as any}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSubmit(e as any);
+                        }
+                      }}
+                      placeholder={t.askQuestion}
+                      disabled={loading}
+                      rows={query.split('\n').length > 5 ? 5 : Math.max(1, query.split('\n').length)}
+                      className="flex-1 bg-transparent border-none outline-none text-[15px] p-3 resize-none max-h-48"
+                    />
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setIsVoiceModeOpen(true)}
+                        className="p-2.5 rounded-xl text-green-500/60 hover:text-green-500 hover:bg-green-500/5 transition-all"
+                        title="Live Voice Mode"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 18.5V23M8 23h8"/>
+                        </svg>
+                      </button>
+                      <button disabled={!query.trim() || loading} className="ask-ai-btn">{t.askAi}</button>
+                    </div>
+                  </>
+                )}
               </div>
             </form>
           </div>
         </div>
 
-        <VoiceMode 
-          isOpen={isVoiceModeOpen} 
-          onClose={() => setIsVoiceModeOpen(false)} 
-          apiKey={import.meta.env.VITE_GEMINI_API_KEY || ""} 
+        <VoiceMode
+          ref={voiceModeRef}
+          isOpen={isVoiceModeOpen}
+          onClose={() => setIsVoiceModeOpen(false)}
+          onStatusChange={setVoiceStatus}
+          apiKey={import.meta.env.VITE_GEMINI_API_KEY || ""}
+          language={lang}
           chatMessages={messages}
+          isMuted={isMuted}
+          pendingClientText={pendingVoiceText}
+          onClientTextSent={() => setPendingVoiceText(null)}
+          onTranscript={handleTranscript}
+          onImages={(imgs) => {
+            // Attach images to the current live assistant voice bubble
+            const targetId = urlSessionId || voiceSessionIdRef.current;
+            const liveId = lastVoiceAssistantMsgIdRef.current;
+            if (!targetId || !liveId) return;
+            setSessions(prev => prev.map(s => {
+              if (s.id !== targetId) return s;
+              return { ...s, messages: s.messages.map(m =>
+                m.id === liveId ? { ...m, images: imgs } : m
+              ), updatedAt: Date.now() };
+            }));
+          }}
         />
 
         {/* Lightbox / Tooltips etc omitted for brevity or re-implementing if needed */}

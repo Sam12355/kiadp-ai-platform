@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ValidationError } from '../utils/errors.js';
-import { askQuestion, searchKnowledge } from '../services/qa.service.js';
+import { askQuestion, searchKnowledge, voiceAsk } from '../services/qa.service.js';
 
 const askSchema = z.object({
   question: z.string().min(1, 'Question must be provided'),
@@ -40,7 +40,27 @@ export async function search(req: Request, res: Response, next: NextFunction): P
     if (!parseResult.success) {
       throw new ValidationError('Validation failed', parseResult.error.flatten().fieldErrors);
     }
-    const result = await searchKnowledge(parseResult.data.query);
+    const fast = req.query.fast === 'true';
+    const result = await searchKnowledge(parseResult.data.query, fast);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+const voiceAskSchema = z.object({
+  query: z.string().min(1, 'Query must be provided'),
+  language: z.string().optional(),
+});
+
+export async function voiceAskHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parseResult = voiceAskSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      throw new ValidationError('Validation failed', parseResult.error.flatten().fieldErrors);
+    }
+    const { query, language } = parseResult.data;
+    const result = await voiceAsk(query, language);
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);

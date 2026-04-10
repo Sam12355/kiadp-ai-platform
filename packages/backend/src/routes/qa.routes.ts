@@ -15,5 +15,6 @@ const router: Router = Router();
  */
 router.post('/ask', authenticate, qaController.ask);
 router.post('/search', authenticate, qaController.search);
+router.post('/voice-ask', authenticate, qaController.voiceAskHandler);
 
 export default router;
