@@ -158,11 +158,16 @@ export default function DocumentsPage() {
                             {t[doc.status.toLowerCase() as keyof typeof t] || doc.status}
                           </span>
                           {(doc.status === 'PROCESSING' || doc.status === 'UPLOADED') && (
-                            <div className="w-24 h-1 bg-white/10 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_8px_var(--color-palm-500)]"
-                                style={{ width: `${doc.progress || 0}%` }}
-                              />
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_8px_var(--color-palm-500)] rounded-full"
+                                  style={{ width: `${doc.progress || 0}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] font-bold text-blue-400 tabular-nums">
+                                {doc.progress || 0}%
+                              </span>
                             </div>
                           )}
                         </div>

@@ -128,13 +128,20 @@ FORMATTING INSTRUCTIONS (CRITICAL):
 4. NO sources section is needed at the end of the text.
 5. Use — for emphasis.
 
+CITATION RULE (MANDATORY — THIS IS THE MOST IMPORTANT RULE):
+Every factual statement you write MUST end with an inline citation like [Source 1] or [Source 3]. The number must match one of the CONTEXT DOCUMENTS provided.
+- If a sentence contains a fact, a name, a number, a description, or any claim — it MUST have [Source N].
+- Headers and transition phrases ("Here is...", "Let me explain...") do NOT need citations.
+- If you cannot cite a fact from the provided sources, DO NOT write that fact at all.
+- You may combine information from multiple sources in one sentence: [Source 1][Source 4].
+
 CONTENT RULES (Grounded Intelligence):
-1. LITERAL PRIORITY: If a direct answer to the user's question exists within the CONTEXT DOCUMENTS, you MUST provide it as the primary response. Do not add outside interpretation if the document already provides a clear, direct answer.
-2. SYNTHETIC ANALYSIS: Only when a single chunk does not provide a complete answer, or when the user asks for a 'new solution' or 'invention', should you 'Connect the Dots.' In these cases, weave information from across multiple chunks into a cohesive narrative.
-3. GROUNDED REASONING: Your 'Intelligence' is only to be used as a bridge to connect context-provided facts. Use scientific principles from the documents to perform calculations or deduce solutions for new problems, ensuring every deduction is rooted in the provided context.
-4. VISUALS: Describe context-provided images accurately.
-5. NO OUTSIDE FACTS: You are still strictly forbidden from bringing in external facts, names, or data not found in the documents. Your intelligence applies to the *logic*, while your data remains locked to the *chunks*.
-6. REFUSAL: Only if the context is entirely irrelevant to the query, trigger the [UNGROUNDED] protocol.
+1. LITERAL PRIORITY: If a direct answer exists in the CONTEXT DOCUMENTS, provide it as the primary response.
+2. SYNTHETIC ANALYSIS: When no single chunk has a complete answer, weave information from multiple chunks — but every woven fact must still carry its [Source N] citation.
+3. GROUNDED REASONING: You may use logic to connect facts across sources, but every factual input to that reasoning must be cited.
+4. VISUALS: Describe context-provided images accurately with citations.
+5. ZERO OUTSIDE KNOWLEDGE: Do not add ANY facts, numbers, names, properties, or descriptions not present in the sources. If the sources don't mention it, you don't mention it.
+6. REFUSAL: If the context is entirely irrelevant, trigger the [UNGROUNDED] protocol.
 `;
 
 const GENERAL_SYSTEM_PROMPT = `
@@ -392,7 +399,7 @@ export async function askQuestion(
   if (mode === 'grounded' && !isChitChat) {
     const vectorStr = `[${queryVector.join(',')}]`;
 
-    // pgvector cosine similarity — top 30 text chunks
+    // pgvector cosine similarity — top 60 text chunks
     type VectorRow = { id: string; document_id: string; content: string; page_number: number; chunk_index: number; similarity: number };
     const vectorRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
       SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
@@ -401,28 +408,66 @@ export async function askQuestion(
       WHERE dc.embedding IS NOT NULL
         AND dc.chunk_index < 999
       ORDER BY dc.embedding <=> '${vectorStr}'::vector
-      LIMIT 30
+      LIMIT 60
     `);
 
-    // Also search for visual chunks via pgvector
+    // ── Keyword search (AND + OR, same as searchKnowledge) ──
+    const stopWords = new Set(['the','a','an','is','are','was','were','in','on','at','to','for','of','and','or','with','this','that','what','how','which','who','where','when','why','can','does','has','have','had','its','from','they','their','about']);
+    const queryWords = embeddingQuery.toLowerCase().split(/\s+/).filter((w: string) => w.length >= 3 && !stopWords.has(w));
+    const andKeywords = queryWords.slice(0, 4);
+    let keywordRows: any[] = [];
+    if (andKeywords.length >= 2) {
+      keywordRows = await prisma.documentChunk.findMany({
+        where: {
+          AND: [
+            ...andKeywords.map((kw: string) => ({ content: { contains: kw, mode: 'insensitive' as const } })),
+            { chunkIndex: { lt: 999 } },
+          ]
+        },
+        select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
+        take: 25,
+      });
+    } else if (queryWords.length >= 1) {
+      keywordRows = await prisma.documentChunk.findMany({
+        where: {
+          AND: [
+            { OR: queryWords.slice(0, 6).map((kw: string) => ({ content: { contains: kw, mode: 'insensitive' as const } })) },
+            { chunkIndex: { lt: 999 } },
+          ]
+        },
+        select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
+        take: 25,
+      });
+    }
+
+    // ── Merge vector + keyword results, dedup by id ──
+    const seenIds = new Set(vectorRows.map(r => r.id));
+    const mergedKeyword = keywordRows.filter((r: any) => !seenIds.has(r.id)).map((r: any) => ({
+      id: r.id, document_id: r.documentId, content: r.content,
+      page_number: r.pageNumber, chunk_index: r.chunkIndex, similarity: 0.3, // baseline score for keyword-only hits
+    }));
+    const allTextRows = [...vectorRows, ...mergedKeyword];
+
+    // Also search for visual chunks via pgvector — only high-similarity matches
     const visualRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
       SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
              1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
       FROM document_chunks dc
       WHERE dc.embedding IS NOT NULL
         AND dc.chunk_index >= 999
+        AND 1 - (dc.embedding <=> '${vectorStr}'::vector) > 0.32
       ORDER BY dc.embedding <=> '${vectorStr}'::vector
-      LIMIT 10
+      LIMIT 5
     `);
 
-    const allDocIds = [...new Set([...vectorRows, ...visualRows].map(r => r.document_id))];
+    const allDocIds = [...new Set([...allTextRows, ...visualRows].map(r => r.document_id))];
     const docList = await prisma.document.findMany({
       where: { id: { in: allDocIds } },
       select: { id: true, title: true, originalFilename: true, storedFilename: true },
     });
     const docMap = new Map(docList.map(d => [d.id, d]));
 
-    const textChunks = vectorRows.map(r => ({
+    const textChunks = allTextRows.map(r => ({
       id: r.id,
       documentId: r.document_id,
       content: r.content,
@@ -486,8 +531,21 @@ export async function askQuestion(
     // Only show images that are truly visual (charts, tables, maps, figures, photos etc.)
     // — not plain text pages that happen to have an image record.
     const VISUAL_KEYWORDS = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+show|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms)\b/i;
-    const visualHits = visualImages.filter((img: any) => VISUAL_KEYWORDS.test(img.description ?? ''));
+    const VISUAL_BLOCKLIST = /\b(table of contents|bibliography|references|acknowledgment|copyright|title page)\b/i;
+    let visualHits = visualImages.filter((img: any) => {
+      const desc = img.description ?? '';
+      return VISUAL_KEYWORDS.test(desc) && !VISUAL_BLOCKLIST.test(desc);
+    });
 
+    // Rerank images by description relevance — keep only the top 3 truly relevant ones
+    if (visualHits.length > 3) {
+      const imgForRerank = visualHits.map((img: any) => ({ ...img, text: img.description ?? '' }));
+      const rerankedImgs = await rerankChunks(embeddingQuery, imgForRerank, 3);
+      // Only keep images scored above 0.15 by the reranker
+      visualHits = rerankedImgs.filter((img: any) => img.rerankScore > 0.15);
+    }
+
+    getLogger().debug({ visualBefore: visualImages.length, visualAfter: visualHits.length }, 'visual image filtering');
     (chunks as any).visualImages = visualHits;
 
     // Add visual descriptions to the context if they were direct hits or highly relevant
@@ -532,17 +590,69 @@ export async function askQuestion(
   // Include history in the final answer generation too
   const historyMessages = history.map(h => ({ role: h.role, content: h.content } as const));
 
-  const completion = await openai.chat.completions.create({
-    model: selectedModel,
-    messages: [
-      { role: 'system', content: finalSystemPrompt },
-      ...historyMessages,
-      { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
-    ],
-    temperature: mode === 'grounded' ? 0 : 0.7, // 0 for exact grounding, 0.7 for general deep dives
-  });
+  let answerText: string;
+  let totalTokens = 0;
 
-  let answerText = completion.choices[0].message.content || 'No response generated.';
+  if (mode === 'grounded' && !isChitChat && chunks.length > 0) {
+    // ── 2-Step Extract-then-Answer (anti-hallucination) ──
+    // Step 1: Extract relevant passages from the sources (cheap model, fast)
+    const extractResp = await openai.chat.completions.create({
+      model: env.OPENAI_CHAT_MODEL_MINI,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a text extractor. Given SOURCE DOCUMENTS and a QUESTION, extract all passages from the sources that could help answer the question — even if they answer it only partially or indirectly.
+
+Rules:
+- Copy relevant passages as they appear in the sources. Keep the original wording.
+- Prefix each extract with its source label, e.g. [Source 3]: "passage here"
+- Be GENEROUS — include passages that are even tangentially related. It is much better to include too much than too little.
+- If the question asks about a topic made from/related to another topic, include information about BOTH the specific item AND its ingredients or related concepts.
+- If the question refers to something from conversation history, find passages related to that topic.
+- You MUST always extract at least something — even loosely related passages. Never refuse to extract.
+- Do NOT add any facts, numbers, or descriptions from your own knowledge — only extract from sources.`
+        },
+        ...historyMessages,
+        { role: 'user', content: instructions + "QUESTION: " + standaloneQuery }
+      ],
+      temperature: 0,
+    });
+    totalTokens += extractResp.usage?.total_tokens ?? 0;
+    const extractedQuotes = extractResp.choices[0].message.content || '';
+    getLogger().info({ standaloneQuery, extractLength: extractedQuotes.length, extractPreview: extractedQuotes.substring(0, 300) }, 'extract-then-answer: step 1 result');
+
+    // Step 2: Answer using ONLY the extracted quotes (main model, no access to training data as "confirmation")
+    const answerResp = await openai.chat.completions.create({
+      model: selectedModel,
+      messages: [
+        { role: 'system', content: finalSystemPrompt },
+        ...historyMessages,
+        {
+          role: 'user',
+          content: `VERIFIED EXTRACTS FROM DOCUMENTS (these are the ONLY facts you may use):\n\n${extractedQuotes}\n\nUSER QUESTION: ${standaloneQuery}`
+        }
+      ],
+      temperature: 0,
+    });
+    totalTokens += answerResp.usage?.total_tokens ?? 0;
+    answerText = answerResp.choices[0].message.content || 'No response generated.';
+  } else {
+    // Non-grounded / chit-chat / general mode — single pass
+    const completion = await openai.chat.completions.create({
+      model: selectedModel,
+      messages: [
+        { role: 'system', content: finalSystemPrompt },
+        ...historyMessages,
+        { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
+      ],
+      temperature: mode === 'grounded' ? 0 : 0.7,
+    });
+    totalTokens += completion.usage?.total_tokens ?? 0;
+    answerText = completion.choices[0].message.content || 'No response generated.';
+  }
+
+  // Clean any leftover citation markers from the answer
+  answerText = answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   let isGrounded = mode === 'grounded';
 
   if (mode === 'grounded' && answerText.includes("[UNGROUNDED]")) {
@@ -567,7 +677,7 @@ export async function askQuestion(
       answerText,
       isGrounded,
       modelUsed: env.OPENAI_CHAT_MODEL,
-      tokensUsed: completion.usage?.total_tokens ?? 0,
+      tokensUsed: totalTokens,
       sources: {
         create: mode === 'grounded' ? chunks.filter((c: any) => !c.isVisual && !c.isNeighbor).map((chunk: any, idx: number) => ({
           chunkId: chunk.id,

@@ -9,6 +9,7 @@ import { getLogger } from '../utils/logger.js';
 import { uploadToCloudinary, uploadBufferToCloudinary, configureCloudinary } from './storage.service.js';
 import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'node:crypto';
+import sharp from 'sharp';
 // ── Semantic chunking helpers ──
 
 /** Split text into sentences at punctuation followed by whitespace + uppercase/Arabic/digit. */
@@ -182,37 +183,121 @@ export async function processDocument(documentId: string, filePath: string): Pro
       const hasKeywords = /figure|table|chart|illustration|plate|شكل|جدول|صورة|رسم|توضيح/i.test(fullPageText);
       const shouldAnalyzeVisuals = hasVisualsInOps || hasKeywords;
  
-      // [VISUAL ANALYSIS] Run if page has potential visual elements or figure keywords
+      // [VISUAL ANALYSIS] Hybrid: extract individual XObject images, fall back to full-page for vector visuals
       const dynamicImageUrl = documentUrl ? documentUrl.replace('/upload/', `/upload/pg_${pageNum}/`).replace('.pdf', '.jpg') : null;
-      
-      if (shouldAnalyzeVisuals && dynamicImageUrl && fullPageText.length > 50) {
+
+      // ── Try extracting individual Image XObjects first ──
+      const xobjectImages: { name: string; width: number; height: number; data: Uint8ClampedArray }[] = [];
+      if (hasVisualsInOps) {
+        const seenNames = new Set<string>();
+        for (let opIdx = 0; opIdx < operatorList.fnArray.length; opIdx++) {
+          if (operatorList.fnArray[opIdx] === (pdfjs as any).OPS.paintImageXObject) {
+            const imgName = operatorList.argsArray[opIdx][0];
+            if (seenNames.has(imgName)) continue;
+            seenNames.add(imgName);
+            try {
+              const imgObj = await new Promise<any>((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('timeout')), 3000);
+                page.objs.get(imgName, (obj: any) => { clearTimeout(timeout); resolve(obj); });
+              });
+              // Skip tiny images (logos, bullets, decorations)
+              if (imgObj && imgObj.width >= 150 && imgObj.height >= 150) {
+                xobjectImages.push({ name: imgName, width: imgObj.width, height: imgObj.height, data: imgObj.data });
+              }
+            } catch { /* timeout – skip */ }
+          }
+        }
+      }
+
+      if (xobjectImages.length > 0 && fullPageText.length > 50) {
+        // ── Path A: Individual XObject extraction ──
+        logger.info(`  p${pageNum}: extracting ${xobjectImages.length} individual image(s)`);
+        for (let imgIdx = 0; imgIdx < xobjectImages.length; imgIdx++) {
+          const img = xobjectImages[imgIdx];
+          let retries = 3;
+          while (retries > 0) {
+            try {
+              const channels = Math.round(img.data.length / (img.width * img.height));
+              if (channels !== 1 && channels !== 3 && channels !== 4) break; // unsupported format
+              const jpegBuffer = await sharp(Buffer.from(img.data), {
+                raw: { width: img.width, height: img.height, channels: channels as 1 | 3 | 4 }
+              }).jpeg({ quality: 85 }).toBuffer();
+
+              const imageUrl = await uploadBufferToCloudinary(
+                jpegBuffer, `kiadp/images/${documentId}`, `page_${pageNum}_img_${imgIdx + 1}.jpg`
+              );
+              const base64Image = jpegBuffer.toString('base64');
+
+              const visionResponse = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [{
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: "Describe this visual element (photo, chart, table, map, diagram, infographic). MANDATORY: If it has a label (e.g., 'Figure 5:', 'Table 1:'), transcribe that label word-for-word at the beginning. Be detailed and specific." },
+                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                  ]
+                }],
+                max_tokens: 600
+              });
+
+              const visualDescription = visionResponse.choices[0].message.content;
+              if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
+                chunks.push({
+                  pageNumber: pageNum,
+                  text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
+                  chunkIndex: 10000 + pageNum * 10 + imgIdx
+                });
+                await prisma.documentImage.create({
+                  data: {
+                    documentId,
+                    pageNumber: pageNum,
+                    filePath: imageUrl || '',
+                    description: visualDescription,
+                    altText: `Image ${imgIdx + 1} on page ${pageNum}`,
+                    width: img.width,
+                    height: img.height,
+                  }
+                });
+              }
+              break;
+            } catch (vErr: any) {
+              if (vErr.status === 429) {
+                logger.warn(`Rate limit hit on p${pageNum} img ${imgIdx + 1}, waiting 2s...`);
+                await new Promise(res => setTimeout(res, 2000));
+                retries--;
+              } else {
+                logger.warn(`Vision analysis failed for p${pageNum} img ${imgIdx + 1}: ${vErr}`);
+                break;
+              }
+            }
+          }
+          await new Promise(res => setTimeout(res, 500));
+        }
+      } else if (shouldAnalyzeVisuals && dynamicImageUrl && fullPageText.length > 50) {
+        // ── Path B: Full-page render fallback (vector charts, tables, diagrams) ──
+        logger.info(`  p${pageNum}: full-page render (vector visuals)`);
         let retries = 3;
         while (retries > 0) {
           try {
-            // 1. Fetch the rendered image from Cloudinary to get raw buffer
             const imgFetch = await fetch(dynamicImageUrl);
             if (!imgFetch.ok) throw new Error(`Failed to fetch page image: ${imgFetch.statusText}`);
             const imgBuffer = Buffer.from(await imgFetch.arrayBuffer());
             const base64Image = imgBuffer.toString('base64');
- 
-            // 2. Clearer Permanent Upload (optional)
+
             const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
- 
-            // 3. Ask OpenAI Vision using the Base64 data (Upgraded to gpt-4o for better caption extraction)
+
             const visionResponse = await openai.chat.completions.create({
               model: 'gpt-4o',
-              messages: [
-                {
-                  role: 'user',
-                  content: [
-                    { type: 'text', text: "Describe ALL visual elements on this page (photos, charts, tables, maps, diagrams). MANDATORY: If an element is labeled (e.g., 'Figure 5:', 'Table 1:'), you MUST transcribe that label word-for-word at the beginning of its description. we need to match user questions exactly." },
-                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-                  ]
-                }
-              ],
+              messages: [{
+                role: 'user',
+                content: [
+                  { type: 'text', text: "Describe ALL visual elements on this page (photos, charts, tables, maps, diagrams). MANDATORY: If an element is labeled (e.g., 'Figure 5:', 'Table 1:'), you MUST transcribe that label word-for-word at the beginning of its description. we need to match user questions exactly." },
+                  { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                ]
+              }],
               max_tokens: 600
             });
-            
+
             const visualDescription = visionResponse.choices[0].message.content;
             if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
               chunks.push({
@@ -220,7 +305,6 @@ export async function processDocument(documentId: string, filePath: string): Pro
                 text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
                 chunkIndex: 999 + pageNum
               });
-              
               await prisma.documentImage.create({
                 data: {
                   documentId,
@@ -231,7 +315,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
                 }
               });
             }
-            break; // Success! Exit retry loop.
+            break;
           } catch (vErr: any) {
             if (vErr.status === 429) {
               logger.warn(`Rate limit hit on p${pageNum}, waiting 2s...`);
@@ -239,11 +323,10 @@ export async function processDocument(documentId: string, filePath: string): Pro
               retries--;
             } else {
               logger.warn(`Vision analysis failed for p${pageNum}: ${vErr}`);
-              break; // Other errors don't retry.
+              break;
             }
           }
         }
-        // Small delay between pages to avoid TPM spike
         await new Promise(res => setTimeout(res, 500));
       }
 

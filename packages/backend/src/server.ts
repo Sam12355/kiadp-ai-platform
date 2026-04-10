@@ -11,6 +11,9 @@ import { getEnv } from './config/env.js';
 import { getLogger } from './utils/logger.js';
 import { disconnectPrisma } from './config/database.js';
 import { setupVoiceBridge } from './services/voice.service.js';
+import { getBoss } from './queue/boss.js';
+import { JOB_QUEUES, type IngestDocumentPayload } from './queue/jobs.js';
+import { processDocument } from './services/ingestion.service.js';
 import fs from 'node:fs';
 
 async function main() {
@@ -36,9 +39,46 @@ async function main() {
 
   setupVoiceBridge(server);
 
+  // ── Inline Worker (pg-boss job processing) ──
+  const boss = await getBoss();
+
+  await boss.work(JOB_QUEUES.INGEST_DOCUMENT, async (jobs) => {
+    const jobArray = Array.isArray(jobs) ? jobs : [jobs];
+    for (const job of jobArray) {
+      const payload = job.data as unknown as IngestDocumentPayload;
+      logger.info(`[worker] Picked up ingest job for document: ${payload.documentId}`);
+      try {
+        await processDocument(payload.documentId, payload.filePath);
+        logger.info(`[worker] Ingest job succeeded for ${payload.documentId}`);
+      } catch (error) {
+        logger.error({ err: error }, `[worker] Ingest job failed for ${payload.documentId}`);
+        throw error;
+      }
+    }
+  });
+
+  await boss.work(JOB_QUEUES.DELETE_DOCUMENT, async (jobs) => {
+    const jobArray = Array.isArray(jobs) ? jobs : [jobs];
+    for (const job of jobArray) {
+      const payload = job.data as any;
+      logger.info(`[worker] Picked up delete job for document: ${payload.documentId}`);
+      try {
+        const { deleteDocument: deleteDocService } = await import('./services/ingestion.service.js');
+        await deleteDocService(payload.documentId, payload.pineconeVectorIds);
+        logger.info(`[worker] Delete job succeeded for ${payload.documentId}`);
+      } catch (error) {
+        logger.error({ err: error }, `[worker] Delete job failed for ${payload.documentId}`);
+        throw error;
+      }
+    }
+  });
+
+  logger.info('✅ Inline worker registered — listening for ingest/delete jobs');
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down gracefully...`);
+    await boss.stop();
     server.close(async () => {
       await disconnectPrisma();
       logger.info('Server shut down');
