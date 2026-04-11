@@ -11,6 +11,48 @@ import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import { describeImage } from './vision.service.js';
+import { GoogleGenAI } from '@google/genai';
+
+// ── Embedding helper: OpenAI primary, Gemini fallback on 429 ──
+async function getEmbeddings(
+  texts: string[],
+  env: ReturnType<typeof getEnv>,
+  logger: ReturnType<typeof getLogger>,
+): Promise<number[][]> {
+  // ── Try OpenAI ──
+  try {
+    const openai = getOpenAI();
+    const response = await openai.embeddings.create({
+      model: env.OPENAI_EMBEDDING_MODEL,
+      input: texts,
+    });
+    return response.data.map(d => d.embedding);
+  } catch (err: any) {
+    const status = err?.status ?? err?.statusCode;
+    if (status !== 429) throw err;
+    logger.warn('OpenAI embeddings quota exceeded (429) — falling back to Gemini Embedding...');
+  }
+
+  // ── Fallback: Gemini Embedding Experimental (1536 dims to match Pinecone index) ──
+  const geminiKey = env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    throw new Error('OpenAI quota exceeded and GEMINI_API_KEY is not set — cannot embed');
+  }
+  const ai = new GoogleGenAI({ apiKey: geminiKey });
+  const embeddings: number[][] = [];
+  for (const text of texts) {
+    const response = await (ai.models as any).embedContent({
+      model: 'gemini-embedding-exp-03-07',
+      contents: text,
+      config: { outputDimensionality: 1536 },
+    });
+    const values: number[] = response?.embeddings?.[0]?.values ?? response?.embedding?.values ?? [];
+    if (!values.length) throw new Error('Gemini embedding returned empty vector');
+    embeddings.push(values);
+  }
+  return embeddings;
+}
+
 // ── Semantic chunking helpers ──
 
 /** Split text into sentences at punctuation followed by whitespace + uppercase/Arabic/digit. */
@@ -405,30 +447,8 @@ export async function processDocument(documentId: string, filePath: string): Pro
       const batchChunks = chunks.slice(i, i + BATCH_SIZE);
       const texts = batchChunks.map(c => c.text);
 
-      // Retry embeddings up to 3 times with backoff (handles transient 429s)
-      let embeddingResponse: Awaited<ReturnType<typeof openai.embeddings.create>>;
-      {
-        let attempts = 0;
-        while (true) {
-          try {
-            embeddingResponse = await openai.embeddings.create({
-              model: env.OPENAI_EMBEDDING_MODEL,
-              input: texts,
-            });
-            break;
-          } catch (embErr: any) {
-            const status = embErr?.status ?? embErr?.statusCode;
-            if (status === 429 && attempts < 2) {
-              attempts++;
-              const delay = attempts * 15000; // 15s, 30s
-              logger.warn(`Embeddings 429, retrying in ${delay / 1000}s (attempt ${attempts}/2)...`);
-              await new Promise(res => setTimeout(res, delay));
-            } else {
-              throw embErr;
-            }
-          }
-        }
-      }
+      // Get embeddings — OpenAI primary, Gemini fallback on quota exhaustion
+      const embeddingVectors = await getEmbeddings(texts, env, logger);
 
       const vectorsToUpsert = [];
       const chunkRecords = [];
@@ -440,7 +460,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
         
         vectorsToUpsert.push({
           id: pineconeVectorId,
-          values: embeddingResponse.data[idx].embedding,
+          values: embeddingVectors[idx],
           metadata: {
             documentId,
             pageNumber: chunk.pageNumber,
@@ -458,7 +478,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
           tokenCount: Math.ceil(chunk.text.length / 4),
         });
 
-        chunkEmbeddings.push({ idx, vector: embeddingResponse.data[idx].embedding });
+        chunkEmbeddings.push({ idx, vector: embeddingVectors[idx] });
 
         // CRITICAL: If this is a visual chunk, update the corresponding documentImage record with the vector ID
         if (chunk.chunkIndex >= 999) {
