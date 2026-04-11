@@ -24,6 +24,9 @@ function getGemini(): GoogleGenAI | null {
 /** Whether we've exhausted the Gemini free tier this run (sticky until process restarts). */
 let geminiExhausted = false;
 
+/** Whether GPT-4o quota is exhausted this run (sticky until process restarts). */
+let gptExhausted = false;
+
 /**
  * Describe an image using Gemini Flash, falling back to GPT-4o on failure.
  * @param base64Image  JPEG image as base64 string
@@ -34,6 +37,9 @@ export async function describeImage(
   base64Image: string,
   prompt: string,
 ): Promise<string | null> {
+  // Fast-path: both providers known to be down — skip immediately
+  if (geminiExhausted && gptExhausted) return null;
+
   // ── Try Gemini Flash first ──
   if (!geminiExhausted) {
     const ai = getGemini();
@@ -74,6 +80,7 @@ export async function describeImage(
   }
 
   // ── Fallback: GPT-4o ──
+  if (gptExhausted) return null;
   try {
     const openai = getOpenAI();
     const response = await openai.chat.completions.create({
@@ -89,7 +96,13 @@ export async function describeImage(
     });
     return response.choices[0].message.content?.trim() ?? null;
   } catch (err: any) {
-    logger.error(`GPT-4o vision fallback also failed: ${err.message ?? err}`);
+    const status = err?.status ?? err?.statusCode;
+    if (status === 429) {
+      logger.warn('GPT-4o quota exceeded — skipping vision for all remaining images this run');
+      gptExhausted = true;
+    } else {
+      logger.error(`GPT-4o vision fallback also failed: ${err.message ?? err}`);
+    }
     return null;
   }
 }
