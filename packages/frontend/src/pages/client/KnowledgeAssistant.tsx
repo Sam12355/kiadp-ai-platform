@@ -54,6 +54,7 @@ export default function KnowledgeAssistant() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
   const [isHeaderRenaming, setIsHeaderRenaming] = useState(false);
+  const [sidebarVisibleCount, setSidebarVisibleCount] = useState(10);
   
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
@@ -65,6 +66,7 @@ export default function KnowledgeAssistant() {
   const [voiceStatus, setVoiceStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
   const [isMuted, setIsMuted] = useState(false);
   const [pendingVoiceText, setPendingVoiceText] = useState<string | null>(null);
+  const voiceFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (!isVoiceModeOpen) { setIsMuted(false); setPendingVoiceText(null); }
@@ -75,7 +77,9 @@ export default function KnowledgeAssistant() {
   const voiceSessionIdRef = useRef<string | null>(null);
   const lastVoiceUserMsgIdRef = useRef<string | null>(null);
   const lastVoiceAssistantMsgIdRef = useRef<string | null>(null);
-  useEffect(() => { if (!isVoiceModeOpen) { voiceSessionIdRef.current = null; lastVoiceUserMsgIdRef.current = null; lastVoiceAssistantMsgIdRef.current = null; } }, [isVoiceModeOpen]);
+  // Tracks the first user message ID in this voice session (for auto-titling)
+  const firstVoiceUserMsgIdRef = useRef<string | null>(null);
+  useEffect(() => { if (!isVoiceModeOpen) { voiceSessionIdRef.current = null; lastVoiceUserMsgIdRef.current = null; lastVoiceAssistantMsgIdRef.current = null; firstVoiceUserMsgIdRef.current = null; } }, [isVoiceModeOpen]);
 
   const handleTranscript = (role: 'user' | 'assistant', text: string) => {
     if (!text.trim()) return;
@@ -89,7 +93,7 @@ export default function KnowledgeAssistant() {
       const newId = `voice-${Date.now()}`;
       voiceSessionIdRef.current = newId;
       const msgId = `vm-${Date.now()}`;
-      if (role === 'user') lastVoiceUserMsgIdRef.current = msgId;
+      if (role === 'user') { lastVoiceUserMsgIdRef.current = msgId; firstVoiceUserMsgIdRef.current = msgId; }
       if (role === 'assistant') lastVoiceAssistantMsgIdRef.current = msgId;
       const firstMsg: Message = { id: msgId, role, content: text };
       setSessions(prev => [{ id: newId, title: role === 'user' ? text.substring(0, 100) : 'Voice session', messages: [firstMsg], updatedAt: Date.now() }, ...prev]);
@@ -99,11 +103,12 @@ export default function KnowledgeAssistant() {
     // User: update existing live message in-place (so speech appears live), or append if new turn
     if (role === 'user' && lastVoiceUserMsgIdRef.current) {
       const liveId = lastVoiceUserMsgIdRef.current;
+      const isFirstVoiceMsg = liveId === firstVoiceUserMsgIdRef.current;
       setSessions(prev => prev.map(s => {
         if (s.id !== targetId) return s;
         const exists = s.messages.some(m => m.id === liveId);
         if (!exists) return s;
-        return { ...s, messages: s.messages.map(m => m.id === liveId ? { ...m, content: text } : m), updatedAt: Date.now() };
+        return { ...s, ...(isFirstVoiceMsg && { title: text.substring(0, 100) }), messages: s.messages.map(m => m.id === liveId ? { ...m, content: text } : m), updatedAt: Date.now() };
       }));
       return;
     }
@@ -121,9 +126,11 @@ export default function KnowledgeAssistant() {
     const msgId = `vm-${Date.now()}`;
     if (role === 'user') lastVoiceUserMsgIdRef.current = msgId;
     if (role === 'assistant') lastVoiceAssistantMsgIdRef.current = msgId;
+    const isFirstVoiceUser = role === 'user' && !firstVoiceUserMsgIdRef.current;
+    if (isFirstVoiceUser) firstVoiceUserMsgIdRef.current = msgId;
     setSessions(prev => prev.map(s => {
       if (s.id !== targetId) return s;
-      return { ...s, messages: [...s.messages, { id: msgId, role, content: text }], updatedAt: Date.now() };
+      return { ...s, ...(isFirstVoiceUser && { title: text.substring(0, 100) }), messages: [...s.messages, { id: msgId, role, content: text }], updatedAt: Date.now() };
     }));
   };
 
@@ -141,20 +148,59 @@ export default function KnowledgeAssistant() {
   
   const messages = activeSession?.messages || [];
 
-  // 1. Initial Load
+  // 1. Initial Load — metadata only (lazy: messages loaded on demand)
   useEffect(() => {
-    const saved = localStorage.getItem('khalifa_all_sessions');
-    if (saved) {
-      try { setSessions(JSON.parse(saved)); } catch (e) { console.error(e); }
+    const savedIndex = localStorage.getItem('khalifa_sessions_index');
+    if (savedIndex) {
+      try {
+        const metas: { id: string; title: string; updatedAt: number }[] = JSON.parse(savedIndex);
+        setSessions(metas.map(m => ({ ...m, messages: [] })));
+      } catch (e) { console.error(e); }
+    } else {
+      // Migrate from old single-blob format → per-session format
+      const oldSaved = localStorage.getItem('khalifa_all_sessions');
+      if (oldSaved) {
+        try {
+          const all: ChatSession[] = JSON.parse(oldSaved);
+          localStorage.setItem('khalifa_sessions_index', JSON.stringify(
+            all.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
+          ));
+          all.forEach(s => localStorage.setItem(`khalifa_session_${s.id}`, JSON.stringify(s.messages)));
+          localStorage.removeItem('khalifa_all_sessions');
+          setSessions(all.map(s => ({ ...s, messages: [] })));
+        } catch (e) { console.error(e); }
+      }
     }
   }, []);
 
-  // 2. Persistence
+  // 2a. Persist session index (metadata only — fast, tiny payload)
   useEffect(() => {
-    if (sessions.length > 0) {
-      localStorage.setItem('khalifa_all_sessions', JSON.stringify(sessions));
-    }
+    if (sessions.length === 0) return;
+    localStorage.setItem('khalifa_sessions_index', JSON.stringify(
+      sessions.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
+    ));
   }, [sessions]);
+
+  // 2b. Persist active session messages (writes only the one active session)
+  useEffect(() => {
+    if (!urlSessionId) return;
+    const active = sessions.find(s => s.id === urlSessionId);
+    if (!active || active.messages.length === 0) return;
+    localStorage.setItem(`khalifa_session_${urlSessionId}`, JSON.stringify(active.messages));
+  }, [sessions, urlSessionId]);
+
+  // 2c. Lazy-load session messages on navigate (only when messages not yet in memory)
+  useEffect(() => {
+    if (!urlSessionId) return;
+    const session = sessions.find(s => s.id === urlSessionId);
+    if (!session || session.messages.length > 0) return; // not in index or already loaded
+    const saved = localStorage.getItem(`khalifa_session_${urlSessionId}`);
+    if (!saved) return;
+    try {
+      const msgs: Message[] = JSON.parse(saved);
+      setSessions(prev => prev.map(s => s.id === urlSessionId ? { ...s, messages: msgs } : s));
+    } catch (e) { console.error(e); }
+  }, [urlSessionId, sessions]);
 
   // 3. Auto-scroll and focus
   useEffect(() => {
@@ -179,6 +225,7 @@ export default function KnowledgeAssistant() {
     setMenuOpenId(null);
     const filtered = sessions.filter(s => s.id !== id);
     setSessions(filtered);
+    localStorage.removeItem(`khalifa_session_${id}`);
     if (urlSessionId === id) {
       handleNewChat();
     }
@@ -386,9 +433,17 @@ export default function KnowledgeAssistant() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 pb-4">
+        <div
+          className="flex-1 overflow-y-auto px-3 pb-4"
+          onScroll={(e) => {
+            const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+            if (scrollHeight - scrollTop - clientHeight < 80) {
+              setSidebarVisibleCount(prev => Math.min(prev + 10, sessions.length));
+            }
+          }}
+        >
           <div className="sidebar-section-label">{t.recent}</div>
-          {sessions.map((s) => (
+          {[...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, sidebarVisibleCount).map((s) => (
             <div key={s.id} onClick={() => navigate(`/knowledge/chat/${s.id}`)} className={`sidebar-item group relative flex items-center cursor-pointer ${urlSessionId === s.id ? 'active' : ''}`}>
               <svg className="w-4 h-4 flex-shrink-0 opacity-30 me-3" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
               <div className="flex-1 min-w-0">
@@ -421,6 +476,9 @@ export default function KnowledgeAssistant() {
               </div>
             </div>
           ))}
+          {sidebarVisibleCount < sessions.length && (
+            <p className="text-center text-[11px] text-white/20 py-2">Scroll for more</p>
+          )}
         </div>
 
         <div className="p-4 border-t border-white/5">
@@ -542,7 +600,7 @@ export default function KnowledgeAssistant() {
                        ))}
                     </div>
                   )}
-                  {m.role === 'assistant' && (
+                  {m.role === 'assistant' && !/^\s*(let me (check|look|search|find)|one moment|sure[,!]?\s*(let me|i['\u2019]ll)\s*(check|look|search))/i.test(m.content?.trim() ?? '') && (
                     <button onClick={() => openThread(m)} className="mt-4 deep-dive-btn">
                       {t.deepDive} ✦ {m.thread && m.thread.length > 1 ? `(${m.thread.length-1})` : ''}
                     </button>
@@ -566,7 +624,7 @@ export default function KnowledgeAssistant() {
 
         <div className="p-6">
           <div className="max-w-3xl mx-auto">
-            <form onSubmit={handleSubmit} className="glow-prompt-bar">
+            <form ref={voiceFormRef} onSubmit={handleSubmit} className="glow-prompt-bar">
               <div className="glow-border-layer" />
               <div className="inner-bar px-4">
                 {isVoiceModeOpen ? (
@@ -728,6 +786,22 @@ export default function KnowledgeAssistant() {
           pendingClientText={pendingVoiceText}
           onClientTextSent={() => setPendingVoiceText(null)}
           onTranscript={handleTranscript}
+          onAiVolume={(v) => {
+            const el = voiceFormRef.current;
+            if (!el) return;
+            if (v < 0.02) {
+              el.style.boxShadow = '';
+              return;
+            }
+            // Gradient glow: white-mint hot core → bright #4ade80 → mid #22c55e → soft ambient bloom
+            // All layers must be lighter than background so the gradient is visible
+            el.style.boxShadow = [
+              `0 0 ${3 + v * 5}px 1px rgba(200,255,220,${0.6 + v * 0.4})`,              // white-mint hot core
+              `0 0 ${6 + v * 9}px ${1 + v * 2}px rgba(74,222,128,${0.5 + v * 0.4})`,   // #4ade80 bright green
+              `0 0 ${11 + v * 12}px ${1 + v * 2}px rgba(34,197,94,${0.25 + v * 0.25})`, // #22c55e mid
+              `0 0 ${16 + v * 16}px rgba(74,222,128,${0.05 + v * 0.1})`,                // soft ambient bloom
+            ].join(',');
+          }}
           onImages={(imgs) => {
             // Attach images to the current live assistant voice bubble
             const targetId = urlSessionId || voiceSessionIdRef.current;
@@ -795,7 +869,7 @@ export default function KnowledgeAssistant() {
                 </div>
               </div>
             ))}
-            {isThreadLoading && <div className="text-white/20 text-xs animate-pulse">Assistant is thinking...</div>}
+            {isThreadLoading && <div className="text-white/20 text-xs animate-pulse">Looking for knowledge from the internet...</div>}
             <div ref={threadEndRef} />
           </div>
           <form onSubmit={handleThreadSubmit} className="p-6 border-t border-white/5 bg-[#0a0b0d]">

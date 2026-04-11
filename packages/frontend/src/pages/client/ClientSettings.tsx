@@ -25,9 +25,14 @@ export default function ClientSettings() {
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('khalifa_all_sessions');
-    if (saved) {
-      try { setSessions(JSON.parse(saved)); } catch {}
+    const savedIndex = localStorage.getItem('khalifa_sessions_index');
+    if (savedIndex) {
+      try { setSessions((JSON.parse(savedIndex) as { id: string; title: string; updatedAt: number }[]).map(m => ({ ...m, messages: [] }))); } catch {}
+    } else {
+      const oldSaved = localStorage.getItem('khalifa_all_sessions');
+      if (oldSaved) {
+        try { setSessions((JSON.parse(oldSaved) as ChatSession[]).map(({ id, title, updatedAt }) => ({ id, title, updatedAt, messages: [] }))); } catch {}
+      }
     }
   }, []);
 
