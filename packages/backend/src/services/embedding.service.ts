@@ -2,8 +2,8 @@
  * Embedding service — OpenAI primary, Gemini REST fallback.
  *
  * Pinecone index is 1536 dims. OpenAI text-embedding-3-small produces 1536.
- * Gemini gemini-embedding-exp-03-07 supports up to 3072, we request 1536.
- * Gemini text-embedding-004 is only 768 — zero-padded to 1536 as last resort.
+ * Gemini gemini-embedding-2-preview supports outputDimensionality — we request 1536.
+ * Gemini gemini-embedding-001 as last-resort fallback (also supports 1536).
  */
 import { getOpenAI } from '../config/openai.js';
 import { getEnv } from '../config/env.js';
@@ -17,13 +17,13 @@ let openaiExhausted = false;
 async function geminiEmbedBatch(texts: string[], geminiKey: string): Promise<number[][]> {
   const logger = getLogger();
 
-  // Try experimental model (1536 dims) via direct REST — bypasses SDK apiVersion bug
+  // Try gemini-embedding-2-preview (1536 dims) via v1beta REST
   try {
-    const url = `https://generativelanguage.googleapis.com/v1alpha/models/gemini-embedding-exp-03-07:batchEmbedContents?key=${geminiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2-preview:batchEmbedContents?key=${geminiKey}`;
     const body = {
       requests: texts.map(text => ({
-        model: 'models/gemini-embedding-exp-03-07',
-        content: { role: 'user', parts: [{ text }] },
+        model: 'models/gemini-embedding-2-preview',
+        content: { parts: [{ text }] },
         outputDimensionality: TARGET_DIMS,
       })),
     };
@@ -36,23 +36,23 @@ async function geminiEmbedBatch(texts: string[], geminiKey: string): Promise<num
       const data = await resp.json() as any;
       const embeddings: number[][] = (data.embeddings ?? []).map((e: any) => e.values as number[]);
       if (embeddings.length === texts.length && embeddings[0]?.length) {
-        logger.info(`Gemini exp embedding: ${embeddings[0].length}d × ${embeddings.length}`);
+        logger.info(`Gemini embedding-2-preview: ${embeddings[0].length}d × ${embeddings.length}`);
         return embeddings;
       }
     }
     const errText = await resp.text().catch(() => resp.status.toString());
-    logger.warn(`Gemini exp embedding returned ${resp.status}: ${errText.slice(0, 200)} — falling back to text-embedding-004`);
+    logger.warn(`Gemini embedding-2-preview returned ${resp.status}: ${errText.slice(0, 200)} — falling back to gemini-embedding-001`);
   } catch (err: any) {
-    logger.warn(`Gemini exp embedding failed: ${err.message} — falling back to text-embedding-004`);
+    logger.warn(`Gemini embedding-2-preview failed: ${err.message} — falling back to gemini-embedding-001`);
   }
 
-  // Fall back to text-embedding-004 (768 dims) — zero-pad to 1536
-  logger.warn('Using text-embedding-004 (768d) zero-padded to 1536d');
-  const url2 = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${geminiKey}`;
+  // Fall back to gemini-embedding-001 (also supports 1536 via outputDimensionality)
+  const url2 = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=${geminiKey}`;
   const body2 = {
     requests: texts.map(text => ({
-      model: 'models/text-embedding-004',
-      content: { role: 'user', parts: [{ text }] },
+      model: 'models/gemini-embedding-001',
+      content: { parts: [{ text }] },
+      outputDimensionality: TARGET_DIMS,
     })),
   };
   const resp2 = await fetch(url2, {
@@ -62,15 +62,10 @@ async function geminiEmbedBatch(texts: string[], geminiKey: string): Promise<num
   });
   if (!resp2.ok) {
     const errText = await resp2.text().catch(() => resp2.status.toString());
-    throw new Error(`Gemini text-embedding-004 failed (${resp2.status}): ${errText.slice(0, 200)}`);
+    throw new Error(`Gemini embedding-001 failed (${resp2.status}): ${errText.slice(0, 200)}`);
   }
   const data2 = await resp2.json() as any;
-  return (data2.embeddings ?? []).map((e: any) => {
-    const v: number[] = e.values as number[];
-    // Zero-pad from 768 to 1536 to match Pinecone index dimensions
-    while (v.length < TARGET_DIMS) v.push(0);
-    return v;
-  });
+  return (data2.embeddings ?? []).map((e: any) => e.values as number[]);
 }
 
 /**
