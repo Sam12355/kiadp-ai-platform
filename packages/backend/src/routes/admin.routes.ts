@@ -114,6 +114,53 @@ router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMI
 });
 
 import bcrypt from 'bcryptjs';
+import { getEnv } from '../config/env.js';
+
+/**
+ * @openapi
+ * /admin/bootstrap:
+ *   post:
+ *     summary: Create the first admin user (requires ADMIN_BOOTSTRAP_SECRET header)
+ *     tags: [Admin]
+ */
+router.post('/bootstrap', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const env = getEnv();
+    const secret = env.ADMIN_BOOTSTRAP_SECRET;
+
+    if (!secret) {
+      return res.status(403).json({ success: false, error: 'Bootstrap is disabled (ADMIN_BOOTSTRAP_SECRET not set)' });
+    }
+
+    const providedSecret = req.headers['x-bootstrap-secret'];
+    if (providedSecret !== secret) {
+      return res.status(403).json({ success: false, error: 'Invalid bootstrap secret' });
+    }
+
+    const { email, password, fullName } = req.body;
+    if (!email || !password || !fullName) {
+      return res.status(400).json({ success: false, error: 'email, password, and fullName are required' });
+    }
+
+    const prisma = getPrisma();
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(400).json({ success: false, error: 'User with this email already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.create({
+      data: { email, passwordHash, fullName, role: 'ADMIN', isActive: true },
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * @openapi
