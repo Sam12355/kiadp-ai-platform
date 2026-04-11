@@ -4,6 +4,7 @@ import { getEnv } from '../config/env.js';
 import { NotFoundError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
 import { CohereClient } from 'cohere-ai';
+import { embedText } from './embedding.service.js';
 
 // ── Image-to-visual-chunk matching ──
 // When a page has multiple images, only return ones whose description was found
@@ -278,10 +279,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     const keywords = [...new Set(expandedQueryFast.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w)))];
 
     // Run embedding + keyword search in parallel (use expanded query for embedding too)
-    const embeddingPromise = openai.embeddings.create({
-      model: env.OPENAI_EMBEDDING_MODEL,
-      input: expandedQueryFast,
-    });
+    const embeddingPromise = embedText(expandedQueryFast);
 
     const keywordPromise = keywords.length >= 1
       ? prisma.documentChunk.findMany({
@@ -298,8 +296,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
         })
       : Promise.resolve([]);
 
-    const [embeddingResponse, keywordChunks] = await Promise.all([embeddingPromise, keywordPromise]);
-    const queryVector = embeddingResponse.data[0].embedding;
+    const [queryVector, keywordChunks] = await Promise.all([embeddingPromise, keywordPromise]);
     const vectorStr = `[${queryVector.join(',')}]`;
     type VectorRow = { id: string; document_id: string; content: string; page_number: number; similarity: number };
     const vectorRows = await prisma.$queryRawUnsafe<VectorRow[]>(`
@@ -421,10 +418,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
   getLogger().debug({ original: queryText, expanded: expandedQuery }, 'searchKnowledge: query expanded');
 
   // Run vector search and keyword search in parallel
-  const embeddingPromise = openai.embeddings.create({
-    model: env.OPENAI_EMBEDDING_MODEL,
-    input: expandedQuery,
-  });
+  const embeddingPromise = embedText(expandedQuery);
 
   // Extract significant words for keyword fallback
   const stopWords = new Set(['the','and','for','are','but','not','you','all','can','her','was','one','our','out','has','had','how','its','may','who','did','get','let','say','she','too','use','what','when','where','which','why','with','this','that','from','they','been','have','will','each','make','like','just','over','such','take','than','them','very','some','into','most','other','about','after','would','these','could','their','there','should','between','before']);
@@ -477,8 +471,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     keywordPromise = Promise.resolve([]);
   }
 
-  const [embeddingResponse, keywordChunks] = await Promise.all([embeddingPromise, keywordPromise]);
-  const queryVector = embeddingResponse.data[0].embedding;
+  const [queryVector, keywordChunks] = await Promise.all([embeddingPromise, keywordPromise]);
   const vectorStr = `[${queryVector.join(',')}]`;
 
   // pgvector cosine similarity search — text chunks only (exclude visual evidence, chunk_index >= 999)
@@ -556,11 +549,7 @@ export async function voiceAsk(
   const targetLanguage = langMap[language] || 'English';
 
   // ── Step 1: Embed original query directly (skip expansion — saves ~4s) ──
-  const embeddingResponse = await openai.embeddings.create({
-    model: env.OPENAI_EMBEDDING_MODEL,
-    input: queryText,
-  });
-  const queryVector = embeddingResponse.data[0].embedding;
+  const queryVector = await embedText(queryText);
   const vectorStr = `[${queryVector.join(',')}]`;
   getLogger().debug({ ms: Date.now() - t0 }, 'voiceAsk: embedding done');
 
@@ -895,11 +884,7 @@ export async function askQuestion(
   // 4. Generate embedding (Only if NOT chit-chat)
   let queryVector: number[] = [];
   if (!isChitChat) {
-    const embeddingResponse = await openai.embeddings.create({
-      model: env.OPENAI_EMBEDDING_MODEL,
-      input: embeddingQuery,
-    });
-    queryVector = embeddingResponse.data[0].embedding;
+    queryVector = await embedText(embeddingQuery);
   }
   getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after embedding');
 

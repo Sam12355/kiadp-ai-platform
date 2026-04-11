@@ -11,48 +11,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import { describeImage } from './vision.service.js';
-import { GoogleGenAI } from '@google/genai';
-
-// ── Embedding helper: OpenAI primary, Gemini fallback on 429 ──
-async function getEmbeddings(
-  texts: string[],
-  env: ReturnType<typeof getEnv>,
-  logger: ReturnType<typeof getLogger>,
-): Promise<number[][]> {
-  // ── Try OpenAI ──
-  try {
-    const openai = getOpenAI();
-    const response = await openai.embeddings.create({
-      model: env.OPENAI_EMBEDDING_MODEL,
-      input: texts,
-    });
-    return response.data.map(d => d.embedding);
-  } catch (err: any) {
-    const status = err?.status ?? err?.statusCode;
-    if (status !== 429) throw err;
-    logger.warn('OpenAI embeddings quota exceeded (429) — falling back to Gemini Embedding...');
-  }
-
-  // ── Fallback: Gemini Embedding Experimental (1536 dims to match Pinecone index) ──
-  const geminiKey = env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    throw new Error('OpenAI quota exceeded and GEMINI_API_KEY is not set — cannot embed');
-  }
-  // v1alpha is required for the experimental embedding model
-  const ai = new GoogleGenAI({ apiKey: geminiKey, apiVersion: 'v1alpha' } as any);
-  const embeddings: number[][] = [];
-  for (const text of texts) {
-    const response = await ai.models.embedContent({
-      model: 'gemini-embedding-exp-03-07',
-      contents: text,
-      config: { outputDimensionality: 1536 },
-    });
-    const values: number[] = (response as any)?.embeddings?.[0]?.values ?? (response as any)?.embedding?.values ?? [];
-    if (!values.length) throw new Error('Gemini embedding returned empty vector');
-    embeddings.push(values);
-  }
-  return embeddings;
-}
+import { embedTexts } from './embedding.service.js';
 
 // ── Semantic chunking helpers ──
 
@@ -448,8 +407,8 @@ export async function processDocument(documentId: string, filePath: string): Pro
       const batchChunks = chunks.slice(i, i + BATCH_SIZE);
       const texts = batchChunks.map(c => c.text);
 
-      // Get embeddings — OpenAI primary, Gemini fallback on quota exhaustion
-      const embeddingVectors = await getEmbeddings(texts, env, logger);
+      // Get embeddings — OpenAI primary, Gemini REST fallback on quota exhaustion
+      const embeddingVectors = await embedTexts(texts);
 
       const vectorsToUpsert = [];
       const chunkRecords = [];
