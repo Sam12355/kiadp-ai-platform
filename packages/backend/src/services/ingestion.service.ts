@@ -405,10 +405,30 @@ export async function processDocument(documentId: string, filePath: string): Pro
       const batchChunks = chunks.slice(i, i + BATCH_SIZE);
       const texts = batchChunks.map(c => c.text);
 
-      const embeddingResponse = await openai.embeddings.create({
-        model: env.OPENAI_EMBEDDING_MODEL,
-        input: texts,
-      });
+      // Retry embeddings up to 3 times with backoff (handles transient 429s)
+      let embeddingResponse: Awaited<ReturnType<typeof openai.embeddings.create>>;
+      {
+        let attempts = 0;
+        while (true) {
+          try {
+            embeddingResponse = await openai.embeddings.create({
+              model: env.OPENAI_EMBEDDING_MODEL,
+              input: texts,
+            });
+            break;
+          } catch (embErr: any) {
+            const status = embErr?.status ?? embErr?.statusCode;
+            if (status === 429 && attempts < 2) {
+              attempts++;
+              const delay = attempts * 15000; // 15s, 30s
+              logger.warn(`Embeddings 429, retrying in ${delay / 1000}s (attempt ${attempts}/2)...`);
+              await new Promise(res => setTimeout(res, delay));
+            } else {
+              throw embErr;
+            }
+          }
+        }
+      }
 
       const vectorsToUpsert = [];
       const chunkRecords = [];

@@ -26,9 +26,15 @@ async function main() {
       try {
         await processDocument(payload.documentId, payload.filePath);
         logger.info(`Document ingestion job succeeded for ${payload.documentId}`);
-      } catch (error) {
+      } catch (error: any) {
         logger.error({ err: error }, `Document ingestion job failed for ${payload.documentId}`);
-        throw error; // Let pg-boss handle retries
+        // Don't retry quota errors — they will keep failing until billing is resolved
+        const status = error?.status ?? error?.statusCode ?? error?.code;
+        if (status === 429) {
+          logger.warn(`Quota exceeded (429) for ${payload.documentId}. Job will NOT be retried.`);
+          return; // swallow → pg-boss marks job complete, document stays FAILED
+        }
+        throw error; // Other errors: let pg-boss handle retries
       }
     }
   });
