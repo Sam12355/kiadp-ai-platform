@@ -28,7 +28,9 @@ services:
     staticPublishPath: ./packages/frontend/dist
     envVars:
       - key: VITE_API_URL
-        value: https://kiadp-backend.onrender.com/api/v1
+        value: https://kiadp-ai-platform.onrender.com/api/v1
+      - key: VITE_GEMINI_API_KEY
+        sync: false
     routes:
       - type: rewrite
         source: /*

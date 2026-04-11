@@ -149,6 +149,11 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
       setStatusAndNotify('connecting');
       setError(null);
 
+      if (!apiKey) {
+        setError('Voice mode is not configured (missing API key). Please contact support.');
+        return;
+      }
+
       // Create AudioContext at 16kHz for mic input (same as working Examx project)
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       if (audioContext.state === 'suspended') {
