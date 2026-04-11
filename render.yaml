@@ -4,7 +4,7 @@ services:
     name: kiadp-backend
     runtime: node
     rootDir: packages/backend
-    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @khalifa/backend run build
+    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @khalifa/backend run build && pnpm --filter @khalifa/frontend run build
     startCommand: node /opt/render/project/src/packages/backend/dist/server.js & node /opt/render/project/src/packages/backend/dist/worker.js
     envVars:
       - key: NODE_ENV
