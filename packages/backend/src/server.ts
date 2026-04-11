@@ -9,7 +9,7 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
 import { getLogger } from './utils/logger.js';
-import { disconnectPrisma } from './config/database.js';
+import { disconnectPrisma, ensurePgVector } from './config/database.js';
 import { setupVoiceBridge } from './services/voice.service.js';
 import { getBoss } from './queue/boss.js';
 import { JOB_QUEUES, type IngestDocumentPayload } from './queue/jobs.js';
@@ -19,6 +19,10 @@ import fs from 'node:fs';
 async function main() {
   const env = getEnv();
   const logger = getLogger();
+
+  // Ensure pgvector extension is available before any vector queries
+  await ensurePgVector();
+  logger.info('pgvector extension verified');
 
   // Ensure uploads directory exists
   if (!fs.existsSync(env.UPLOAD_DIR)) {

@@ -17,6 +17,12 @@ export function getPrisma(): PrismaClient {
   return prisma;
 }
 
+/** Ensure pgvector extension exists (idempotent). Call once at startup. */
+export async function ensurePgVector(): Promise<void> {
+  const p = getPrisma();
+  await p.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector');
+}
+
 export async function disconnectPrisma(): Promise<void> {
   if (prisma) {
     await prisma.$disconnect();
