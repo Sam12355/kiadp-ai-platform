@@ -143,16 +143,21 @@ router.post('/bootstrap', async (req: Request, res: Response, next: NextFunction
     }
 
     const prisma = getPrisma();
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      await prisma.refreshToken.deleteMany({ where: { userId: existing.id } });
-      await prisma.user.delete({ where: { id: existing.id } });
-    }
-
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: { email, passwordHash, fullName, role: 'ADMIN', isActive: true },
-    });
+    const existing = await prisma.user.findUnique({ where: { email } });
+
+    let user;
+    if (existing) {
+      // Update existing user's password, role, and active status
+      user = await prisma.user.update({
+        where: { email },
+        data: { passwordHash, fullName, role: 'ADMIN', isActive: true },
+      });
+    } else {
+      user = await prisma.user.create({
+        data: { email, passwordHash, fullName, role: 'ADMIN', isActive: true },
+      });
+    }
 
     res.status(201).json({
       success: true,
