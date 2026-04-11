@@ -31,30 +31,23 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
     setStatus(s);
     onStatusChange?.(s);
     if (s === 'thinking') {
-      // Generate pulsing thinking tone via Web Audio API (no file dependency)
-      const playPing = () => {
-        const ctx = audioContextRef.current;
-        if (!ctx || ctx.state === 'closed') return;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = 520;
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.07, ctx.currentTime + 0.05);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.45);
-      };
-      if (thinkingIntervalRef.current) clearInterval(thinkingIntervalRef.current);
-      playPing();
-      thinkingIntervalRef.current = setInterval(playPing, 700);
-    } else {
-      if (thinkingIntervalRef.current) {
-        clearInterval(thinkingIntervalRef.current);
-        thinkingIntervalRef.current = null;
+      // Play thinking.wav on loop while waiting for the knowledge base response
+      if (!thinkingIntervalRef.current) {
+        const audio = new Audio('/thinking.wav');
+        audio.loop = true;
+        audio.volume = 0.6;
+        audio.play().catch(() => {});
+        (thinkingIntervalRef as any).current = audio;
       }
+    } else {
+      const audio = (thinkingIntervalRef as any).current;
+      if (audio instanceof HTMLAudioElement) {
+        audio.pause();
+        audio.currentTime = 0;
+      } else if (audio) {
+        clearInterval(audio);
+      }
+      thinkingIntervalRef.current = null;
     }
   };
 
@@ -89,6 +82,7 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   const aiTranscriptRef = useRef('');
   const aiTurnCompleteRef = useRef(false);
   const toolAnswerEmittedRef = useRef(false);
+  const waitingForToolAudioRef = useRef(false);
   // Keep refs to latest callbacks so closures inside connect() always use current values
   const onTranscriptRef = useRef(onTranscript);
   const onCloseRef = useRef(onClose);
@@ -186,9 +180,9 @@ Instructions:
    English: "Let me check that for you." or "One moment please." or "Let me look that up." (vary them, never repeat same phrase twice in a row)
    Arabic: "دعني أتحقق من ذلك." or "لحظة من فضلك." or "سأبحث عن ذلك الآن."
 2. ALWAYS call search_knowledge for ANY question the user asks — whether it's about food, culture, history, agriculture, date palms, places, people, statistics, or anything else. Even if the question seems vague or incomplete, ALWAYS search. Never try to answer without searching first.
-3. The tool returns a pre-written answer. Read it to the user naturally and conversationally — DO NOT add information that is not in the answer.
-4. IMAGES: When the tool response mentions "VISUAL IMAGES", those images are automatically shown to the user. Tell the user you are showing them the image and briefly describe it.
-5. Keep your delivery SHORT and conversational — you are in a live voice session. Paraphrase the answer concisely (2-4 sentences max) unless the user asks for more detail.
+3. The tool returns a response containing a SCRIPT block between "--- BEGIN SCRIPT ---" and "--- END SCRIPT ---". You unmistakably MUST read ONLY the text inside that block EXACTLY as written — word for word, sentence by sentence. Do NOT paraphrase, summarize, shorten, reword, or add your own commentary. Read every single point and detail. Deliver it faithfully like a professional narrator reading a teleprompter.
+4. CRITICAL: Start reading the SCRIPT the instant you receive it. Your very first spoken word must be the first word of the script. ABSOLUTELY NO preamble — no "Here's what I found", no "Based on my search", no "According to", no "Great question", no "Sure", no "So" — NOTHING before the script text. Go DIRECTLY into word one.
+5. Anything OUTSIDE the script block (like metadata or notes) is internal — NEVER read it aloud.
 6. DO NOT output thinking text or internal reasoning. Speak directly.
 7. Respond immediately — no delays.
 8. NEVER say "technical difficulties", "I'm having trouble", or similar error phrases. If the answer says no information was found, tell the user and ask them to rephrase.${knowledgeContext}`,          tools: [
@@ -330,9 +324,10 @@ Instructions:
             // Uses the SAME /knowledge/ask endpoint as normal text chat so answers,
             // sources, and images are identical. Gemini just reads the answer aloud.
             if (message.toolCall) {
+              waitingForToolAudioRef.current = true;
               setStatusAndNotify('thinking');
               const session = sessionRef.current;
-              if (session && sessionAliveRef.current) {
+              if (session) {
                 try {
                   const responses = await Promise.all(
                     message.toolCall.functionCalls.map(async (call: any) => {
@@ -352,7 +347,7 @@ Instructions:
                           const res = await apiClient.post('/knowledge/voice-ask', {
                             query,
                             language: language || 'en',
-                          });
+                          }, { timeout: 20000 });
                           const data = res.data?.data || {};
                           const answerText: string = data.answerText || '';
                           const images: { id: string; url: string; description: string; pageNumber: number }[] = data.images || [];
@@ -369,13 +364,29 @@ Instructions:
                             onTranscriptRef.current?.('assistant', answerText);
                           }
 
-                          const imageNote = images.length > 0
-                            ? `\nVISUAL IMAGES: ${images.map((img: any) => `Figure on page ${img.pageNumber}: ${img.description?.slice(0, 120)}`).join('; ')}. These images are NOW shown to the user. Mention you are showing them.`
-                            : '';
+                          // Strip markdown formatting so Gemini reads clean speech-ready text
+                          const stripMarkdown = (text: string) =>
+                            text
+                              .replace(/^#{1,6}\s+/gm, '')      // headings
+                              .replace(/\*\*(.+?)\*\*/g, '$1')   // bold
+                              .replace(/\*(.+?)\*/g, '$1')       // italic
+                              .replace(/__(.+?)__/g, '$1')       // bold alt
+                              .replace(/_(.+?)_/g, '$1')         // italic alt
+                              .replace(/~~(.+?)~~/g, '$1')       // strikethrough
+                              .replace(/`(.+?)`/g, '$1')         // inline code
+                              .replace(/^\s*[-*+]\s+/gm, '')     // bullet points
+                              .replace(/^\s*\d+\.\s+/gm, '')    // numbered lists
+                              .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
+                              .replace(/\n{3,}/g, '\n\n')        // excess newlines
+                              .trim();
 
-                          // Feed the synthesized answer to Gemini so it reads it verbatim
-                          const toolOutput = answerText
-                            ? `ANSWER (read this to the user naturally, keep it concise for voice):${imageNote}\n\n${answerText}`
+                          // Feed the clean answer to Gemini as its spoken script
+                          const speechText = answerText ? stripMarkdown(answerText) : '';
+                          const imageMetadata = images.length > 0
+                            ? `\n\n[INTERNAL METADATA — DO NOT READ ALOUD]\nImages have been automatically displayed to the user.`
+                            : '';
+                          const toolOutput = speechText
+                            ? `--- BEGIN SCRIPT ---\n${speechText}\n--- END SCRIPT ---${imageMetadata}`
                             : "No relevant information found in the knowledge base for this query.";
 
                           return {
@@ -395,20 +406,36 @@ Instructions:
                       return { id: call.id, name: call.name, response: { error: "Unknown function" } };
                     })
                   );
-                  if (sessionRef.current && sessionAliveRef.current) {
+                  // Always attempt to send — session may have had a brief close event
+                  // during the async API call but is still functionally alive
+                  try {
                     session.sendToolResponse({ functionResponses: responses });
+                  } catch (sendErr) {
+                    console.error('[VoiceMode] sendToolResponse failed:', sendErr);
                   }
+                  // Answer audio will arrive soon; clear the flag so source.onended
+                  // transitions to 'listening' (not back to 'thinking') when done.
+                  waitingForToolAudioRef.current = false;
                 } catch (toolErr) {
                   console.error("Tool execution error:", toolErr);
-                  if (sessionRef.current && sessionAliveRef.current) {
+                  waitingForToolAudioRef.current = false;
+                  setStatusAndNotify('listening');
+                  try {
                     session.sendToolResponse({
                       functionResponses: message.toolCall.functionCalls.map((c: any) => ({
                         id: c.id,
                         response: { error: "Internal tool error" }
                       }))
                     });
+                  } catch (sendErr) {
+                    console.error('[VoiceMode] sendToolResponse (error fallback) failed:', sendErr);
                   }
                 }
+              } else {
+                // Session gone — unstick from thinking
+                console.error('[VoiceMode] toolCall received but session is null');
+                waitingForToolAudioRef.current = false;
+                setStatusAndNotify('listening');
               }
             }
 
@@ -417,6 +444,8 @@ Instructions:
               for (const part of message.serverContent.modelTurn.parts) {
                 const base64Audio = part.inlineData?.data;
                 if (base64Audio && audioContextRef.current) {
+                  // Don't touch waitingForToolAudioRef here — it's managed by
+                  // the toolCall handler so ack-phrase audio doesn't clear it.
                   setStatusAndNotify('speaking');
 
                   const binary = atob(base64Audio);
@@ -448,6 +477,9 @@ Instructions:
                         stopRequestedRef.current = false;
                         disconnect();
                         onCloseRef.current();
+                      } else if (waitingForToolAudioRef.current) {
+                        // Tool call in progress — keep showing thinking, don't flip to listening
+                        setStatusAndNotify('thinking');
                       } else {
                         setStatusAndNotify('listening');
                       }
@@ -506,10 +538,14 @@ Instructions:
       try { src.stop(); } catch (e) {}
     });
     activeSourcesRef.current = [];
-    if (thinkingIntervalRef.current) {
-      clearInterval(thinkingIntervalRef.current);
-      thinkingIntervalRef.current = null;
+    const thinkingAudio = (thinkingIntervalRef as any).current;
+    if (thinkingAudio instanceof HTMLAudioElement) {
+      thinkingAudio.pause();
+      thinkingAudio.currentTime = 0;
+    } else if (thinkingAudio) {
+      clearInterval(thinkingAudio);
     }
+    thinkingIntervalRef.current = null;
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
       audioContextRef.current = null;

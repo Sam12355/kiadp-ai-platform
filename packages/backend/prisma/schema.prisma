@@ -160,6 +160,7 @@ model DocumentImage {
   filePath         String   @map("file_path")
   altText          String?  @map("alt_text")
   description      String?  @db.Text
+  contextText      String?  @map("context_text") @db.Text
   pineconeVectorId String?  @map("pinecone_vector_id")
   width            Int?
   height           Int?

@@ -19,6 +19,7 @@
     "db:generate": "prisma generate"
   },
   "dependencies": {
+    "@google/genai": "^1.49.0",
     "@khalifa/shared": "workspace:*",
     "@pinecone-database/pinecone": "^4.0.0",
     "@prisma/client": "^6.4.0",

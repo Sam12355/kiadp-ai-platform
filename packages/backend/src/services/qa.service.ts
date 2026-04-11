@@ -5,6 +5,85 @@ import { NotFoundError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
 import { CohereClient } from 'cohere-ai';
 
+// ── Image-to-visual-chunk matching ──
+// When a page has multiple images, only return ones whose description was found
+// in a visual chunk returned by the similarity search (prevents unrelated images
+// on the same page from being included).
+function filterImagesByVisualChunks<
+  I extends { documentId: string; pageNumber: number; description: string | null },
+  V extends { document_id: string; page_number: number; content: string; similarity: number },
+>(images: I[], visualChunks: V[]): (I & { _score: number })[] {
+  return images.reduce<(I & { _score: number })[]>((acc, img) => {
+    const desc = (img.description ?? '').substring(0, 80);
+    if (!desc) return acc;
+    const matchedChunk = visualChunks.find(
+      vr => vr.document_id === img.documentId && vr.page_number === img.pageNumber && vr.content.includes(desc),
+    );
+    if (matchedChunk) acc.push({ ...img, _score: matchedChunk.similarity });
+    return acc;
+  }, []);
+}
+
+// ── Image relevance reranking ──
+// Uses Cohere rerank on image descriptions to filter out images that are
+// semantically unrelated to the query. This is more precise than embedding
+// similarity because descriptions like "pigeon towers" and "spearmint" both
+// mention "Siwa" and get moderate embedding similarity to any Siwa query,
+// but Cohere rerank correctly scores them against the actual query intent.
+const IMAGE_RERANK_THRESHOLD = 0.25;
+// Images must score at least this fraction of the top image's score to be kept.
+// This prevents weakly-related images from riding along when a dominant match exists.
+const IMAGE_RELATIVE_THRESHOLD = 0.70;
+async function rerankImages<T extends { description: string | null }>(
+  query: string,
+  images: T[],
+  maxImages: number = 3,
+): Promise<(T & { _rerankScore: number })[]> {
+  if (images.length === 0) return [];
+  if (images.length === 1) return [{ ...images[0], _rerankScore: 1 }];
+
+  const env = getEnv();
+  if (env.COHERE_API_KEY) {
+    try {
+      const cohere = new CohereClient({ token: env.COHERE_API_KEY });
+      const response = await cohere.v2.rerank({
+        model: 'rerank-v3.5',
+        query,
+        // Combine AI description, figure caption, and contextText for best reranking.
+        // Always include description (it names the figure precisely) plus contextText
+        // for surrounding page context. This prevents a table whose page merely
+        // *mentions* a topic from outranking the actual figure about that topic.
+        documents: images.map(img => {
+          const ctx = ((img as any).contextText ?? '').substring(0, 500);
+          const desc = (img.description ?? '').substring(0, 300);
+          const caption = (img as any)._figureCaption;
+          const parts: string[] = [];
+          if (caption) parts.push(caption);
+          if (desc) parts.push(desc);
+          if (ctx) parts.push(ctx);
+          return parts.join('\n') || 'image';
+        }),
+        topN: Math.min(images.length, maxImages + 2), // fetch a few extra to filter
+      });
+      let results = response.results
+        .filter(r => r.relevanceScore >= IMAGE_RERANK_THRESHOLD)
+        .slice(0, maxImages)
+        .map(r => ({ ...images[r.index], _rerankScore: r.relevanceScore }));
+      // Drop images that score much lower than the top result (prevents weakly-related images)
+      if (results.length > 1) {
+        const topScore = results[0]._rerankScore;
+        results = results.filter(r => r._rerankScore >= topScore * IMAGE_RELATIVE_THRESHOLD);
+      }
+      getLogger().debug({ query, candidates: images.length, kept: results.length, scores: results.map((r: any) => ({ page: r.pageNumber, score: r._rerankScore, desc: (r.description ?? '').substring(0, 50), caption: (r as any)._figureCaption ?? null })) }, 'image reranking');
+      return results;
+    } catch (err) {
+      getLogger().warn({ err }, 'Cohere image rerank failed, falling back to score sort');
+    }
+  }
+  // Fallback: just return top N by existing _score
+  return images.slice(0, maxImages).map(img => ({ ...img, _rerankScore: 0.5 }));
+}
+
 // ── Reranking utility ──
 // Uses Cohere Rerank API when COHERE_API_KEY is set, falls back to GPT-4o-mini
 async function rerankChunks<T extends { text: string }>(
@@ -245,7 +324,6 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     const final = reranked.slice(0, 8);
 
     // ── Image selection: same logic as normal Q&A path ──
-    const VISUAL_KEYWORDS_FAST = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+shows?|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms|bowl|glass\s+bowl|paste)\b/i;
     const VISUAL_BLOCKLIST_FAST = /\b(table of contents|bibliography|references|acknowledgment|copyright|title page)\b/i;
 
     // 1) Visual-chunk embedding search (chunk_index >= 999, similarity > 0.32) — same as normal path
@@ -260,42 +338,48 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
       LIMIT 5
     `);
 
-    // 2) Fetch images for visual-chunk page matches
+    // Build similarity score map from visual rows
+    const visualSimMapFast = new Map<string, number>();
+    for (const vr of visualRowsFast) visualSimMapFast.set(`${vr.document_id}:${vr.page_number}`, vr.similarity);
+
+    // 2) Fetch images for visual-chunk page matches, then filter to only images whose description matches a returned visual chunk
     const visualPagePairs = visualRowsFast.map(r => ({ documentId: r.document_id, pageNumber: r.page_number }));
     const visualChunkImages = visualPagePairs.length > 0
       ? await prisma.documentImage.findMany({
           where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-          select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true },
+          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true },
         })
       : [];
 
-    // 3) Filter visual-chunk images with keywords + blocklist
-    const filteredVisualChunkImages = visualChunkImages.filter(img => {
-      const desc = img.description ?? '';
-      return VISUAL_KEYWORDS_FAST.test(desc) && !VISUAL_BLOCKLIST_FAST.test(desc);
-    });
+    // 3) Match each image to its specific visual chunk (prevents unrelated images on the same page from being included)
+    const filteredVisualChunkImages = filterImagesByVisualChunks(
+      visualChunkImages.filter(img => !VISUAL_BLOCKLIST_FAST.test(img.description ?? '')),
+      visualRowsFast,
+    );
 
     // 4) Secondary: fetch images on pages of top 5 TEXT results (same as normal path)
-    const textPagePairs = final.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber }));
+    const textPagePairs = final.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber, rerankScore: r.rerankScore }));
     const alreadyFoundKeys = new Set(filteredVisualChunkImages.map(img => `${img.documentId}:${img.pageNumber}`));
     const missingTextPairs = textPagePairs.filter(p => !alreadyFoundKeys.has(`${p.documentId}:${p.pageNumber}`));
     const textPageImages = missingTextPairs.length > 0
       ? await prisma.documentImage.findMany({
           where: { OR: missingTextPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-          select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true },
+          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true },
         })
       : [];
-    const filteredTextPageImages = textPageImages.filter(img => {
-      const desc = img.description ?? '';
-      return VISUAL_KEYWORDS_FAST.test(desc) && !VISUAL_BLOCKLIST_FAST.test(desc);
-    });
+    const textScoreMapFast = new Map<string, number>();
+    for (const tp of missingTextPairs) textScoreMapFast.set(`${tp.documentId}:${tp.pageNumber}`, tp.rerankScore ?? 0.3);
+    const filteredTextPageImages = textPageImages.filter(img => !VISUAL_BLOCKLIST_FAST.test(img.description ?? ''));
+    filteredTextPageImages.forEach((img: any) => { img._score = textScoreMapFast.get(`${img.documentId}:${img.pageNumber}`) ?? 0.3; });
 
-    // 5) Priority merge: text-page images first (relevance validated by text ranking), then visual-chunk images
-    const allFastImages = [...filteredTextPageImages, ...filteredVisualChunkImages].slice(0, 3);
+    // 5) Merge all, then rerank with Cohere for precise relevance filtering
+    const allFastImages = [...filteredVisualChunkImages, ...filteredTextPageImages.filter(img => !filteredVisualChunkImages.some(v => v.documentId === img.documentId && v.pageNumber === img.pageNumber))];
+    allFastImages.sort((a: any, b: any) => (b._score ?? 0) - (a._score ?? 0));
+    const topFastImages = await rerankImages(expandedQueryFast, allFastImages, 3);
 
     return {
       results: final.map(({ documentId: _docId, rerankScore, ...r }) => ({ ...r, score: rerankScore })),
-      images: allFastImages.map(img => ({
+      images: topFastImages.map(img => ({
         id: img.id,
         url: img.filePath,
         description: img.description || '',
@@ -535,26 +619,35 @@ export async function voiceAsk(
   }) : [];
 
   // ── Step 5: Image retrieval + answer generation in parallel ──
-  const VISUAL_KW = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+shows?|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms|bowl|glass\s+bowl|paste)\b/i;
   const VISUAL_BL = /\b(table of contents|bibliography|references|acknowledgment|copyright|title page)\b/i;
 
   const imagePromise = (async () => {
     const visualPagePairs = visualRows.map(r => ({ documentId: r.document_id, pageNumber: r.page_number }));
     const vcImages = visualPagePairs.length > 0
-      ? await prisma.documentImage.findMany({ where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true } })
+      ? await prisma.documentImage.findMany({ where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true } })
       : [];
-    const filteredVc = vcImages.filter(img => VISUAL_KW.test(img.description ?? '') && !VISUAL_BL.test(img.description ?? ''));
+    // Match each image to its specific visual chunk (prevents unrelated images on the same page)
+    const filteredVc = filterImagesByVisualChunks(
+      vcImages.filter(img => !VISUAL_BL.test(img.description ?? '')),
+      visualRows,
+    );
 
-    const textPairs = reranked.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber }));
+    const textPairs = reranked.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber, rerankScore: r.rerankScore }));
     const vcKeys = new Set(filteredVc.map(img => `${img.documentId}:${img.pageNumber}`));
     const missingPairs = textPairs.filter(p => !vcKeys.has(`${p.documentId}:${p.pageNumber}`));
     const textImgs = missingPairs.length > 0
-      ? await prisma.documentImage.findMany({ where: { OR: missingPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true } })
+      ? await prisma.documentImage.findMany({ where: { OR: missingPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true } })
       : [];
-    const filteredText = textImgs.filter(img => VISUAL_KW.test(img.description ?? '') && !VISUAL_BL.test(img.description ?? ''));
+    const textScoreMap = new Map<string, number>();
+    for (const tp of missingPairs) textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, tp.rerankScore ?? 0.3);
+    const filteredText = textImgs.filter(img => !VISUAL_BL.test(img.description ?? ''));
+    filteredText.forEach((img: any) => { img._score = textScoreMap.get(`${img.documentId}:${img.pageNumber}`) ?? 0.3; });
 
-    // Priority: text-page images first (relevance proven by text reranking), then visual-chunk images
-    return [...filteredText, ...filteredVc.filter(img => !filteredText.some(t => t.documentId === img.documentId && t.pageNumber === img.pageNumber))].slice(0, 3).map(img => ({
+    // Merge all, then rerank with Cohere for precise relevance filtering
+    const allImages = [...filteredVc, ...filteredText.filter(img => !filteredVc.some(v => v.documentId === img.documentId && v.pageNumber === img.pageNumber))];
+    allImages.sort((a: any, b: any) => (b._score ?? 0) - (a._score ?? 0));
+    const rerankedImgs = await rerankImages(queryText, allImages, 3);
+    return rerankedImgs.map(img => ({
       id: img.id, url: img.filePath, description: img.description || '', pageNumber: img.pageNumber, documentId: img.documentId,
     }));
   })();
@@ -839,24 +932,21 @@ export async function askQuestion(
       getLogger().debug({ neighbors: neighborChunks.length }, 'parent-child: neighbor chunks added');
     }
 
-    // Only show images that are truly visual (charts, tables, maps, figures, photos etc.)
-    // — not plain text pages that happen to have an image record.
-    const VISUAL_KEYWORDS = /\b(chart|graph|table|figure|map|diagram|infograph|photograph|photo|image\s+shows?|depicts?|illustrat|plot|bar\s+chart|pie\s+chart|scatter|histogram|satellite|aerial|schematic|specimen|cultivation|disease|pest|logo|flag|coat\s+of\s+arms|bowl|glass\s+bowl|paste)\b/i;
+    // Filter only truly irrelevant pages (TOC, bibliography, etc.)
     const VISUAL_BLOCKLIST = /\b(table of contents|bibliography|references|acknowledgment|copyright|title page)\b/i;
-    let visualHits = visualImages.filter((img: any) => {
-      const desc = img.description ?? '';
-      return VISUAL_KEYWORDS.test(desc) && !VISUAL_BLOCKLIST.test(desc);
-    });
+
+    // Match each image to its specific visual chunk (prevents unrelated images on the same page from being included)
+    let visualHits: any[] = filterImagesByVisualChunks(
+      visualImages.filter((img: any) => !VISUAL_BLOCKLIST.test(img.description ?? '')),
+      visualRows,
+    );
+    // Re-attach document relation (filterImagesByVisualChunks spreads, so includes it already)
 
     getLogger().debug({ visualBefore: visualImages.length, visualAfter: visualHits.length }, 'visual image filtering');
-    const initialVisualHits = [...visualHits]; // snapshot before merging text-page images
 
     // ── Secondary: also find images on pages of top-ranked TEXT chunks ──
-    // Visual-chunk embedding search fails when image descriptions are purely visual
-    // (e.g. "brown paste in a bowl") while the user asks about a topic ("tagellah dish").
-    // The text chunks DO rank high for the topic, so fetch images on those pages too.
     const textChunkPagePairs = rerankedTextChunks.slice(0, 5).map((c: any) => ({
-      documentId: c.documentId, pageNumber: c.pageNumber,
+      documentId: c.documentId, pageNumber: c.pageNumber, rerankScore: c.rerankScore,
     }));
     const alreadyFoundPageKeys = new Set(visualHits.map((img: any) => `${img.documentId}:${img.pageNumber}`));
     const missingPairs = textChunkPagePairs.filter(
@@ -867,9 +957,14 @@ export async function askQuestion(
         where: { OR: missingPairs.map((p: any) => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
         include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
       });
-      const extraVisual = textPageImages.filter((img: any) => {
-        const desc = img.description ?? '';
-        return VISUAL_KEYWORDS.test(desc) && !VISUAL_BLOCKLIST.test(desc);
+      // Build rerank score map for text-page images
+      const textScoreMap = new Map<string, number>();
+      for (const tp of missingPairs) {
+        textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, tp.rerankScore ?? 0.3);
+      }
+      const extraVisual = textPageImages.filter((img: any) => !VISUAL_BLOCKLIST.test(img.description ?? ''));
+      extraVisual.forEach((img: any) => {
+        img._score = textScoreMap.get(`${img.documentId}:${img.pageNumber}`) ?? 0.3;
       });
       if (extraVisual.length > 0) {
         getLogger().debug({ extraVisualFromTextPages: extraVisual.length }, 'found images on text-chunk pages');
@@ -877,12 +972,23 @@ export async function askQuestion(
       }
     }
 
-    // Cap to 3 images, prioritizing text-page images (relevance already validated by text chunk reranking)
-    // then fill remaining slots with visual-chunk-based images
-    const initialIds = new Set(initialVisualHits.map((img: any) => img.id));
-    const textPageImgs = visualHits.filter((img: any) => !initialIds.has(img.id));
-    const visualChunkImgs = visualHits.filter((img: any) => initialIds.has(img.id));
-    visualHits = [...textPageImgs, ...visualChunkImgs].slice(0, 3);
+    // Rerank ALL candidate images with Cohere for precise relevance filtering
+    // Extract figure captions from text chunks — text chunks contain captions
+    // (e.g. "Figure 10: Traditional drying and processing...") that vision AI
+    // descriptions may miss, giving Cohere much better ranking signal.
+    for (const img of visualHits) {
+      const matchingTextChunk = rerankedTextChunks.find((c: any) =>
+        c.documentId === (img as any).documentId && c.pageNumber === (img as any).pageNumber
+      );
+      if (matchingTextChunk) {
+        const chunkText = matchingTextChunk.text ?? matchingTextChunk.content ?? '';
+        // Extract figure caption from text (e.g. "Figure 10: Traditional drying...")
+        const figMatch = chunkText.match(/(?:Figure|Fig\.?)\s+\d+[^.]*\./i);
+        if (figMatch) (img as any)._figureCaption = figMatch[0];
+      }
+    }
+    visualHits.sort((a: any, b: any) => (b._score ?? 0) - (a._score ?? 0));
+    visualHits = await rerankImages(embeddingQuery, visualHits, 3);
 
     (chunks as any).visualImages = visualHits;
 

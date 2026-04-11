@@ -10,6 +10,7 @@ import { uploadToCloudinary, uploadBufferToCloudinary, configureCloudinary } fro
 import { v2 as cloudinary } from 'cloudinary';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
+import { describeImage } from './vision.service.js';
 // ── Semantic chunking helpers ──
 
 /** Split text into sentences at punctuation followed by whitespace + uppercase/Arabic/digit. */
@@ -98,6 +99,62 @@ function buildSemanticChunks(
 }
 
 configureCloudinary();
+
+/**
+ * Extract contextual text for an image from the page text.
+ * Returns the figure caption (e.g. "Figure 10: Traditional drying...") and
+ * the surrounding paragraph text that describes the image.
+ * This gets stored with the image and used for embedding/retrieval.
+ */
+function extractImageContext(fullPageText: string, imgIndex: number): string {
+  const parts: string[] = [];
+
+  // 1. Extract ALL figure/table captions from the page
+  // Captions look like: "Figure 10:   Traditional drying and processing of harvested dates in Siwa."
+  // Must handle "Figure 10:" / "Table 2:" format (with colon + descriptive text ending in period)
+  // Also handle shorter refs like "(Fig. 10)" but prefer full captions
+  const fullCaptionRegex = /(?:Figure|Fig\.?|Table|Plate)\s+\d+\s*[:.]?\s+[A-Z][^.]{10,150}\./gi;
+  const shortRefRegex = /(?:Figure|Fig\.?|Table|Plate)\s+\d+[^.]*\./gi;
+  
+  const fullCaptions = fullPageText.match(fullCaptionRegex);
+  const shortCaptions = fullPageText.match(shortRefRegex);
+  // Prefer full captions (with descriptive text after the number)
+  const captions = fullCaptions && fullCaptions.length > 0 ? fullCaptions : shortCaptions;
+  if (captions) {
+    const caption = captions[imgIndex] ?? captions[0];
+    parts.push(caption.trim());
+  }
+
+  // 2. Extract the paragraph text surrounding the caption or image reference
+  // Split into paragraphs and pick the most relevant ones
+  const paragraphs = fullPageText.split(/\n{2,}|\r?\n(?=[A-Z0-9\u0600-\u06FF])/)
+    .map(p => p.trim())
+    .filter(p => p.length > 40);
+
+  // Find paragraphs that reference figures/tables or contain substantive content
+  const figRefRegex = /(?:Figure|Fig\.?|Table|Plate)\s+\d+/i;
+  const refParagraphs = paragraphs.filter(p => figRefRegex.test(p));
+  const nonRefParagraphs = paragraphs.filter(p => !figRefRegex.test(p) && p.length > 60);
+
+  // Add referencing paragraphs first (they describe what the image shows)
+  for (const p of refParagraphs.slice(0, 2)) {
+    if (!parts.some(existing => existing.includes(p.substring(0, 50)))) {
+      parts.push(p);
+    }
+  }
+
+  // Add surrounding context paragraphs
+  for (const p of nonRefParagraphs.slice(0, 2)) {
+    if (!parts.some(existing => existing.includes(p.substring(0, 50)))) {
+      parts.push(p);
+    }
+  }
+
+  // Limit total context to ~1200 chars to keep embeddings focused
+  let result = parts.join('\n\n');
+  if (result.length > 1200) result = result.substring(0, 1200);
+  return result;
+}
 
 // ── Service Logic ──
 
@@ -228,23 +285,18 @@ export async function processDocument(documentId: string, filePath: string): Pro
               );
               const base64Image = jpegBuffer.toString('base64');
 
-              const visionResponse = await openai.chat.completions.create({
-                model: 'gpt-4o',
-                messages: [{
-                  role: 'user',
-                  content: [
-                    { type: 'text', text: "Describe this visual element (photo, chart, table, map, diagram, infographic). MANDATORY: If it has a label (e.g., 'Figure 5:', 'Table 1:'), transcribe that label word-for-word at the beginning. Be detailed and specific." },
-                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-                  ]
-                }],
-                max_tokens: 600
-              });
-
-              const visualDescription = visionResponse.choices[0].message.content;
+              const pageContext = fullPageText.substring(0, 600);
+              const visionPrompt = `Describe this visual element (photo, chart, table, map, diagram, infographic). MANDATORY: If it has a label (e.g., 'Figure 5:', 'Table 1:'), transcribe that label word-for-word at the beginning. Use the exact scientific names, species names, and terminology from the surrounding page text below. Be detailed and specific.\n\nPAGE TEXT CONTEXT:\n${pageContext}`;
+              const visualDescription = await describeImage(base64Image, visionPrompt);
               if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
+                const contextText = extractImageContext(fullPageText, imgIdx);
+                // Use contextText for embedding (much better for retrieval than AI description alone)
+                const embeddingText = contextText
+                  ? `[Visual Evidence from Page ${pageNum}]: ${contextText}\n\n${visualDescription}`
+                  : `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`;
                 chunks.push({
                   pageNumber: pageNum,
-                  text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
+                  text: embeddingText,
                   chunkIndex: 10000 + pageNum * 10 + imgIdx
                 });
                 await prisma.documentImage.create({
@@ -253,6 +305,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
                     pageNumber: pageNum,
                     filePath: imageUrl || '',
                     description: visualDescription,
+                    contextText: contextText || null,
                     altText: `Image ${imgIdx + 1} on page ${pageNum}`,
                     width: img.width,
                     height: img.height,
@@ -261,14 +314,9 @@ export async function processDocument(documentId: string, filePath: string): Pro
               }
               break;
             } catch (vErr: any) {
-              if (vErr.status === 429) {
-                logger.warn(`Rate limit hit on p${pageNum} img ${imgIdx + 1}, waiting 2s...`);
-                await new Promise(res => setTimeout(res, 2000));
-                retries--;
-              } else {
-                logger.warn(`Vision analysis failed for p${pageNum} img ${imgIdx + 1}: ${vErr}`);
-                break;
-              }
+              logger.warn(`Vision analysis failed for p${pageNum} img ${imgIdx + 1}: ${vErr}`);
+              retries--;
+              if (retries > 0) await new Promise(res => setTimeout(res, 2000));
             }
           }
           await new Promise(res => setTimeout(res, 500));
@@ -286,23 +334,17 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
             const permanentImageUrl = await uploadBufferToCloudinary(imgBuffer, `kiadp/images/${documentId}`, `page_${pageNum}.jpg`);
 
-            const visionResponse = await openai.chat.completions.create({
-              model: 'gpt-4o',
-              messages: [{
-                role: 'user',
-                content: [
-                  { type: 'text', text: "Describe ALL visual elements on this page (photos, charts, tables, maps, diagrams). MANDATORY: If an element is labeled (e.g., 'Figure 5:', 'Table 1:'), you MUST transcribe that label word-for-word at the beginning of its description. we need to match user questions exactly." },
-                  { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-                ]
-              }],
-              max_tokens: 600
-            });
-
-            const visualDescription = visionResponse.choices[0].message.content;
+            const pageContext = fullPageText.substring(0, 600);
+            const visionPrompt = `Describe ALL visual elements on this page (photos, charts, tables, maps, diagrams). MANDATORY: If an element is labeled (e.g., 'Figure 5:', 'Table 1:'), you MUST transcribe that label word-for-word at the beginning of its description. Use the exact scientific names, species names, and terminology from the surrounding page text below. We need to match user questions exactly.\n\nPAGE TEXT CONTEXT:\n${pageContext}`;
+            const visualDescription = await describeImage(base64Image, visionPrompt);
             if (visualDescription && !visualDescription.includes('No visuals found') && !visualDescription.includes('No informative visuals found')) {
+              const contextText = extractImageContext(fullPageText, 0);
+              const embeddingText = contextText
+                ? `[Visual Evidence from Page ${pageNum}]: ${contextText}\n\n${visualDescription}`
+                : `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`;
               chunks.push({
                 pageNumber: pageNum,
-                text: `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`,
+                text: embeddingText,
                 chunkIndex: 999 + pageNum
               });
               await prisma.documentImage.create({
@@ -311,20 +353,16 @@ export async function processDocument(documentId: string, filePath: string): Pro
                   pageNumber: pageNum,
                   filePath: permanentImageUrl || dynamicImageUrl,
                   description: visualDescription,
+                  contextText: contextText || null,
                   altText: `Figure on page ${pageNum}`
                 }
               });
             }
             break;
           } catch (vErr: any) {
-            if (vErr.status === 429) {
-              logger.warn(`Rate limit hit on p${pageNum}, waiting 2s...`);
-              await new Promise(res => setTimeout(res, 2000));
-              retries--;
-            } else {
-              logger.warn(`Vision analysis failed for p${pageNum}: ${vErr}`);
-              break;
-            }
+            logger.warn(`Vision analysis failed for p${pageNum}: ${vErr}`);
+            retries--;
+            if (retries > 0) await new Promise(res => setTimeout(res, 2000));
           }
         }
         await new Promise(res => setTimeout(res, 500));
