@@ -45,16 +45,14 @@ export function createApp(): Express {
   // ── API Routes ──
   app.use('/api/v1', routes);
 
-  // ── SPA Static Serving (production only) ──
-  if (env.NODE_ENV === 'production') {
-    const appDir = path.dirname(fileURLToPath(import.meta.url));
-    const frontendDist = path.join(appDir, '../../frontend/dist');
-    if (fs.existsSync(frontendDist)) {
-      app.use(express.static(frontendDist));
-      app.get('/*', (_req, res) => {
-        res.sendFile(path.join(frontendDist, 'index.html'));
-      });
-    }
+  // ── SPA Static Serving (serves built frontend) ──
+  const appDir = path.dirname(fileURLToPath(import.meta.url));
+  const frontendDist = path.join(appDir, '../../frontend/dist');
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.get('/*', (_req, res) => {
+      res.sendFile(path.join(frontendDist, 'index.html'));
+    });
   }
 
   // ── Error handler (must be last) ──

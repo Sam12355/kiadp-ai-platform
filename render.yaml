@@ -1,11 +1,10 @@
 services:
   # ── Backend API + Worker ──
   - type: web
-    name: kiadp-backend
+    name: kiadp-ai-platform
     runtime: node
-    rootDir: packages/backend
-    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @khalifa/backend run build && pnpm --filter @khalifa/frontend run build
-    startCommand: node /opt/render/project/src/packages/backend/dist/server.js & node /opt/render/project/src/packages/backend/dist/worker.js
+    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm -r build
+    startCommand: node /opt/render/project/src/packages/backend/dist/server.js
     envVars:
       - key: NODE_ENV
         value: production
