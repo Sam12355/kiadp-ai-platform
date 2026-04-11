@@ -38,15 +38,16 @@ async function getEmbeddings(
   if (!geminiKey) {
     throw new Error('OpenAI quota exceeded and GEMINI_API_KEY is not set — cannot embed');
   }
-  const ai = new GoogleGenAI({ apiKey: geminiKey });
+  // v1alpha is required for the experimental embedding model
+  const ai = new GoogleGenAI({ apiKey: geminiKey, apiVersion: 'v1alpha' } as any);
   const embeddings: number[][] = [];
   for (const text of texts) {
-    const response = await (ai.models as any).embedContent({
+    const response = await ai.models.embedContent({
       model: 'gemini-embedding-exp-03-07',
       contents: text,
       config: { outputDimensionality: 1536 },
     });
-    const values: number[] = response?.embeddings?.[0]?.values ?? response?.embedding?.values ?? [];
+    const values: number[] = (response as any)?.embeddings?.[0]?.values ?? (response as any)?.embedding?.values ?? [];
     if (!values.length) throw new Error('Gemini embedding returned empty vector');
     embeddings.push(values);
   }
