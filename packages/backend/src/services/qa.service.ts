@@ -399,6 +399,8 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
         url: img.filePath,
         description: img.description || '',
         pageNumber: img.pageNumber,
+        width: img.width ?? null,
+        height: img.height ?? null,
       })),
     };
   }
@@ -544,7 +546,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
 export async function voiceAsk(
   queryText: string,
   language: string = 'en'
-): Promise<{ answerText: string; images: { id: string; url: string; description: string; pageNumber: number }[] }> {
+): Promise<{ answerText: string; images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] }> {
   const openai = getOpenAI();
   const env = getEnv();
   const prisma = getPrisma();
@@ -639,31 +641,121 @@ export async function voiceAsk(
   const imagePromise = (async () => {
     const visualPagePairs = visualRows.map(r => ({ documentId: r.document_id, pageNumber: r.page_number }));
     const vcImages = visualPagePairs.length > 0
-      ? await prisma.documentImage.findMany({ where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true } })
+      ? await prisma.documentImage.findMany({ where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true } })
       : [];
     // Match each image to its specific visual chunk (prevents unrelated images on the same page)
-    const filteredVc = filterImagesByVisualChunks(
+    let visualHits: any[] = filterImagesByVisualChunks(
       vcImages.filter(img => !VISUAL_BL.test(img.description ?? '')),
       visualRows,
     );
 
-    const textPairs = reranked.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber, rerankScore: r.rerankScore }));
-    const vcKeys = new Set(filteredVc.map(img => `${img.documentId}:${img.pageNumber}`));
-    const missingPairs = textPairs.filter(p => !vcKeys.has(`${p.documentId}:${p.pageNumber}`));
-    const textImgs = missingPairs.length > 0
-      ? await prisma.documentImage.findMany({ where: { OR: missingPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true } })
-      : [];
-    const textScoreMap = new Map<string, number>();
-    for (const tp of missingPairs) textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, tp.rerankScore ?? 0.3);
-    const filteredText = textImgs.filter(img => !VISUAL_BL.test(img.description ?? ''));
-    filteredText.forEach((img: any) => { img._score = textScoreMap.get(`${img.documentId}:${img.pageNumber}`) ?? 0.3; });
+    // ── Direct figure number lookup (same as askQuestion) ──
+    const figureRequestMatch = queryText.match(/(?:figure|fig\.?)\s+(\d+)/i);
+    if (figureRequestMatch) {
+      const requestedFigNum = figureRequestMatch[1];
+      const keptIds = new Set(visualHits.map((img: any) => img.id));
+      const directFigImages = await prisma.documentImage.findMany({
+        where: { description: { contains: `Figure ${requestedFigNum}`, mode: 'insensitive' } },
+        select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+      });
+      for (const img of directFigImages) {
+        if (keptIds.has(img.id)) continue;
+        if (VISUAL_BL.test(img.description ?? '')) continue;
+        const descFig = (img.description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+        if (descFig && descFig[1] === requestedFigNum) {
+          (img as any)._score = 0.9;
+          (img as any)._directFigureMatch = true;
+          visualHits.push(img);
+          keptIds.add(img.id);
+        }
+      }
+      getLogger().debug({ figNum: requestedFigNum, hits: visualHits.length }, 'voiceAsk: direct figure lookup');
+    }
 
-    // Merge all, then rerank with Cohere for precise relevance filtering
-    const allImages = [...filteredVc, ...filteredText.filter(img => !filteredVc.some(v => v.documentId === img.documentId && v.pageNumber === img.pageNumber))];
-    allImages.sort((a: any, b: any) => (b._score ?? 0) - (a._score ?? 0));
-    const rerankedImgs = await rerankImages(queryText, allImages, 3);
-    return rerankedImgs.map(img => ({
-      id: img.id, url: img.filePath, description: img.description || '', pageNumber: img.pageNumber, documentId: img.documentId,
+    // ── Text-page images with figure-reference verification ──
+    const textPairs = reranked.slice(0, 5).map(r => ({ documentId: r.documentId, pageNumber: r.pageNumber, rerankScore: r.rerankScore, text: r.text }));
+    const vcKeys = new Set(visualHits.map((img: any) => `${img.documentId}:${img.pageNumber}`));
+    const missingPairs = textPairs.filter(p => !vcKeys.has(`${p.documentId}:${p.pageNumber}`));
+    if (missingPairs.length > 0) {
+      const textImgs = await prisma.documentImage.findMany({
+        where: { OR: missingPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+        select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+      });
+      const textScoreMap = new Map<string, { rerankScore: number; text: string }>();
+      for (const tp of missingPairs) textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, { rerankScore: tp.rerankScore ?? 0.3, text: tp.text });
+      for (const img of textImgs) {
+        if (VISUAL_BL.test(img.description ?? '')) continue;
+        const key = `${img.documentId}:${img.pageNumber}`;
+        const chunkInfo = textScoreMap.get(key);
+        if (!chunkInfo) continue;
+        const figMatch = (img.description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+        const figNum = figMatch?.[1];
+        let isReferenced = false;
+        if (figNum) {
+          const refRegex = new RegExp(`(?:Figure|Fig\\.?)\\s+${figNum}\\b`, 'i');
+          isReferenced = refRegex.test(chunkInfo.text);
+        }
+        if (!isReferenced && img.description) {
+          const descWords = (img.description).substring(0, 100).toLowerCase();
+          const chunkLower = chunkInfo.text.toLowerCase();
+          const descTerms = descWords.match(/\b[a-z]{5,}\b/g) ?? [];
+          const matchCount = descTerms.filter(t => chunkLower.includes(t)).length;
+          isReferenced = matchCount >= 3 && descTerms.length > 0;
+        }
+        if (isReferenced) {
+          (img as any)._score = chunkInfo.rerankScore;
+          visualHits.push(img);
+        }
+      }
+    }
+
+    // ── Rerank with direct-figure bypass (same as askQuestion) ──
+    visualHits.sort((a: any, b: any) => (b._score ?? 0) - (a._score ?? 0));
+    const directFigHits: any[] = [];
+    const rerankCandidates: any[] = [];
+    for (const img of visualHits) {
+      if ((img as any)._directFigureMatch) directFigHits.push(img);
+      else rerankCandidates.push(img);
+    }
+    if (rerankCandidates.length > 0) {
+      visualHits = await rerankImages(queryText, rerankCandidates, 3);
+    } else {
+      visualHits = [];
+    }
+    for (const img of directFigHits) {
+      (img as any)._rerankScore = 0.95;
+      visualHits.push(img);
+    }
+
+    // ── Sibling expansion (same as askQuestion) ──
+    if (visualHits.length > 0) {
+      const keptIds = new Set(visualHits.map((img: any) => img.id));
+      const pageFigurePairs: { documentId: string; pageNumber: number; figNum: string }[] = [];
+      for (const img of visualHits) {
+        const figMatch = ((img as any).description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+        if (figMatch) {
+          pageFigurePairs.push({ documentId: (img as any).documentId, pageNumber: (img as any).pageNumber, figNum: figMatch[1] });
+        }
+      }
+      if (pageFigurePairs.length > 0) {
+        const siblingImages = await prisma.documentImage.findMany({
+          where: { OR: pageFigurePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+        });
+        for (const sib of siblingImages) {
+          if (keptIds.has(sib.id)) continue;
+          const sibFig = (sib.description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+          if (sibFig && pageFigurePairs.some(p => p.figNum === sibFig[1] && p.pageNumber === sib.pageNumber)) {
+            (sib as any)._rerankScore = visualHits[0]?._rerankScore ?? 0.9;
+            visualHits.push(sib as any);
+            keptIds.add(sib.id);
+          }
+        }
+      }
+    }
+
+    return visualHits.map((img: any) => ({
+      id: img.id, url: img.filePath, description: img.description || '', pageNumber: img.pageNumber, documentId: img.documentId, width: img.width ?? null, height: img.height ?? null,
     }));
   })();
 
@@ -959,6 +1051,35 @@ export async function askQuestion(
 
     getLogger().debug({ visualBefore: visualImages.length, visualAfter: visualHits.length }, 'visual image filtering');
 
+    // ── Direct figure number lookup ──
+    // When the user explicitly asks for "figure N" or "fig N", directly fetch
+    // images whose description contains that figure number, regardless of
+    // whether visual chunks or text chunks matched.
+    const figureRequestMatch = embeddingQuery.match(/(?:figure|fig\.?)\s+(\d+)/i);
+    if (figureRequestMatch) {
+      const requestedFigNum = figureRequestMatch[1];
+      const keptIds = new Set(visualHits.map((img: any) => img.id));
+      const directFigImages = await prisma.documentImage.findMany({
+        where: { description: { contains: `Figure ${requestedFigNum}`, mode: 'insensitive' } },
+        include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
+      });
+      for (const img of directFigImages) {
+        if (keptIds.has(img.id)) continue;
+        if (VISUAL_BLOCKLIST.test(img.description ?? '')) continue;
+        // Verify the figure number is an exact match (not "Figure 240" for "Figure 24")
+        const descFig = (img.description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+        if (descFig && descFig[1] === requestedFigNum) {
+          (img as any)._score = 0.9; // high score for direct match
+          (img as any)._directFigureMatch = true;
+          visualHits.push(img);
+          keptIds.add(img.id);
+        }
+      }
+      if (directFigImages.length > 0) {
+        getLogger().debug({ figNum: requestedFigNum, added: visualHits.length }, 'direct figure lookup');
+      }
+    }
+
     // ── Secondary: also find images on pages of top-ranked TEXT chunks ──
     // IMPORTANT: Don't blindly add ALL images from text-chunk pages.
     // A page can have an image (e.g. Fig 9 pollination on p26) alongside
@@ -1034,7 +1155,57 @@ export async function askQuestion(
       }
     }
     visualHits.sort((a: any, b: any) => (b._score ?? 0) - (a._score ?? 0));
-    visualHits = await rerankImages(embeddingQuery, visualHits, 3);
+
+    // When the user explicitly asked for a figure number, direct-match images
+    // bypass reranking (they're exact matches by definition).
+    const directFigHits: any[] = [];
+    const rerankCandidates: any[] = [];
+    for (const img of visualHits) {
+      if ((img as any)._directFigureMatch) directFigHits.push(img);
+      else rerankCandidates.push(img);
+    }
+    if (rerankCandidates.length > 0) {
+      visualHits = await rerankImages(embeddingQuery, rerankCandidates, 3);
+    } else {
+      visualHits = [];
+    }
+    // Re-add direct figure matches with a high rerank score
+    for (const img of directFigHits) {
+      (img as any)._rerankScore = 0.95;
+      visualHits.push(img);
+    }
+
+    // ── Expand to include ALL sibling images from the same figure on the same page ──
+    // A single figure (e.g. Figure 11) may have 4 sub-photos stored as separate DB rows.
+    // If reranking kept any image from that figure, include ALL images from that page+figure.
+    if (visualHits.length > 0) {
+      const keptIds = new Set(visualHits.map((img: any) => img.id));
+      // Identify unique page+figure pairs from kept images
+      const pageFigurePairs: { documentId: string; pageNumber: number; figNum: string }[] = [];
+      for (const img of visualHits) {
+        const figMatch = ((img as any).description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+        if (figMatch) {
+          pageFigurePairs.push({ documentId: (img as any).documentId, pageNumber: (img as any).pageNumber, figNum: figMatch[1] });
+        }
+      }
+      if (pageFigurePairs.length > 0) {
+        // Fetch all images on those pages
+        const siblingImages = await prisma.documentImage.findMany({
+          where: { OR: pageFigurePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+          include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
+        });
+        for (const sib of siblingImages) {
+          if (keptIds.has(sib.id)) continue;
+          // Only add if same figure number
+          const sibFig = (sib.description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+          if (sibFig && pageFigurePairs.some(p => p.figNum === sibFig[1] && p.pageNumber === sib.pageNumber)) {
+            (sib as any)._rerankScore = visualHits[0]._rerankScore; // inherit top score
+            visualHits.push(sib as any);
+            keptIds.add(sib.id);
+          }
+        }
+      }
+    }
 
     (chunks as any).visualImages = visualHits;
 
@@ -1248,7 +1419,9 @@ function formatAnswerResponse(answer: any): AnswerResponse {
       id: ai.image.id,
       url: ai.image.filePath,
       description: ai.image.description,
-      pageNumber: ai.image.pageNumber
+      pageNumber: ai.image.pageNumber,
+      width: ai.image.width ?? null,
+      height: ai.image.height ?? null,
     })) || []
   };
 }

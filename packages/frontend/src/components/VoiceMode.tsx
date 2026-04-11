@@ -13,7 +13,7 @@ interface VoiceModeProps {
   language?: string;
   onStatusChange?: (status: 'connecting' | 'ready' | 'listening' | 'speaking' | 'thinking') => void;
   onTranscript?: (role: 'user' | 'assistant', text: string) => void;
-  onImages?: (images: { id: string; url: string; description: string; pageNumber: number }[]) => void;
+  onImages?: (images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[]) => void;
   chatMessages?: { role: 'user' | 'assistant'; content: string; sources?: { excerpt: string; sourceDocument: { title: string }; pageNumber: number }[] }[];
   isMuted?: boolean;
   pendingClientText?: string | null;
@@ -83,6 +83,8 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   const aiTurnCompleteRef = useRef(false);
   const toolAnswerEmittedRef = useRef(false);
   const waitingForToolAudioRef = useRef(false);
+  const toolCallGenRef = useRef<number>(0);
+  const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Keep refs to latest callbacks so closures inside connect() always use current values
   const onTranscriptRef = useRef(onTranscript);
   const onCloseRef = useRef(onClose);
@@ -277,6 +279,8 @@ Instructions:
               // Discard partial AI transcript since AI was interrupted
               aiTranscriptRef.current = '';
               aiTurnCompleteRef.current = false;
+              // Clear tool-wait flag so we don't get stuck in "thinking" after interruption
+              waitingForToolAudioRef.current = false;
               if (audioContextRef.current) {
                 nextPlayTimeRef.current = audioContextRef.current.currentTime;
               }
@@ -324,8 +328,20 @@ Instructions:
             // Uses the SAME /knowledge/ask endpoint as normal text chat so answers,
             // sources, and images are identical. Gemini just reads the answer aloud.
             if (message.toolCall) {
+              const thisToolGen = ++toolCallGenRef.current;
               waitingForToolAudioRef.current = true;
               setStatusAndNotify('thinking');
+
+              // Safety timeout: if we're still in "thinking" after 25s, force recovery
+              if (thinkingTimeoutRef.current) clearTimeout(thinkingTimeoutRef.current);
+              thinkingTimeoutRef.current = setTimeout(() => {
+                if (toolCallGenRef.current === thisToolGen && waitingForToolAudioRef.current) {
+                  console.warn('[VoiceMode] thinking safety timeout — recovering');
+                  waitingForToolAudioRef.current = false;
+                  setStatusAndNotify('listening');
+                }
+              }, 25000);
+
               const session = sessionRef.current;
               if (session) {
                 try {
@@ -350,18 +366,21 @@ Instructions:
                           }, { timeout: 20000 });
                           const data = res.data?.data || {};
                           const answerText: string = data.answerText || '';
-                          const images: { id: string; url: string; description: string; pageNumber: number }[] = data.images || [];
+                          const images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] = data.images || [];
                           console.log('[VoiceMode] voice-ask returned answer length:', answerText.length, 'images:', images.length);
 
-                          // Emit images to chat UI so they appear under the current AI bubble
-                          if (images.length > 0) onImagesRef.current?.(images);
+                          // Only emit if this is still the active tool call (not superseded)
+                          if (toolCallGenRef.current === thisToolGen) {
+                            // Emit images to chat UI so they appear under the current AI bubble
+                            if (images.length > 0) onImagesRef.current?.(images);
 
-                          // Emit the structured answer directly as the assistant chat bubble
-                          // (identical to text chat) instead of letting Gemini paraphrase it
-                          if (answerText) {
-                            toolAnswerEmittedRef.current = true;
-                            aiTranscriptRef.current = '';
-                            onTranscriptRef.current?.('assistant', answerText);
+                            // Emit the structured answer directly as the assistant chat bubble
+                            // (identical to text chat) instead of letting Gemini paraphrase it
+                            if (answerText) {
+                              toolAnswerEmittedRef.current = true;
+                              aiTranscriptRef.current = '';
+                              onTranscriptRef.current?.('assistant', answerText);
+                            }
                           }
 
                           // Strip markdown formatting so Gemini reads clean speech-ready text
@@ -412,13 +431,20 @@ Instructions:
                     session.sendToolResponse({ functionResponses: responses });
                   } catch (sendErr) {
                     console.error('[VoiceMode] sendToolResponse failed:', sendErr);
+                    // Send failed — Gemini won't produce audio, so unstick immediately
+                    waitingForToolAudioRef.current = false;
+                    if (thinkingTimeoutRef.current) { clearTimeout(thinkingTimeoutRef.current); thinkingTimeoutRef.current = null; }
+                    setStatusAndNotify('listening');
+                    return;
                   }
                   // Answer audio will arrive soon; clear the flag so source.onended
                   // transitions to 'listening' (not back to 'thinking') when done.
                   waitingForToolAudioRef.current = false;
+                  if (thinkingTimeoutRef.current) { clearTimeout(thinkingTimeoutRef.current); thinkingTimeoutRef.current = null; }
                 } catch (toolErr) {
                   console.error("Tool execution error:", toolErr);
                   waitingForToolAudioRef.current = false;
+                  if (thinkingTimeoutRef.current) { clearTimeout(thinkingTimeoutRef.current); thinkingTimeoutRef.current = null; }
                   setStatusAndNotify('listening');
                   try {
                     session.sendToolResponse({
@@ -435,6 +461,7 @@ Instructions:
                 // Session gone — unstick from thinking
                 console.error('[VoiceMode] toolCall received but session is null');
                 waitingForToolAudioRef.current = false;
+                if (thinkingTimeoutRef.current) { clearTimeout(thinkingTimeoutRef.current); thinkingTimeoutRef.current = null; }
                 setStatusAndNotify('listening');
               }
             }
@@ -522,6 +549,8 @@ Instructions:
   const disconnect = () => {
     connectionIdRef.current++;
     sessionAliveRef.current = false;
+    waitingForToolAudioRef.current = false;
+    if (thinkingTimeoutRef.current) { clearTimeout(thinkingTimeoutRef.current); thinkingTimeoutRef.current = null; }
     if (processorRef.current) {
       processorRef.current.disconnect();
       processorRef.current = null;

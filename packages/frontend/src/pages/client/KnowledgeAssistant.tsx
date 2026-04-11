@@ -27,6 +27,8 @@ interface Message {
     url: string;
     description: string;
     pageNumber: number;
+    width?: number | null;
+    height?: number | null;
   }[];
   isGrounded?: boolean;
   thread?: Message[];
@@ -57,7 +59,7 @@ export default function KnowledgeAssistant() {
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadQuery, setThreadQuery] = useState('');
   const [isThreadLoading, setIsThreadLoading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number } | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number; width?: number | null; height?: number | null } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
@@ -520,8 +522,10 @@ export default function KnowledgeAssistant() {
                   {m.images && m.images.length > 0 && (
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                       {m.images.map(img => (
-                        <div key={img.id} onClick={() => setSelectedImage(img)} className="group relative rounded-xl overflow-hidden border border-white/5 cursor-zoom-in">
-                          <img src={img.url} className="w-full h-auto max-h-[250px] object-cover" />
+                        <div key={img.id} onClick={() => { setSelectedImage(img); setZoomScale(1); }} className="group relative rounded-xl overflow-hidden border border-white/5 cursor-zoom-in">
+                          <img src={img.url}
+                               className="w-full h-auto object-contain"
+                               style={img.width && img.height ? { aspectRatio: `${img.width} / ${img.height}` } : undefined} />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end">
                             <p className="text-[10px] line-clamp-1">{img.description}</p>
                           </div>
@@ -741,12 +745,32 @@ export default function KnowledgeAssistant() {
         {/* Lightbox / Tooltips etc omitted for brevity or re-implementing if needed */}
         {selectedImage && (
           <Portal>
-            <div className="fixed inset-0 z-[999] bg-[#000000ef] flex items-center justify-center p-8 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedImage(null)}>
-              <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
-                <img src={selectedImage.url} className="w-full h-full object-contain rounded-lg shadow-2xl" />
-                <div className="mt-4 text-center">
-                  <p className="text-white font-medium">{selectedImage.description}</p>
-                  <p className="text-white/40 text-xs mt-1 uppercase tracking-widest">Page {selectedImage.pageNumber}</p>
+            <div className="fixed inset-0 z-[999] bg-[#000000ef] flex items-center justify-center backdrop-blur-sm animate-fade-in"
+                 onClick={() => { setSelectedImage(null); setZoomScale(1); }}
+                 onWheel={e => { e.preventDefault(); setZoomScale(s => Math.min(5, Math.max(0.5, s + (e.deltaY > 0 ? -0.15 : 0.15)))); }}>
+              <div className="relative max-w-[92vw] max-h-[92vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                {/* Zoom controls */}
+                <div className="absolute top-3 right-3 z-10 flex gap-2">
+                  <button onClick={() => setZoomScale(s => Math.min(5, s + 0.25))}
+                          className="w-8 h-8 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center hover:bg-black/80 text-lg font-bold">+</button>
+                  <button onClick={() => setZoomScale(s => Math.max(0.5, s - 0.25))}
+                          className="w-8 h-8 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center hover:bg-black/80 text-lg font-bold">&minus;</button>
+                  <button onClick={() => setZoomScale(1)}
+                          className="px-2 h-8 rounded-full bg-black/60 border border-white/20 text-white/70 flex items-center justify-center hover:bg-black/80 text-xs">Reset</button>
+                  <button onClick={() => { setSelectedImage(null); setZoomScale(1); }}
+                          className="w-8 h-8 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center hover:bg-black/80 text-lg">&times;</button>
+                </div>
+                <div className="overflow-auto max-w-[90vw] max-h-[80vh] flex items-center justify-center"
+                     onWheel={e => { e.stopPropagation(); setZoomScale(s => Math.min(5, Math.max(0.5, s + (e.deltaY > 0 ? -0.15 : 0.15)))); }}>
+                  <img src={selectedImage.url}
+                       className="rounded-lg shadow-2xl transition-transform duration-150"
+                       style={{ transform: `scale(${zoomScale})`, transformOrigin: 'center center',
+                                maxWidth: zoomScale <= 1 ? '90vw' : 'none', maxHeight: zoomScale <= 1 ? '75vh' : 'none' }}
+                       draggable={false} />
+                </div>
+                <div className="mt-3 text-center">
+                  <p className="text-white font-medium text-sm">{selectedImage.description}</p>
+                  <p className="text-white/40 text-xs mt-1 uppercase tracking-widest">Page {selectedImage.pageNumber}{zoomScale !== 1 ? ` · ${Math.round(zoomScale * 100)}%` : ''}</p>
                 </div>
               </div>
             </div>
