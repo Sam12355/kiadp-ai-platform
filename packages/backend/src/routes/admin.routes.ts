@@ -145,7 +145,8 @@ router.post('/bootstrap', async (req: Request, res: Response, next: NextFunction
     const prisma = getPrisma();
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return res.status(400).json({ success: false, error: 'User with this email already exists' });
+      await prisma.refreshToken.deleteMany({ where: { userId: existing.id } });
+      await prisma.user.delete({ where: { id: existing.id } });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
