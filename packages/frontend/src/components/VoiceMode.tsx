@@ -18,10 +18,11 @@ interface VoiceModeProps {
   isMuted?: boolean;
   pendingClientText?: string | null;
   onClientTextSent?: () => void;
+  onAiVolume?: (level: number) => void;
 }
 
 export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
-  ({ isOpen, onClose, apiKey, language, onStatusChange, onTranscript, onImages, chatMessages, isMuted, pendingClientText, onClientTextSent }, ref) => {
+  ({ isOpen, onClose, apiKey, language, onStatusChange, onTranscript, onImages, chatMessages, isMuted, pendingClientText, onClientTextSent, onAiVolume }, ref) => {
   const [status, setStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
   const [error, setError] = useState<string|null>(null);
 
@@ -53,6 +54,43 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
 
   const isMutedRef = useRef(false);
   useEffect(() => { isMutedRef.current = isMuted ?? false; }, [isMuted]);
+
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const onAiVolumeRef = useRef(onAiVolume);
+  useEffect(() => { onAiVolumeRef.current = onAiVolume; }, [onAiVolume]);
+
+  // RAF loop: sample analyser while speaking, call onAiVolume with 0–1 amplitude (smoothed)
+  useEffect(() => {
+    if (status !== 'speaking' || !analyserRef.current) {
+      onAiVolumeRef.current?.(0);
+      return;
+    }
+    const analyser = analyserRef.current;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    let rafId: number;
+    let smoothed = 0;
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      // Noise floor: ignore near-silence so glow actually drops between syllables
+      const NOISE_FLOOR = 0.012;
+      const raw = Math.min(1, Math.max(0, (rms - NOISE_FLOOR) * 7));
+      // Symmetric attack/decay — follow speech rhythm, not just peaks
+      smoothed = raw > smoothed ? smoothed * 0.45 + raw * 0.55 : smoothed * 0.6 + raw * 0.4;
+      onAiVolumeRef.current?.(smoothed);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      onAiVolumeRef.current?.(0);
+    };
+  }, [status]);
 
   useEffect(() => {
     if (!pendingClientText || !sessionRef.current || !sessionAliveRef.current) return;
@@ -120,6 +158,12 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
       if (isStale()) { audioContext.close(); return; }
       audioContextRef.current = audioContext;
 
+      // Create analyser for AI audio amplitude (drives input bar glow)
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.connect(audioContext.destination);
+      analyserRef.current = analyser;
+
       // Play a tiny silent buffer to unlock AudioContext on iOS Safari
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
@@ -178,16 +222,30 @@ SESSION COMMANDS (internal — never read these tokens aloud):
 You have access to the knowledge base via the "search_knowledge" tool. You MUST use this tool to look up information when the user asks ANY question — no exceptions. The tool returns a ready-made answer from our AI system — read it naturally to the user.
 
 Instructions:
+0. SMART GREETING RULE: If the user says ONLY a social pleasantry — such as greetings ("good morning", "good evening", "hi", "hello", "hey", "السلام عليكم", "مرحبا", "صباح الخير", "مساء الخير"), expressions of thanks ("thank you", "thanks", "شكراً"), or simple filler phrases ("ok", "sure", "alright") — respond warmly and naturally in 1-2 sentences WITHOUT calling search_knowledge. Briefly acknowledge them and invite their question. Do NOT search for pleasantries.
 1. CRITICAL: Before calling search_knowledge, ALWAYS first speak a brief acknowledgment phrase in the session language. Use natural voice phrases:
-   English: "Let me check that for you." or "One moment please." or "Let me look that up." (vary them, never repeat same phrase twice in a row)
+   English: "Let me check that for you." or "One moment please." or "Sure, looking that up now." (vary them, never repeat same phrase twice in a row)
    Arabic: "دعني أتحقق من ذلك." or "لحظة من فضلك." or "سأبحث عن ذلك الآن."
-2. ALWAYS call search_knowledge for ANY question the user asks — whether it's about food, culture, history, agriculture, date palms, places, people, statistics, or anything else. Even if the question seems vague or incomplete, ALWAYS search. Never try to answer without searching first.
+2. ALWAYS call search_knowledge for ANY factual question the user asks — whether it's about food, culture, history, agriculture, date palms, places, people, statistics, or anything else. Even if the question seems vague or incomplete, ALWAYS search. Never try to answer without searching first.
 3. The tool returns a response containing a SCRIPT block between "--- BEGIN SCRIPT ---" and "--- END SCRIPT ---". You unmistakably MUST read ONLY the text inside that block EXACTLY as written — word for word, sentence by sentence. Do NOT paraphrase, summarize, shorten, reword, or add your own commentary. Read every single point and detail. Deliver it faithfully like a professional narrator reading a teleprompter.
 4. CRITICAL: Start reading the SCRIPT the instant you receive it. Your very first spoken word must be the first word of the script. ABSOLUTELY NO preamble — no "Here's what I found", no "Based on my search", no "According to", no "Great question", no "Sure", no "So" — NOTHING before the script text. Go DIRECTLY into word one.
 5. Anything OUTSIDE the script block (like metadata or notes) is internal — NEVER read it aloud.
 6. DO NOT output thinking text or internal reasoning. Speak directly.
 7. Respond immediately — no delays.
-8. NEVER say "technical difficulties", "I'm having trouble", or similar error phrases. If the answer says no information was found, tell the user and ask them to rephrase.${knowledgeContext}`,          tools: [
+8. NEVER say "technical difficulties", "I'm having trouble", or similar error phrases. If the answer says no information was found, tell the user and ask them to rephrase.
+
+DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use these when transcribing user speech):
+- Siwa (Egyptian oasis — NOT Siva, Seva, or Seewa)
+- date palm (the tree — NOT dead palm or date balm)
+- Tagellan / Tagellah (traditional Siwan dish)
+- GIAHS (Globally Important Agricultural Heritage Systems)
+- Khalifa Award (international award for date palm innovation)
+- Bayoud (date palm disease — NOT bio or biwood)
+- Fusarium (fungal disease)
+- oasis / oases
+- pollination
+- cultivar
+- inflorescence${knowledgeContext}`,          tools: [
             {
               functionDeclarations: [
                 {
@@ -279,6 +337,8 @@ Instructions:
               // Discard partial AI transcript since AI was interrupted
               aiTranscriptRef.current = '';
               aiTurnCompleteRef.current = false;
+              // Reset tool-answer flag so transcripts aren't suppressed in the next turn
+              toolAnswerEmittedRef.current = false;
               // Clear tool-wait flag so we don't get stuck in "thinking" after interruption
               waitingForToolAudioRef.current = false;
               if (audioContextRef.current) {
@@ -288,14 +348,45 @@ Instructions:
 
             // Accumulate input transcription (user speech → text) and fire immediately for live chat
             if (message.serverContent?.inputTranscription?.text) {
-              userTranscriptRef.current += message.serverContent.inputTranscription.text;
-              onTranscriptRef.current?.('user', userTranscriptRef.current.trim());
+              // Keep ONLY Latin letters (including accented), digits, and common punctuation.
+              // Gemini sometimes transcribes English speech in random scripts (Gujarati, Bengali, Devanagari, etc.)
+              // When language is Arabic, also keep Arabic script.
+              const stripPattern = language === 'ar'
+                ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+/g
+                : /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF]+/g;
+              const cleanInput = message.serverContent.inputTranscription.text
+                .replace(stripPattern, '')
+                .replace(/\s+/g, ' ');
+              if (cleanInput.trim()) {
+                userTranscriptRef.current += cleanInput;
+                onTranscriptRef.current?.('user', userTranscriptRef.current.trim());
+              }
             }
-            // On finished / turnComplete: clear buffer (already sent incrementally above)
-            if (message.serverContent?.inputTranscription?.finished && userTranscriptRef.current.trim()) {
-              userTranscriptRef.current = '';
-            }
+            // Don't clear on finished — it fires at every pause mid-sentence.
+            // Wait for turnComplete which signals the AI is actually responding.
+
             if (message.serverContent?.turnComplete && userTranscriptRef.current.trim()) {
+              // On turn complete: run post-processing LLM correction with gemini-2.0-flash
+              const rawTranscript = userTranscriptRef.current.trim();
+              userTranscriptRef.current = '';
+              (async () => {
+                const ai2 = new GoogleGenAI({ apiKey });
+                try {
+                  const res = await ai2.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: [{
+                      role: 'user',
+                      parts: [{ text: `You are a speech-to-text post-processor. The following transcript was produced by a speech recognition system and likely contains misheard or misspelled words.\n\nFix ALL recognition errors — wrong words, broken spellings, near-miss words that don't exist (e.g. "unegated" → "unirrigated", "dead palm" → "date palm"). Use surrounding context and common sense to infer the correct words. Do NOT add or remove meaning — only fix the wording.\n\nReturn ONLY the corrected transcript. No explanation, no quotes, no extra text.\n\nTranscript: ${rawTranscript}` }]
+                    }]
+                  });
+                  const corrected = res.text?.trim();
+                  if (corrected) onTranscriptRef.current?.('user', corrected);
+                } catch (err: any) {
+                  // On any error (including 429 quota), keep the raw transcript as-is — no retries
+                  // Retrying 429s just generates more 429 errors; quota won't recover in seconds
+                }
+              })();
+            } else if (message.serverContent?.turnComplete) {
               userTranscriptRef.current = '';
             }
             // Accumulate output transcription (AI speech → text) and stream live into one bubble
@@ -303,9 +394,18 @@ Instructions:
               // When tool answer was emitted, skip Gemini's speech transcript —
               // the structured answer is already displayed in the chat bubble
               if (!toolAnswerEmittedRef.current) {
-                aiTranscriptRef.current += message.serverContent.outputTranscription.text;
-                // Stream partial transcript live — KnowledgeAssistant updates the same bubble in-place
-                onTranscriptRef.current?.('assistant', aiTranscriptRef.current);
+                // Keep only Latin + digits + punctuation (+ Arabic when in Arabic mode)
+                const outStripPattern = language === 'ar'
+                  ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+/g
+                  : /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF]+/g;
+                const cleanOutput = message.serverContent.outputTranscription.text
+                  .replace(outStripPattern, '')
+                  .replace(/\s+/g, ' ');
+                if (cleanOutput.trim() || cleanOutput === ' ') {
+                  aiTranscriptRef.current += cleanOutput;
+                  // Stream partial transcript live — KnowledgeAssistant updates the same bubble in-place
+                  onTranscriptRef.current?.('assistant', aiTranscriptRef.current);
+                }
               }
             }
 
@@ -489,7 +589,7 @@ Instructions:
 
                   const source = audioContextRef.current.createBufferSource();
                   source.buffer = audioBuffer;
-                  source.connect(audioContextRef.current.destination);
+                  source.connect(analyserRef.current ?? audioContextRef.current.destination);
 
                   const startTime = Math.max(audioContextRef.current.currentTime, nextPlayTimeRef.current);
                   source.start(startTime);

@@ -362,7 +362,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     const visualChunkImages = visualPagePairs.length > 0
       ? await prisma.documentImage.findMany({
           where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true },
+          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
         })
       : [];
 
@@ -379,7 +379,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     const textPageImages = missingTextPairs.length > 0
       ? await prisma.documentImage.findMany({
           where: { OR: missingTextPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true },
+          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
         })
       : [];
     const textScoreMapFast = new Map<string, number>();
