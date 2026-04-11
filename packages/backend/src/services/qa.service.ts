@@ -74,7 +74,22 @@ async function rerankImages<T extends { description: string | null }>(
         const topScore = results[0]._rerankScore;
         results = results.filter(r => r._rerankScore >= topScore * IMAGE_RELATIVE_THRESHOLD);
       }
-      getLogger().debug({ query, candidates: images.length, kept: results.length, scores: results.map((r: any) => ({ page: r.pageNumber, score: r._rerankScore, desc: (r.description ?? '').substring(0, 50), caption: (r as any)._figureCaption ?? null })) }, 'image reranking');
+      // Adaptive score-gap filter: if there's a large gap between consecutive
+      // scores, cut there.  This adapts to the actual score distribution rather
+      // than relying only on a fixed relative threshold.
+      // E.g. scores 0.90, 0.69 → gap 0.21 > 0.90*0.15=0.135 → cut after 0.90
+      if (results.length > 1) {
+        const GAP_FRACTION = 0.15; // drop when gap > 15% of the top score
+        const gapThreshold = results[0]._rerankScore * GAP_FRACTION;
+        for (let i = 1; i < results.length; i++) {
+          if (results[i - 1]._rerankScore - results[i]._rerankScore > gapThreshold) {
+            results = results.slice(0, i);
+            break;
+          }
+        }
+      }
+      const scoreInfo = results.map((r: any) => ({ page: r.pageNumber, score: r._rerankScore, desc: (r.description ?? '').substring(0, 50), caption: (r as any)._figureCaption ?? null }));
+      getLogger().debug({ query, candidates: images.length, kept: results.length, scores: scoreInfo }, 'image reranking');
       return results;
     } catch (err) {
       getLogger().warn({ err }, 'Cohere image rerank failed, falling back to score sort');
@@ -945,8 +960,14 @@ export async function askQuestion(
     getLogger().debug({ visualBefore: visualImages.length, visualAfter: visualHits.length }, 'visual image filtering');
 
     // ── Secondary: also find images on pages of top-ranked TEXT chunks ──
+    // IMPORTANT: Don't blindly add ALL images from text-chunk pages.
+    // A page can have an image (e.g. Fig 9 pollination on p26) alongside
+    // unrelated text about a different topic (e.g. "date harvest" section).
+    // Only add images whose figure number is explicitly referenced in the
+    // text chunk, or whose description matches the chunk content.
     const textChunkPagePairs = rerankedTextChunks.slice(0, 5).map((c: any) => ({
       documentId: c.documentId, pageNumber: c.pageNumber, rerankScore: c.rerankScore,
+      text: c.text ?? c.content ?? '',
     }));
     const alreadyFoundPageKeys = new Set(visualHits.map((img: any) => `${img.documentId}:${img.pageNumber}`));
     const missingPairs = textChunkPagePairs.filter(
@@ -958,14 +979,39 @@ export async function askQuestion(
         include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
       });
       // Build rerank score map for text-page images
-      const textScoreMap = new Map<string, number>();
+      const textScoreMap = new Map<string, { rerankScore: number; text: string }>();
       for (const tp of missingPairs) {
-        textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, tp.rerankScore ?? 0.3);
+        textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, { rerankScore: tp.rerankScore ?? 0.3, text: tp.text });
       }
-      const extraVisual = textPageImages.filter((img: any) => !VISUAL_BLOCKLIST.test(img.description ?? ''));
-      extraVisual.forEach((img: any) => {
-        img._score = textScoreMap.get(`${img.documentId}:${img.pageNumber}`) ?? 0.3;
-      });
+      const extraVisual: any[] = [];
+      for (const img of textPageImages) {
+        if (VISUAL_BLOCKLIST.test(img.description ?? '')) continue;
+        const key = `${img.documentId}:${img.pageNumber}`;
+        const chunkInfo = textScoreMap.get(key);
+        if (!chunkInfo) continue;
+
+        // Check if the text chunk actually references this image's figure number
+        const figMatch = (img.description ?? '').match(/(?:Figure|Fig\.?)\s+(\d+)/i);
+        const figNum = figMatch?.[1];
+        let isReferenced = false;
+        if (figNum) {
+          const refRegex = new RegExp(`(?:Figure|Fig\\.?)\\s+${figNum}\\b`, 'i');
+          isReferenced = refRegex.test(chunkInfo.text);
+        }
+        // Also accept if the image description's key terms appear in the chunk
+        if (!isReferenced && img.description) {
+          const descWords = (img.description).substring(0, 100).toLowerCase();
+          const chunkLower = chunkInfo.text.toLowerCase();
+          // Check if key descriptive terms from the image appear in the text chunk
+          const descTerms = descWords.match(/\b[a-z]{5,}\b/g) ?? [];
+          const matchCount = descTerms.filter(t => chunkLower.includes(t)).length;
+          isReferenced = matchCount >= 3 && descTerms.length > 0;
+        }
+        if (isReferenced) {
+          (img as any)._score = chunkInfo.rerankScore;
+          extraVisual.push(img);
+        }
+      }
       if (extraVisual.length > 0) {
         getLogger().debug({ extraVisualFromTextPages: extraVisual.length }, 'found images on text-chunk pages');
         visualHits.push(...extraVisual);

@@ -111,42 +111,42 @@ function extractImageContext(fullPageText: string, imgIndex: number): string {
 
   // 1. Extract ALL figure/table captions from the page
   // Captions look like: "Figure 10:   Traditional drying and processing of harvested dates in Siwa."
-  // Must handle "Figure 10:" / "Table 2:" format (with colon + descriptive text ending in period)
-  // Also handle shorter refs like "(Fig. 10)" but prefer full captions
   const fullCaptionRegex = /(?:Figure|Fig\.?|Table|Plate)\s+\d+\s*[:.]?\s+[A-Z][^.]{10,150}\./gi;
   const shortRefRegex = /(?:Figure|Fig\.?|Table|Plate)\s+\d+[^.]*\./gi;
   
   const fullCaptions = fullPageText.match(fullCaptionRegex);
   const shortCaptions = fullPageText.match(shortRefRegex);
-  // Prefer full captions (with descriptive text after the number)
   const captions = fullCaptions && fullCaptions.length > 0 ? fullCaptions : shortCaptions;
-  if (captions) {
-    const caption = captions[imgIndex] ?? captions[0];
-    parts.push(caption.trim());
+  const caption = captions ? (captions[imgIndex] ?? captions[0])?.trim() : null;
+  if (caption) {
+    parts.push(caption);
   }
 
-  // 2. Extract the paragraph text surrounding the caption or image reference
-  // Split into paragraphs and pick the most relevant ones
+  // 2. Extract ONLY the paragraph that directly references THIS image's caption
+  // NOT all paragraphs on the page — that pulls in unrelated section text.
+  // e.g. p26 has Fig 9 (pollination) AND the "date harvest" section start;
+  // we must NOT attach the harvest text to the pollination image.
   const paragraphs = fullPageText.split(/\n{2,}|\r?\n(?=[A-Z0-9\u0600-\u06FF])/)
     .map(p => p.trim())
     .filter(p => p.length > 40);
 
-  // Find paragraphs that reference figures/tables or contain substantive content
-  const figRefRegex = /(?:Figure|Fig\.?|Table|Plate)\s+\d+/i;
-  const refParagraphs = paragraphs.filter(p => figRefRegex.test(p));
-  const nonRefParagraphs = paragraphs.filter(p => !figRefRegex.test(p) && p.length > 60);
-
-  // Add referencing paragraphs first (they describe what the image shows)
-  for (const p of refParagraphs.slice(0, 2)) {
-    if (!parts.some(existing => existing.includes(p.substring(0, 50)))) {
-      parts.push(p);
+  if (caption) {
+    // Extract the figure number from the caption (e.g. "10" from "Figure 10: ...")
+    const figNumMatch = caption.match(/(?:Figure|Fig\.?|Table|Plate)\s+(\d+)/i);
+    const figNum = figNumMatch?.[1];
+    if (figNum) {
+      // Only include paragraphs that reference THIS specific figure number
+      const thisRefRegex = new RegExp(`(?:Figure|Fig\\.?)\\s+${figNum}\\b`, 'i');
+      for (const p of paragraphs) {
+        if (thisRefRegex.test(p) && !parts.some(existing => existing.includes(p.substring(0, 50)))) {
+          parts.push(p);
+        }
+      }
     }
-  }
-
-  // Add surrounding context paragraphs
-  for (const p of nonRefParagraphs.slice(0, 2)) {
-    if (!parts.some(existing => existing.includes(p.substring(0, 50)))) {
-      parts.push(p);
+  } else {
+    // No caption found — fall back to first paragraph as context
+    if (paragraphs.length > 0) {
+      parts.push(paragraphs[0]);
     }
   }
 
