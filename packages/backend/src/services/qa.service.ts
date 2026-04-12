@@ -10,7 +10,7 @@ import { GoogleGenAI } from '@google/genai';
 /** Sticky flag — once OpenAI chat quota is exhausted this process run, always use Gemini */
 let openaiChatExhausted = false;
 
-const GEMINI_CHAT_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+const GEMINI_CHAT_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-preview-04-17'];
 const CHAT_MAX_RETRIES = 4;
 const CHAT_INITIAL_BACKOFF_MS = 3_000;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -41,16 +41,17 @@ async function geminiChatComplete(
         return response.text ?? '';
       } catch (e: any) {
         const status: number = e?.status ?? e?.error?.code ?? 0;
-        const isRateLimit = status === 429 || (typeof e?.message === 'string' && e.message.includes('RESOURCE_EXHAUSTED'));
+        const isRateLimit = status === 429 || (typeof e?.message === 'string' && (e.message.includes('RESOURCE_EXHAUSTED') || e.message.includes('insufficient_quota')));
+        const isNotFound = status === 404 || (typeof e?.message === 'string' && e.message.includes('NOT_FOUND'));
         if (isRateLimit && attempt < CHAT_MAX_RETRIES) {
           const backoff = CHAT_INITIAL_BACKOFF_MS * Math.pow(2, attempt);
           getLogger().warn({ model, attempt, backoff }, 'Gemini chat rate-limited, retrying with backoff');
           await sleep(backoff);
           continue;
         }
-        // Rate-limit exhausted for this model → try next model
-        if (isRateLimit) {
-          getLogger().warn({ model }, 'Gemini chat model quota exhausted, trying next model');
+        // Rate-limit exhausted or model not found → try next model
+        if (isRateLimit || isNotFound) {
+          getLogger().warn({ model, status }, 'Gemini chat model unavailable, trying next model');
           break;
         }
         throw e;
