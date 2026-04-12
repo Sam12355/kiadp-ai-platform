@@ -123,6 +123,7 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   const waitingForToolAudioRef = useRef(false);
   const toolCallGenRef = useRef<number>(0);
   const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const postProcessCooldownRef = useRef<number>(0); // timestamp until which post-processing is skipped
   // Keep refs to latest callbacks so closures inside connect() always use current values
   const onTranscriptRef = useRef(onTranscript);
   const onCloseRef = useRef(onClose);
@@ -375,23 +376,31 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
               // On turn complete: run post-processing LLM correction with gemini-2.0-flash
               const rawTranscript = userTranscriptRef.current.trim();
               userTranscriptRef.current = '';
-              (async () => {
-                const ai2 = new GoogleGenAI({ apiKey });
-                try {
-                  const res = await ai2.models.generateContent({
-                    model: 'gemini-2.0-flash',
-                    contents: [{
-                      role: 'user',
-                      parts: [{ text: `You are a speech-to-text post-processor. The following transcript was produced by a speech recognition system and likely contains misheard or misspelled words.\n\nFix ALL recognition errors — wrong words, broken spellings, near-miss words that don't exist (e.g. "unegated" → "unirrigated", "dead palm" → "date palm"). Use surrounding context and common sense to infer the correct words. Do NOT add or remove meaning — only fix the wording.\n\nReturn ONLY the corrected transcript. No explanation, no quotes, no extra text.\n\nTranscript: ${rawTranscript}` }]
-                    }]
-                  });
-                  const corrected = res.text?.trim();
-                  if (corrected) onTranscriptRef.current?.('user', corrected);
-                } catch (err: any) {
-                  // On any error (including 429 quota), keep the raw transcript as-is — no retries
-                  // Retrying 429s just generates more 429 errors; quota won't recover in seconds
-                }
-              })();
+              // Emit raw transcript immediately so the user always sees their message
+              onTranscriptRef.current?.('user', rawTranscript);
+              // If not in cooldown, try to correct it in the background
+              if (Date.now() > postProcessCooldownRef.current) {
+                (async () => {
+                  const ai2 = new GoogleGenAI({ apiKey });
+                  try {
+                    const res = await ai2.models.generateContent({
+                      model: 'gemini-2.0-flash',
+                      contents: [{
+                        role: 'user',
+                        parts: [{ text: `You are a speech-to-text post-processor. The following transcript was produced by a speech recognition system and likely contains misheard or misspelled words.\n\nFix ALL recognition errors — wrong words, broken spellings, near-miss words that don't exist (e.g. "unegated" → "unirrigated", "dead palm" → "date palm"). Use surrounding context and common sense to infer the correct words. Do NOT add or remove meaning — only fix the wording.\n\nReturn ONLY the corrected transcript. No explanation, no quotes, no extra text.\n\nTranscript: ${rawTranscript}` }]
+                      }]
+                    });
+                    const corrected = res.text?.trim();
+                    if (corrected && corrected !== rawTranscript) onTranscriptRef.current?.('user', corrected);
+                  } catch (err: any) {
+                    // On 429: enter 60s cooldown to stop burning quota the Live session needs
+                    if (err?.status === 429 || err?.message?.includes('429')) {
+                      console.warn('[VoiceMode] transcript post-process 429 — pausing for 60s');
+                      postProcessCooldownRef.current = Date.now() + 60_000;
+                    }
+                  }
+                })();
+              }
             } else if (message.serverContent?.turnComplete) {
               userTranscriptRef.current = '';
             }
@@ -477,16 +486,16 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
 
                           // Only emit if this is still the active tool call (not superseded)
                           if (toolCallGenRef.current === thisToolGen) {
-                            // Emit images to chat UI so they appear under the current AI bubble
-                            if (images.length > 0) onImagesRef.current?.(images);
-
-                            // Emit the structured answer directly as the assistant chat bubble
-                            // (identical to text chat) instead of letting Gemini paraphrase it
+                            // Emit the structured answer FIRST so the assistant message exists
+                            // (onImages attaches to lastVoiceAssistantMsgId which is set by onTranscript)
                             if (answerText) {
                               toolAnswerEmittedRef.current = true;
                               aiTranscriptRef.current = '';
                               onTranscriptRef.current?.('assistant', answerText);
                             }
+
+                            // Now attach images to the just-created assistant bubble
+                            if (images.length > 0) onImagesRef.current?.(images);
                           }
 
                           // Strip markdown formatting so Gemini reads clean speech-ready text

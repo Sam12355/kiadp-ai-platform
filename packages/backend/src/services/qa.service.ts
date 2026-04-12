@@ -918,10 +918,19 @@ export async function voiceAsk(
   // Use the SAME system prompt as askQuestion (SYSTEM_PROMPT + language instruction)
   const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
-  let answerText = await chatComplete([
-    { role: 'system', content: finalSystemPrompt },
-    { role: 'user', content: instructions + "USER QUESTION: " + queryText },
-  ], { temperature: 0 }) || '';
+  let answerText: string;
+  try {
+    answerText = await chatComplete([
+      { role: 'system', content: finalSystemPrompt },
+      { role: 'user', content: instructions + "USER QUESTION: " + queryText },
+    ], { temperature: 0 }) || '';
+  } catch (llmErr: any) {
+    // All AI providers rate-limited — return the raw source text as the answer
+    // so the user still sees something instead of an error
+    getLogger().warn({ err: llmErr?.message }, 'voiceAsk: LLM failed, returning source excerpts');
+    const excerpts = reranked.slice(0, 3).map((c: any) => c.text.substring(0, 300)).join('\n\n');
+    answerText = `Here is what I found in the documents:\n\n${excerpts}`;
+  }
   // Clean citation markers (same as askQuestion)
   answerText = answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length }, 'voiceAsk: complete');
