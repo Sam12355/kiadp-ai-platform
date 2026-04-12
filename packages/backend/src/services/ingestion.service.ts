@@ -184,27 +184,34 @@ export async function processDocument(documentId: string, filePath: string): Pro
     } catch (readErr) {
       logger.info(`Local file not found at ${filePath}. Attempting Cloudinary fallback for doc ${documentId}...`);
       if (doc.storedFilename && doc.storedFilename.startsWith('http')) {
-        // Try direct fetch first; fall back to a signed URL if the account
-        // requires authenticated delivery (401).
         configureCloudinary();
         let fetchResp = await fetch(doc.storedFilename);
-        if (fetchResp.status === 401) {
-          // Extract public ID from URL:
-          // https://res.cloudinary.com/.../upload/v1234/kiadp/documents/abc.pdf
+        if (!fetchResp.ok) {
+          logger.info(`Direct fetch returned ${fetchResp.status}, trying private_download_url...`);
+          // Extract public ID: .../upload/v1234/kiadp/documents/abc.pdf
           const m = doc.storedFilename.match(/\/upload\/(?:v\d+\/)?(.+)$/);
           if (m) {
-            const resourcePath = m[1];                           // kiadp/documents/abc.pdf
-            const publicId = resourcePath.replace(/\.[^.]+$/, ''); // kiadp/documents/abc
+            const resourcePath = m[1];
+            const publicId = resourcePath.replace(/\.[^.]+$/, '');
             const ext = resourcePath.match(/\.([^.]+)$/)?.[1] || 'pdf';
-            const signedUrl = cloudinary.url(publicId, {
-              sign_url: true,
+            // private_download_url hits the Admin API download endpoint
+            // (api.cloudinary.com), which uses api_key+secret auth — works
+            // regardless of CDN delivery restrictions.
+            const downloadUrl = cloudinary.utils.private_download_url(publicId, ext, {
               resource_type: 'image',
               type: 'upload',
-              format: ext,
-              secure: true,
             });
-            logger.info(`Direct fetch returned 401, retrying with signed URL for ${publicId}`);
-            fetchResp = await fetch(signedUrl);
+            logger.info(`Trying private_download_url: ${downloadUrl.substring(0, 120)}...`);
+            fetchResp = await fetch(downloadUrl);
+            if (!fetchResp.ok) {
+              // Some PDFs may be stored as resource_type 'raw' instead of 'image'
+              const rawUrl = cloudinary.utils.private_download_url(publicId, ext, {
+                resource_type: 'raw',
+                type: 'upload',
+              });
+              logger.info(`image download returned ${fetchResp.status}, trying resource_type raw...`);
+              fetchResp = await fetch(rawUrl);
+            }
           }
         }
         if (!fetchResp.ok) throw new Error(`Cloudinary fallback failed (${fetchResp.status}): ${doc.storedFilename}`);
