@@ -239,6 +239,58 @@ router.patch('/:id', authenticate, requireRole(UserRole.ADMIN as any), uploadPDF
 
 /**
  * @openapi
+ * /documents/{id}/reprocess:
+ *   post:
+ *     summary: Re-run ingestion for an existing document (Admin only)
+ */
+router.post('/:id/reprocess', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const docId = req.params.id as string;
+
+    const doc = await prisma.document.findUnique({ where: { id: docId } });
+    if (!doc) throw new NotFoundError('Document not found');
+
+    // Delete existing chunks + images so ingestion starts clean
+    const oldChunks = await prisma.documentChunk.findMany({
+      where: { documentId: docId },
+      select: { pineconeVectorId: true },
+    });
+    const vectorIds = oldChunks.map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId).filter((id: string | null): id is string => id !== null);
+
+    if (vectorIds.length > 0) {
+      const boss = await getBoss();
+      await boss.send(JOB_QUEUES.DELETE_DOCUMENT, {
+        documentId: docId,
+        pineconeVectorIds: vectorIds,
+        skipDocumentDelete: true, // only clean vectors, keep the document record
+      });
+    }
+
+    await prisma.documentChunk.deleteMany({ where: { documentId: docId } });
+    await prisma.documentImage.deleteMany({ where: { documentId: docId } });
+
+    await prisma.document.update({
+      where: { id: docId },
+      data: { status: 'UPLOADED', progress: 0 },
+    });
+
+    // Re-queue ingestion using stored Cloudinary URL as filePath fallback
+    const filePath = doc.filePath || doc.storedFilename || '';
+    const boss = await getBoss();
+    await boss.send(JOB_QUEUES.INGEST_DOCUMENT, {
+      documentId: docId,
+      filePath,
+    });
+
+    res.json({ success: true, data: { message: 'Reprocessing queued', documentId: docId } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
  * /documents/{id}:
  *   delete:
  */

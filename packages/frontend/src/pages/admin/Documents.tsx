@@ -5,7 +5,7 @@ import DocumentUploadModal from './components/DocumentUploadModal';
 import EditDocumentModal from './components/EditDocumentModal';
 import ConfirmModal from './components/ConfirmModal';
 import type { DocumentSummary } from '@khalifa/shared';
-import { FileText, Download, Edit3, Trash2, Plus, Search, Filter, ChevronDown, Sparkles } from 'lucide-react';
+import { FileText, Download, Edit3, Trash2, Plus, Search, Filter, ChevronDown, Sparkles, RefreshCw } from 'lucide-react';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 
@@ -52,6 +52,15 @@ export default function DocumentsPage() {
       await apiClient.delete(`/documents/${deletingId}`);
       setDocuments(docs => docs.filter(d => d.id !== deletingId));
       setDeletingId(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleReprocess = async (id: string) => {
+    try {
+      await apiClient.post(`/documents/${id}/reprocess`);
+      setDocuments(docs => docs.map(d => d.id === id ? { ...d, status: 'UPLOADED' as any, progress: 0 } : d));
     } catch (err) {
       console.error(err);
     }
@@ -190,6 +199,13 @@ export default function DocumentsPage() {
                           title={t.editMetadata}
                         >
                           <Edit3 className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleReprocess(doc.id)}
+                          className="p-2.5 text-[var(--color-secondary)] hover:text-sky-400 hover:bg-sky-400/10 rounded-xl transition-all"
+                          title="Re-ingest document (rebuild images & vectors)"
+                        >
+                          <RefreshCw className="w-5 h-5" />
                         </button>
                         <button
                           onClick={() => setDeletingId(doc.id)}
