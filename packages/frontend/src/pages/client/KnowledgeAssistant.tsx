@@ -79,14 +79,30 @@ export default function KnowledgeAssistant() {
   const lastVoiceAssistantMsgIdRef = useRef<string | null>(null);
   // Tracks the first user message ID in this voice session (for auto-titling)
   const firstVoiceUserMsgIdRef = useRef<string | null>(null);
-  useEffect(() => { if (!isVoiceModeOpen) { voiceSessionIdRef.current = null; lastVoiceUserMsgIdRef.current = null; lastVoiceAssistantMsgIdRef.current = null; firstVoiceUserMsgIdRef.current = null; } }, [isVoiceModeOpen]);
+  useEffect(() => {
+    if (!isVoiceModeOpen && voiceSessionIdRef.current) {
+      // Voice mode just closed — navigate to the voice session so the chat stays visible
+      const vsid = voiceSessionIdRef.current;
+      voiceSessionIdRef.current = null;
+      lastVoiceUserMsgIdRef.current = null;
+      lastVoiceAssistantMsgIdRef.current = null;
+      firstVoiceUserMsgIdRef.current = null;
+      if (!urlSessionId) navigate(`/knowledge/chat/${vsid}`, { replace: true });
+    } else if (!isVoiceModeOpen) {
+      voiceSessionIdRef.current = null;
+      lastVoiceUserMsgIdRef.current = null;
+      lastVoiceAssistantMsgIdRef.current = null;
+      firstVoiceUserMsgIdRef.current = null;
+    }
+  }, [isVoiceModeOpen]);
 
   const handleTranscript = (role: 'user' | 'assistant', text: string) => {
-    if (!text.trim()) return;
-    // New user turn: commit the previous AI bubble (reset its live-update ID)
+    // Commit refs BEFORE the empty-text guard so a no-op call like ('user','') can
+    // still reset lastVoiceAssistantMsgIdRef (used by VoiceMode to force a fresh bubble
+    // for tool answers instead of relying on in-place update of the filler bubble).
     if (role === 'user') lastVoiceAssistantMsgIdRef.current = null;
-    // Assistant transcript: commit the previous live user message
     if (role === 'assistant') lastVoiceUserMsgIdRef.current = null;
+    if (!text.trim()) return;
     const targetId = urlSessionId || voiceSessionIdRef.current;
     if (!targetId) {
       // No active session — create one for this voice conversation
@@ -96,8 +112,10 @@ export default function KnowledgeAssistant() {
       if (role === 'user') { lastVoiceUserMsgIdRef.current = msgId; firstVoiceUserMsgIdRef.current = msgId; }
       if (role === 'assistant') lastVoiceAssistantMsgIdRef.current = msgId;
       const firstMsg: Message = { id: msgId, role, content: text };
+      // Do NOT navigate here — navigating triggers a separate React render batch
+      // where urlSessionId updates before setSessions commits, blanking the chat.
+      // voiceSessionIdRef is used for rendering instead; we navigate on voice close.
       setSessions(prev => [{ id: newId, title: role === 'user' ? text.substring(0, 100) : 'Voice session', messages: [firstMsg], updatedAt: Date.now() }, ...prev]);
-      navigate(`/knowledge/chat/${newId}`, { replace: true });
       return;
     }
     // User: update existing live message in-place (so speech appears live), or append if new turn
@@ -128,9 +146,15 @@ export default function KnowledgeAssistant() {
     if (role === 'assistant') lastVoiceAssistantMsgIdRef.current = msgId;
     const isFirstVoiceUser = role === 'user' && !firstVoiceUserMsgIdRef.current;
     if (isFirstVoiceUser) firstVoiceUserMsgIdRef.current = msgId;
+    // When appending a new assistant bubble, strip any leftover filler messages
+    // (e.g. "let me check that for you") so they don't clutter the chat.
+    const fillerRx = /^\s*(let me (check|look|search|find)|one moment|sure[,!]?\s*(let me|i['\u2019]ll)\s*(check|look|search))/i;
     setSessions(prev => prev.map(s => {
       if (s.id !== targetId) return s;
-      return { ...s, ...(isFirstVoiceUser && { title: text.substring(0, 100) }), messages: [...s.messages, { id: msgId, role, content: text }], updatedAt: Date.now() };
+      const msgs = role === 'assistant'
+        ? s.messages.filter(m => !(m.role === 'assistant' && fillerRx.test(m.content?.trim() ?? '')))
+        : s.messages;
+      return { ...s, ...(isFirstVoiceUser && { title: text.substring(0, 100) }), messages: [...msgs, { id: msgId, role, content: text }], updatedAt: Date.now() };
     }));
   };
 
@@ -141,13 +165,13 @@ export default function KnowledgeAssistant() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
-  // Active session logic
-  const activeSession = urlSessionId 
-    ? (sessions.find(s => s.id === urlSessionId) || null)
+  // Active session logic — during voice mode, use voiceSessionIdRef (no URL navigation while voice is active)
+  const effectiveSessionId = urlSessionId || (isVoiceModeOpen ? voiceSessionIdRef.current : null);
+  const activeSession = effectiveSessionId 
+    ? (sessions.find(s => s.id === effectiveSessionId) || null)
     : { id: 'new', title: t.newChat, messages: [], updatedAt: Date.now() };
   
   const messages = activeSession?.messages || [];
-
   // 1. Initial Load — metadata only (lazy: messages loaded on demand)
   useEffect(() => {
     const savedIndex = localStorage.getItem('khalifa_sessions_index');
@@ -183,11 +207,12 @@ export default function KnowledgeAssistant() {
 
   // 2b. Persist active session messages (writes only the one active session)
   useEffect(() => {
-    if (!urlSessionId) return;
-    const active = sessions.find(s => s.id === urlSessionId);
+    const sid = urlSessionId || (isVoiceModeOpen ? voiceSessionIdRef.current : null);
+    if (!sid) return;
+    const active = sessions.find(s => s.id === sid);
     if (!active || active.messages.length === 0) return;
-    localStorage.setItem(`khalifa_session_${urlSessionId}`, JSON.stringify(active.messages));
-  }, [sessions, urlSessionId]);
+    localStorage.setItem(`khalifa_session_${sid}`, JSON.stringify(active.messages));
+  }, [sessions, urlSessionId, isVoiceModeOpen]);
 
   // 2c. Lazy-load session messages on navigate (only when messages not yet in memory)
   useEffect(() => {

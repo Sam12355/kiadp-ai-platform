@@ -123,6 +123,11 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   const waitingForToolAudioRef = useRef(false);
   const toolCallGenRef = useRef<number>(0);
   const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track missed tool-call detection: Gemini sometimes speaks filler but never
+  // issues the search_knowledge function call.
+  const lastUserQueryRef = useRef<string>('');
+  const toolCallReceivedInTurnRef = useRef(false);
+  const fillerRetryCountRef = useRef(0);
   // Keep refs to latest callbacks so closures inside connect() always use current values
   const onTranscriptRef = useRef(onTranscript);
   const onCloseRef = useRef(onClose);
@@ -334,6 +339,16 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
           onmessage: async (message: any) => {
             if (isStale()) return;
 
+            // Diagnostic: log every message type received from Gemini
+            const msgTypes: string[] = [];
+            if (message.toolCall) msgTypes.push(`toolCall(${message.toolCall.functionCalls?.map((c: any) => c.name).join(',')})`);
+            if (message.serverContent?.interrupted) msgTypes.push('interrupted');
+            if (message.serverContent?.turnComplete) msgTypes.push('turnComplete');
+            if (message.serverContent?.inputTranscription?.text) msgTypes.push(`inputTranscript("${message.serverContent.inputTranscription.text.slice(0,40)}")`);
+            if (message.serverContent?.outputTranscription?.text) msgTypes.push(`outputTranscript("${message.serverContent.outputTranscription.text.slice(0,60)}")`);
+            if (message.serverContent?.modelTurn?.parts?.some((p: any) => p.inlineData?.data)) msgTypes.push('audio');
+            if (msgTypes.length > 0) console.log('[VoiceMode] MSG:', msgTypes.join(' | '));
+
             // Handle interruption
             if (message.serverContent?.interrupted) {
               activeSourcesRef.current.forEach(src => {
@@ -354,6 +369,9 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
 
             // Accumulate input transcription (user speech → text) and fire immediately for live chat
             if (message.serverContent?.inputTranscription?.text) {
+              // New user input → reset tool-call tracking for this turn
+              toolCallReceivedInTurnRef.current = false;
+              fillerRetryCountRef.current = 0;
               // Keep ONLY Latin letters (including accented), digits, and common punctuation.
               // Gemini sometimes transcribes English speech in random scripts (Gujarati, Bengali, Devanagari, etc.)
               // When language is Arabic, also keep Arabic script.
@@ -378,6 +396,7 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
               // This caused 429s that silenced the assistant after tool calls.
               const rawTranscript = userTranscriptRef.current.trim();
               userTranscriptRef.current = '';
+              lastUserQueryRef.current = rawTranscript;
               onTranscriptRef.current?.('user', rawTranscript);
             } else if (message.serverContent?.turnComplete) {
               userTranscriptRef.current = '';
@@ -414,22 +433,71 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
             // AI turn complete: apply filler filter and do final update of the bubble
             if (message.serverContent?.turnComplete) {
               toolAnswerEmittedRef.current = false;
+              let wasFillerOnly = false;
               if (aiTranscriptRef.current.trim()) {
                 let aiText = aiTranscriptRef.current.trim()
                   .replace(/^(let me (check|look|search|find) (that|it)? ?(for you|up)?[.!,]?\s*)+/gi, '')
                   .replace(/^(one moment[.!,]?\s*)+/gi, '')
                   .replace(/^(sure[,!]?\s*(let me|i['\u2019]ll)\s*(check|look|search)[^.!]*[.!,]\s*)+/gi, '')
+                  .replace(/^(looking (that|it) up[.!,]?\s*)+/gi, '')
+                  .replace(/^([\u0644\u062F\u0639\u0646\u064A].{0,30}[\u0630\u0644\u0643]\.?\s*)+/u, '') // Arabic filler: "دعني أتحقق من ذلك"
+                  .replace(/^([\u0644\u062D\u0638\u0629].{0,15}[\u0636\u0644\u0643]\.?\s*)+/u, '') // Arabic filler: "لحظة من فضلك"
                   .trim();
+                wasFillerOnly = !aiText;
                 if (aiText) onTranscriptRef.current?.('assistant', aiText);
                 aiTranscriptRef.current = '';
               }
               aiTurnCompleteRef.current = false;
+
+              // Missed tool-call detection: Gemini spoke filler ("One moment please")
+              // but never issued search_knowledge. Nudge it to call the tool.
+              if (wasFillerOnly && !toolCallReceivedInTurnRef.current && lastUserQueryRef.current) {
+                fillerRetryCountRef.current++;
+                const session = sessionRef.current;
+                if (session && sessionAliveRef.current && fillerRetryCountRef.current <= 2) {
+                  console.warn('[VoiceMode] Missed tool call detected — nudging Gemini (retry', fillerRetryCountRef.current, ')');
+                  try {
+                    session.sendClientContent({
+                      turns: [{ role: 'user', parts: [{ text: `[TOOL_REMINDER] You acknowledged the question but did not call search_knowledge. You MUST call it now. The user asked: "${lastUserQueryRef.current}"` }] }],
+                      turnComplete: true,
+                    });
+                  } catch (e) {
+                    console.error('[VoiceMode] nudge sendClientContent failed:', e);
+                  }
+                } else if (fillerRetryCountRef.current > 2) {
+                  console.warn('[VoiceMode] Missed tool call — max retries, auto-calling backend');
+                  // Fallback: call the backend directly ourselves
+                  (async () => {
+                    try {
+                      setStatusAndNotify('thinking');
+                      const res = await apiClient.post('/knowledge/voice-ask', {
+                        query: lastUserQueryRef.current,
+                        language: language || 'en',
+                      }, { timeout: 20000 });
+                      const data = res.data?.data || {};
+                      const answerText: string = data.answerText || '';
+                      const images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] = data.images || [];
+                      if (answerText) {
+                        toolAnswerEmittedRef.current = true;
+                        onTranscriptRef.current?.('user', '');
+                        onTranscriptRef.current?.('assistant', answerText);
+                      }
+                      if (images.length > 0) onImagesRef.current?.(images);
+                    } catch (err) {
+                      console.error('[VoiceMode] fallback voice-ask failed:', err);
+                    } finally {
+                      setStatusAndNotify('listening');
+                    }
+                  })();
+                }
+              }
             }
 
             // Handle tool calls (search_knowledge)
             // Uses the SAME /knowledge/ask endpoint as normal text chat so answers,
             // sources, and images are identical. Gemini just reads the answer aloud.
             if (message.toolCall) {
+              toolCallReceivedInTurnRef.current = true;
               const thisToolGen = ++toolCallGenRef.current;
               waitingForToolAudioRef.current = true;
               setStatusAndNotify('thinking');
@@ -478,6 +546,11 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
                             if (answerText) {
                               toolAnswerEmittedRef.current = true;
                               aiTranscriptRef.current = '';
+                              // Force a fresh assistant bubble: the empty-user call nulls
+                              // lastVoiceAssistantMsgIdRef so the answer creates a new message
+                              // instead of trying to update the filler ("let me check") bubble
+                              // in-place, which can silently fail due to React state batching.
+                              onTranscriptRef.current?.('user', '');
                               onTranscriptRef.current?.('assistant', answerText);
                             }
 
@@ -531,6 +604,9 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
                   // during the async API call but is still functionally alive
                   try {
                     session.sendToolResponse({ functionResponses: responses });
+                    // Tool call succeeded — clear the last query so filler detection
+                    // doesn't false-trigger on the reading turn's turnComplete
+                    lastUserQueryRef.current = '';
                   } catch (sendErr) {
                     console.error('[VoiceMode] sendToolResponse failed:', sendErr);
                     // Send failed — Gemini won't produce audio, so unstick immediately
