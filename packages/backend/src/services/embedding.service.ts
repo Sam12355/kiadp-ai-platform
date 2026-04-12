@@ -20,6 +20,9 @@ const INITIAL_BACKOFF_MS = 2_000; // 2s, doubles each retry (2→4→8→16→32
 /** Sticky flag — once OpenAI quota is exhausted this run, skip it */
 let openaiExhausted = false;
 
+/** Sticky flags — once a Gemini model returns hard quota error, skip it for this process */
+const geminiExhausted = new Set<string>();
+
 /** Sleep helper */
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -30,6 +33,10 @@ async function geminiBatchWithRetry(
   geminiKey: string,
 ): Promise<number[][] | null> {
   const logger = getLogger();
+
+  // Skip models already known to be hard-quota blocked
+  if (geminiExhausted.has(model)) return null;
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:batchEmbedContents?key=${geminiKey}`;
   const body = {
     requests: texts.map(text => ({
@@ -55,15 +62,25 @@ async function geminiBatchWithRetry(
     }
 
     const status = resp.status;
-    if (status === 429 && attempt < MAX_RETRIES) {
-      const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
-      logger.warn(`Gemini ${model} rate-limited (429), retry ${attempt + 1}/${MAX_RETRIES} in ${backoff}ms`);
-      await sleep(backoff);
-      continue;
+    const errText = await resp.text().catch(() => status.toString());
+
+    if (status === 429) {
+      // Check if this is a hard quota error vs transient rate limit
+      const isHardQuota = /exceeded.*quota|check your plan and billing/i.test(errText);
+      if (isHardQuota) {
+        logger.warn(`Gemini ${model} hard quota exceeded — skipping this model permanently`);
+        geminiExhausted.add(model);
+        return null;
+      }
+      if (attempt < MAX_RETRIES) {
+        const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+        logger.warn(`Gemini ${model} rate-limited (429), retry ${attempt + 1}/${MAX_RETRIES} in ${backoff}ms`);
+        await sleep(backoff);
+        continue;
+      }
     }
 
     // Non-429 or exhausted retries — return null to try next model
-    const errText = await resp.text().catch(() => status.toString());
     logger.warn(`Gemini ${model} returned ${status}: ${errText.slice(0, 200)}`);
     return null;
   }
