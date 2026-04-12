@@ -237,7 +237,11 @@ export async function processDocument(documentId: string, filePath: string): Pro
     // 3. Extract text & Visual analysis page by page
     const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
     const pageTexts: { pageNumber: number; text: string }[] = [];
-    const documentUrl = await uploadToCloudinary(filePath, 'kiadp/documents', 'image');
+    // If the file is already on Cloudinary (re-process / production), reuse that URL
+    // instead of trying to upload from the (non-existent) local path.
+    const documentUrl = (doc!.storedFilename && doc!.storedFilename.startsWith('http'))
+      ? doc!.storedFilename
+      : await uploadToCloudinary(filePath, 'kiadp/documents', 'image');
     
     if (!documentUrl) {
       logger.warn(`⚠️ Document ${documentId} is too large or failed to upload to Cloudinary. Vision analysis will be skipped, but text will be processed.`);
