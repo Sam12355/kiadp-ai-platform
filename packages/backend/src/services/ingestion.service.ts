@@ -299,11 +299,12 @@ export async function processDocument(documentId: string, filePath: string): Pro
                 // IMPORTANT: create the DB record FIRST, push the chunk AFTER.
                 // If documentImage.create fails (e.g. schema mismatch), no orphaned
                 // visual chunk is left pointing to a non-existent image row.
+                if (!imageUrl) logger.warn(`Cloudinary upload failed for p${pageNum} img ${imgIdx + 1}, using dynamic URL fallback`);
                 await prisma.documentImage.create({
                   data: {
                     documentId,
                     pageNumber: pageNum,
-                    filePath: imageUrl || '',
+                    filePath: imageUrl || dynamicImageUrl || '',
                     description: visualDescription,
                     contextText: contextText || null,
                     altText: `Image ${imgIdx + 1} on page ${pageNum}`,
@@ -348,6 +349,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
                 ? `[Visual Evidence from Page ${pageNum}]: ${contextText}\n\n${visualDescription}`
                 : `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`;
               // IMPORTANT: create the DB record FIRST, push the chunk AFTER.
+              if (!permanentImageUrl) logger.warn(`Cloudinary upload failed for p${pageNum} full-page render, using dynamic URL fallback`);
               await prisma.documentImage.create({
                 data: {
                   documentId,

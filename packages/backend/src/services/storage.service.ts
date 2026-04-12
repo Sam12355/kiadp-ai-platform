@@ -1,5 +1,8 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { getEnv } from '../config/env.js';
+import { getLogger } from '../utils/logger.js';
+
+const logger = getLogger();
 
 let isConfigured = false;
 
@@ -34,7 +37,7 @@ export const uploadToCloudinary = async (
   configureCloudinary();
   
   if (!isConfigured) {
-    console.warn('Cloudinary is not configured. Falling back to local storage URLs.');
+    logger.warn('Cloudinary is not configured. Falling back to local storage URLs.');
     return null;
   }
 
@@ -44,8 +47,8 @@ export const uploadToCloudinary = async (
       resource_type: resourceType,
     });
     return result.secure_url;
-  } catch (error) {
-    console.error('❌ Cloudinary upload error:', error);
+  } catch (error: any) {
+    logger.error({ err: error }, `Cloudinary upload error: ${error.message ?? error}`);
     return null;
   }
 };
@@ -73,7 +76,7 @@ export const uploadBufferToCloudinary = async (
       },
       (error, result) => {
         if (error) {
-          console.error('❌ Cloudinary Buffer Upload Error:', error);
+          logger.error({ err: error }, `Cloudinary buffer upload error: ${(error as any).message ?? error}`);
           resolve(null);
         } else {
           resolve(result?.secure_url || null);
