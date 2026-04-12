@@ -477,7 +477,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     const visualChunkImages = visualPagePairs.length > 0
       ? await prisma.documentImage.findMany({
           where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+          select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
         })
       : [];
 
@@ -494,7 +494,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     const textPageImages = missingTextPairs.length > 0
       ? await prisma.documentImage.findMany({
           where: { OR: missingTextPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+          select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
         })
       : [];
     const textScoreMapFast = new Map<string, number>();
@@ -743,7 +743,7 @@ export async function voiceAsk(
   const imagePromise = (async () => {
     const visualPagePairs = visualRows.map(r => ({ documentId: r.document_id, pageNumber: r.page_number }));
     const vcImages = visualPagePairs.length > 0
-      ? await prisma.documentImage.findMany({ where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true } })
+      ? await prisma.documentImage.findMany({ where: { OR: visualPagePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) }, select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true } })
       : [];
     // Match each image to its specific visual chunk (prevents unrelated images on the same page)
     let visualHits: any[] = filterImagesByVisualChunks(
@@ -758,7 +758,7 @@ export async function voiceAsk(
       const keptIds = new Set(visualHits.map((img: any) => img.id));
       const directFigImages = await prisma.documentImage.findMany({
         where: { description: { contains: `Figure ${requestedFigNum}`, mode: 'insensitive' } },
-        select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+        select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
       });
       for (const img of directFigImages) {
         if (keptIds.has(img.id)) continue;
@@ -781,7 +781,7 @@ export async function voiceAsk(
     if (missingPairs.length > 0) {
       const textImgs = await prisma.documentImage.findMany({
         where: { OR: missingPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-        select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+        select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
       });
       const textScoreMap = new Map<string, { rerankScore: number; text: string }>();
       for (const tp of missingPairs) textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, { rerankScore: tp.rerankScore ?? 0.3, text: tp.text });
@@ -842,7 +842,7 @@ export async function voiceAsk(
       if (pageFigurePairs.length > 0) {
         const siblingImages = await prisma.documentImage.findMany({
           where: { OR: pageFigurePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
-          select: { id: true, filePath: true, description: true, contextText: true, pageNumber: true, documentId: true, width: true, height: true },
+          select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
         });
         for (const sib of siblingImages) {
           if (keptIds.has(sib.id)) continue;
