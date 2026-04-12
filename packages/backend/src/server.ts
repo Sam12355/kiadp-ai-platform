@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
 // ── BigInt Serialization Patch ──
+
 // Prisma returns BigInt for certain DB fields, but JSON.stringify doesn't know how to handle it.
 (BigInt.prototype as any).toJSON = function () {
   return Number(this);
