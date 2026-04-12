@@ -5,6 +5,56 @@ import { NotFoundError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
 import { CohereClient } from 'cohere-ai';
 import { embedText } from './embedding.service.js';
+import { GoogleGenAI } from '@google/genai';
+
+/** Sticky flag — once OpenAI chat quota is exhausted this process run, always use Gemini */
+let openaiChatExhausted = false;
+
+async function chatComplete(
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+  opts: { model?: string; temperature?: number; max_tokens?: number } = {},
+): Promise<string> {
+  const env = getEnv();
+  if (!openaiChatExhausted) {
+    try {
+      const openai = getOpenAI();
+      const resp = await openai.chat.completions.create({
+        model: opts.model ?? env.OPENAI_CHAT_MODEL_MINI,
+        messages,
+        temperature: opts.temperature ?? 0,
+        ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
+      });
+      return resp.choices[0].message.content ?? '';
+    } catch (e: any) {
+      const code: string = e?.code ?? e?.error?.code ?? '';
+      const status: number = e?.status ?? 0;
+      if (status === 429 || code === 'insufficient_quota' || code === 'model_not_found') {
+        openaiChatExhausted = true;
+        getLogger().warn({ err: e }, 'OpenAI chat quota exhausted — switching to Gemini fallback');
+      } else {
+        throw e;
+      }
+    }
+  }
+  // Gemini fallback
+  const geminiKey = env.GEMINI_API_KEY;
+  if (!geminiKey) throw new Error('OpenAI quota exceeded and GEMINI_API_KEY is not configured');
+  const ai = new GoogleGenAI({ apiKey: geminiKey });
+  const sysMsg = messages.find(m => m.role === 'system')?.content;
+  const convMsgs = messages
+    .filter(m => m.role !== 'system')
+    .map(m => ({ role: m.role === 'assistant' ? 'model' as const : 'user' as const, parts: [{ text: m.content }] }));
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: convMsgs,
+    config: {
+      ...(sysMsg ? { systemInstruction: sysMsg } : {}),
+      temperature: opts.temperature ?? 0,
+      ...(opts.max_tokens !== undefined ? { maxOutputTokens: opts.max_tokens } : {}),
+    },
+  });
+  return response.text ?? '';
+}
 
 // ── Image-to-visual-chunk matching ──
 // When a page has multiple images, only return ones whose description was found
@@ -140,12 +190,10 @@ async function rerankChunks<T extends { text: string }>(
   ).join('\n\n');
 
   try {
-    const response = await openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL_MINI,
-      messages: [
-        {
-          role: 'system',
-          content: `You are a relevance scoring assistant. Given a user query and numbered text passages, rate each passage's relevance to answering the query.
+    const content = await chatComplete([
+      {
+        role: 'system',
+        content: `You are a relevance scoring assistant. Given a user query and numbered text passages, rate each passage's relevance to answering the query.
 
 Score each passage 0-10:
 - 9-10: Directly answers the query with specific facts
@@ -157,16 +205,12 @@ Return a JSON object with a "rankings" key containing an array of {index, score}
 {"rankings": [{"index": 3, "score": 9}, {"index": 0, "score": 7}, {"index": 1, "score": 2}]}
 
 Include ALL passages in the rankings. Be strict — only passages with direct, useful information should score 7+.`
-        },
-        {
-          role: 'user',
-          content: `Query: "${query}"\n\nPassages:\n${chunkList}`
-        }
-      ],
-      temperature: 0,
-    });
-
-    const content = response.choices[0].message.content || '{}';
+      },
+      {
+        role: 'user',
+        content: `Query: "${query}"\n\nPassages:\n${chunkList}`
+      }
+    ], { temperature: 0 }) || '{}';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return chunks.slice(0, topN).map(c => ({ ...c, rerankScore: 0.5 }));
 
@@ -263,16 +307,11 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
   // ── Fast path (voice mode): skip expansion + reranking, but keep keyword search ──
   if (fast) {
     // Query expansion: same as normal path — rewrite the noisy voice query into focused search terms
-    const expansionPromise = openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL_MINI,
-      messages: [
-        { role: 'system', content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.' },
-        { role: 'user', content: queryText },
-      ],
-      temperature: 0,
-    });
-    const expansionResult = await expansionPromise;
-    const expandedQueryFast = expansionResult.choices[0].message.content?.trim() || queryText;
+    const expansionPromise = chatComplete([
+      { role: 'system', content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.' },
+      { role: 'user', content: queryText },
+    ], { temperature: 0 });
+    const expandedQueryFast = (await expansionPromise).trim() || queryText;
     getLogger().debug({ original: queryText, expanded: expandedQueryFast }, 'fast path: query expanded');
 
     const stopWords = new Set(['the','and','for','are','but','not','you','all','can','her','was','one','our','out','has','had','how','its','may','who','did','get','let','say','she','too','use','what','when','where','which','why','with','this','that','from','they','been','have','will','each','make','like','just','over','such','take','than','them','very','some','into','most','other','about','after','would','these','could','their','there','should','between','before','tell','does','know']);
@@ -403,18 +442,13 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
   }
 
   // Query expansion: rewrite the raw voice query into a better search query
-  const expansionResponse = await openai.chat.completions.create({
-    model: env.OPENAI_CHAT_MODEL_MINI,
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.'
-      },
-      { role: 'user', content: queryText }
-    ],
-    temperature: 0,
-  });
-  const expandedQuery = expansionResponse.choices[0].message.content?.trim() || queryText;
+  const expandedQuery = (await chatComplete([
+    {
+      role: 'system',
+      content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.'
+    },
+    { role: 'user', content: queryText }
+  ], { temperature: 0 })).trim() || queryText;
   getLogger().debug({ original: queryText, expanded: expandedQuery }, 'searchKnowledge: query expanded');
 
   // Run vector search and keyword search in parallel
@@ -777,16 +811,10 @@ export async function voiceAsk(
   // Use the SAME system prompt as askQuestion (SYSTEM_PROMPT + language instruction)
   const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
-  const answerResp = await openai.chat.completions.create({
-    model: env.OPENAI_CHAT_MODEL_MINI,
-    messages: [
-      { role: 'system', content: finalSystemPrompt },
-      { role: 'user', content: instructions + "USER QUESTION: " + queryText },
-    ],
-    temperature: 0,
-  });
-
-  let answerText = answerResp.choices[0].message.content || '';
+  let answerText = await chatComplete([
+    { role: 'system', content: finalSystemPrompt },
+    { role: 'user', content: instructions + "USER QUESTION: " + queryText },
+  ], { temperature: 0 }) || '';
   // Clean citation markers (same as askQuestion)
   answerText = answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length }, 'voiceAsk: complete');
@@ -823,18 +851,13 @@ export async function askQuestion(
   // 1.5 Smart Intent Classifier (Bypass RAG for small talk and social questions)
   let isChitChat = false;
   if (queryText.length < 120) {
-    const classification = await openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL_MINI,
-      messages: [
-        { 
-          role: 'system', 
-          content: 'Classify the users intent. If it is a greeting, farewell, thanks, apology, social small-talk (like "how are you", "what is up", "how is your day"), or simple acknowledgment, respond with "CHIT_CHAT". If it is a real request for knowledge, data, or agricultural assistance, respond with "QUERY". Return ONLY the word.' 
-        },
-        { role: 'user', content: queryText },
-      ],
-      temperature: 0,
-    });
-    const result = classification.choices[0].message.content?.trim().toUpperCase();
+    const result = (await chatComplete([
+      { 
+        role: 'system', 
+        content: 'Classify the users intent. If it is a greeting, farewell, thanks, apology, social small-talk (like "how are you", "what is up", "how is your day"), or simple acknowledgment, respond with "CHIT_CHAT". If it is a real request for knowledge, data, or agricultural assistance, respond with "QUERY". Return ONLY the word.' 
+      },
+      { role: 'user', content: queryText },
+    ], { temperature: 0 })).trim().toUpperCase();
     isChitChat = result === 'CHIT_CHAT' || result === '"CHIT_CHAT"';
   }
   getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: chitchat classification');
@@ -850,35 +873,25 @@ export async function askQuestion(
   // 2. Query Condensing (Only if NOT chit-chat)
   if (history.length > 0 && !isChitChat) {
     const historyText = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join('\n');
-    const condenseResponse = await openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL_MINI,
-      messages: [
-        { 
-          role: 'system', 
-          content: 'You are a helpful assistant. Given the chat history and the latest user question, rewrite the question into a standalone version that can be understood without the history. DO NOT ANSWER THE QUESTION. Only return the rewritten question.' 
-        },
-        { role: 'user', content: `HISTORY:\n${historyText}\n\nLATEST QUESTION: ${queryText}` },
-      ],
-      temperature: 0,
-    });
-    standaloneQuery = condenseResponse.choices[0].message.content || queryText;
+    standaloneQuery = await chatComplete([
+      { 
+        role: 'system', 
+        content: 'You are a helpful assistant. Given the chat history and the latest user question, rewrite the question into a standalone version that can be understood without the history. DO NOT ANSWER THE QUESTION. Only return the rewritten question.' 
+      },
+      { role: 'user', content: `HISTORY:\n${historyText}\n\nLATEST QUESTION: ${queryText}` },
+    ], { temperature: 0 }) || queryText;
   }
 
   // 3. Translate query (Only if NOT chit-chat)
   let embeddingQuery = standaloneQuery;
   if (language !== 'en' && !isChitChat) {
-    const translationResponse = await openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL_MINI,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a translation assistant. Translate the user\'s question into English. Return ONLY the translated text, nothing else.',
-        },
-        { role: 'user', content: standaloneQuery },
-      ],
-      temperature: 0,
-    });
-    embeddingQuery = translationResponse.choices[0].message.content || standaloneQuery;
+    embeddingQuery = await chatComplete([
+      {
+        role: 'system',
+        content: 'You are a translation assistant. Translate the user\'s question into English. Return ONLY the translated text, nothing else.',
+      },
+      { role: 'user', content: standaloneQuery },
+    ], { temperature: 0 }) || standaloneQuery;
   }
 
   // 4. Generate embedding (Only if NOT chit-chat)
@@ -1242,12 +1255,10 @@ export async function askQuestion(
   if (mode === 'grounded' && !isChitChat && chunks.length > 0 && isComplex) {
     // ── 2-Step Extract-then-Answer (anti-hallucination) for COMPLEX queries ──
     // Step 1: Extract relevant passages from the sources (cheap model, fast)
-    const extractResp = await openai.chat.completions.create({
-      model: env.OPENAI_CHAT_MODEL_MINI,
-      messages: [
-        {
-          role: 'system',
-          content: `You are a text extractor. Given SOURCE DOCUMENTS and a QUESTION, extract all passages from the sources that could help answer the question — even if they answer it only partially or indirectly.
+    const extractedQuotes = await chatComplete([
+      {
+        role: 'system',
+        content: `You are a text extractor. Given SOURCE DOCUMENTS and a QUESTION, extract all passages from the sources that could help answer the question — even if they answer it only partially or indirectly.
 
 Rules:
 - Copy relevant passages as they appear in the sources. Keep the original wording.
@@ -1257,62 +1268,40 @@ Rules:
 - If the question refers to something from conversation history, find passages related to that topic.
 - You MUST always extract at least something — even loosely related passages. Never refuse to extract.
 - Do NOT add any facts, numbers, or descriptions from your own knowledge — only extract from sources.`
-        },
-        ...historyMessages,
-        { role: 'user', content: instructions + "QUESTION: " + standaloneQuery }
-      ],
-      temperature: 0,
-    });
-    totalTokens += extractResp.usage?.total_tokens ?? 0;
-    const extractedQuotes = extractResp.choices[0].message.content || '';
+      },
+      ...historyMessages,
+      { role: 'user', content: instructions + "QUESTION: " + standaloneQuery }
+    ], { temperature: 0 }) || ''
     getLogger().info({ standaloneQuery, extractLength: extractedQuotes.length, extractPreview: extractedQuotes.substring(0, 300) }, 'extract-then-answer: step 1 result');
     getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after extract step');
 
     // Step 2: Answer using ONLY the extracted quotes (main model, no access to training data as "confirmation")
-    const answerResp = await openai.chat.completions.create({
-      model: selectedModel,
-      messages: [
-        { role: 'system', content: finalSystemPrompt },
-        ...historyMessages,
-        {
-          role: 'user',
-          content: `VERIFIED EXTRACTS FROM DOCUMENTS (these are the ONLY facts you may use):\n\n${extractedQuotes}\n\nUSER QUESTION: ${standaloneQuery}`
-        }
-      ],
-      temperature: 0,
-    });
-    totalTokens += answerResp.usage?.total_tokens ?? 0;
-    answerText = answerResp.choices[0].message.content || 'No response generated.';
+    answerText = await chatComplete([
+      { role: 'system', content: finalSystemPrompt },
+      ...historyMessages,
+      {
+        role: 'user',
+        content: `VERIFIED EXTRACTS FROM DOCUMENTS (these are the ONLY facts you may use):\n\n${extractedQuotes}\n\nUSER QUESTION: ${standaloneQuery}`
+      }
+    ], { model: selectedModel, temperature: 0 }) || 'No response generated.';
     getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after answer step (2-step)');
   } else if (mode === 'grounded' && !isChitChat && chunks.length > 0) {
     // ── Direct single-step answer for SIMPLE queries (skip extract for speed) ──
     // The system prompt already enforces "only use provided context" for anti-hallucination.
     // Cohere reranking ensures the top chunks are highly relevant.
-    const answerResp = await openai.chat.completions.create({
-      model: selectedModel,
-      messages: [
-        { role: 'system', content: finalSystemPrompt },
-        ...historyMessages,
-        { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery }
-      ],
-      temperature: 0,
-    });
-    totalTokens += answerResp.usage?.total_tokens ?? 0;
-    answerText = answerResp.choices[0].message.content || 'No response generated.';
+    answerText = await chatComplete([
+      { role: 'system', content: finalSystemPrompt },
+      ...historyMessages,
+      { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery }
+    ], { model: selectedModel, temperature: 0 }) || 'No response generated.';
     getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after direct answer step (extract skipped)');
   } else {
     // Non-grounded / chit-chat / general mode — single pass
-    const completion = await openai.chat.completions.create({
-      model: selectedModel,
-      messages: [
-        { role: 'system', content: finalSystemPrompt },
-        ...historyMessages,
-        { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
-      ],
-      temperature: mode === 'grounded' ? 0 : 0.7,
-    });
-    totalTokens += completion.usage?.total_tokens ?? 0;
-    answerText = completion.choices[0].message.content || 'No response generated.';
+    answerText = await chatComplete([
+      { role: 'system', content: finalSystemPrompt },
+      ...historyMessages,
+      { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
+    ], { model: selectedModel, temperature: mode === 'grounded' ? 0 : 0.7 }) || 'No response generated.';
   }
 
   // Clean any leftover citation markers from the answer
