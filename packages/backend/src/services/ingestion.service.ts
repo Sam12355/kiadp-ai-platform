@@ -184,18 +184,11 @@ export async function processDocument(documentId: string, filePath: string): Pro
     } catch (readErr) {
       logger.info(`Local file not found at ${filePath}. Attempting Cloudinary fallback for doc ${documentId}...`);
       if (doc.storedFilename && doc.storedFilename.startsWith('http')) {
-        // Extract Public ID for signing
-        const pdfPublicId = doc.storedFilename.split('/upload/')[1]?.split('/').slice(1).join('/').replace(/\.[^/.]+$/, '');
-        
-        configureCloudinary();
-        
-        // Use the dedicated private download URL generator for maximum reliability with restricted assets
-        const signedFetchUrl = cloudinary.utils.private_download_url(pdfPublicId, 'pdf', {
-          resource_type: 'image'
-        });
-
-        const fetchResp = await fetch(signedFetchUrl);
-        if (!fetchResp.ok) throw new Error(`Cloudinary fallback failed (${fetchResp.status}): ${signedFetchUrl}`);
+        // PDFs are uploaded publicly to Cloudinary (type: 'upload' default).
+        // Fetch the stored URL directly — private_download_url only works for
+        // assets uploaded with type: 'private' and returns 404 for public ones.
+        const fetchResp = await fetch(doc.storedFilename);
+        if (!fetchResp.ok) throw new Error(`Cloudinary fallback failed (${fetchResp.status}): ${doc.storedFilename}`);
         data = Buffer.from(await fetchResp.arrayBuffer());
       } else {
         throw new Error(`File not found locally and no Cloudinary URL available for ${documentId}`);
