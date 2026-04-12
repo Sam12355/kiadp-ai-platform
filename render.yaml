@@ -10,9 +10,13 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-4o
+      - key: OPENAI_CHAT_MODEL_MINI
+        value: gpt-4o-mini
       # Set the rest manually in Render dashboard:
       # DATABASE_URL, PINECONE_API_KEY, PINECONE_INDEX_NAME,
-      # OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL, OPENAI_CHAT_MODEL,
+      # OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL,
       # JWT_SECRET, JWT_EXPIRY, REFRESH_TOKEN_EXPIRY_DAYS,
       # UPLOAD_DIR, MAX_FILE_SIZE_MB, CORS_ORIGIN, LOG_LEVEL
     disk:
