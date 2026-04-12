@@ -151,6 +151,7 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
 
       if (!apiKey) {
         setError('Voice mode is not configured (missing API key). Please contact support.');
+        setStatusAndNotify('ready');
         return;
       }
 
