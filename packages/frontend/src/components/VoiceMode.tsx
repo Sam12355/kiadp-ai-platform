@@ -123,7 +123,6 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   const waitingForToolAudioRef = useRef(false);
   const toolCallGenRef = useRef<number>(0);
   const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const postProcessCooldownRef = useRef<number>(0); // timestamp until which post-processing is skipped
   // Keep refs to latest callbacks so closures inside connect() always use current values
   const onTranscriptRef = useRef(onTranscript);
   const onCloseRef = useRef(onClose);
@@ -373,37 +372,25 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
             // Wait for turnComplete which signals the AI is actually responding.
 
             if (message.serverContent?.turnComplete && userTranscriptRef.current.trim()) {
-              // On turn complete: run post-processing LLM correction with gemini-2.0-flash
+              // Emit the raw transcript as-is — no post-processing correction.
+              // Post-processing used generateContent with the SAME free-tier API key,
+              // burning quota that the Live session needs for audio generation.
+              // This caused 429s that silenced the assistant after tool calls.
               const rawTranscript = userTranscriptRef.current.trim();
               userTranscriptRef.current = '';
-              // Emit raw transcript immediately so the user always sees their message
               onTranscriptRef.current?.('user', rawTranscript);
-              // If not in cooldown, try to correct it in the background
-              if (Date.now() > postProcessCooldownRef.current) {
-                (async () => {
-                  const ai2 = new GoogleGenAI({ apiKey });
-                  try {
-                    const res = await ai2.models.generateContent({
-                      model: 'gemini-2.0-flash',
-                      contents: [{
-                        role: 'user',
-                        parts: [{ text: `You are a speech-to-text post-processor. The following transcript was produced by a speech recognition system and likely contains misheard or misspelled words.\n\nFix ALL recognition errors — wrong words, broken spellings, near-miss words that don't exist (e.g. "unegated" → "unirrigated", "dead palm" → "date palm"). Use surrounding context and common sense to infer the correct words. Do NOT add or remove meaning — only fix the wording.\n\nReturn ONLY the corrected transcript. No explanation, no quotes, no extra text.\n\nTranscript: ${rawTranscript}` }]
-                      }]
-                    });
-                    const corrected = res.text?.trim();
-                    if (corrected && corrected !== rawTranscript) onTranscriptRef.current?.('user', corrected);
-                  } catch (err: any) {
-                    // On 429: enter 60s cooldown to stop burning quota the Live session needs
-                    if (err?.status === 429 || err?.message?.includes('429')) {
-                      console.warn('[VoiceMode] transcript post-process 429 — pausing for 60s');
-                      postProcessCooldownRef.current = Date.now() + 60_000;
-                    }
-                  }
-                })();
-              }
             } else if (message.serverContent?.turnComplete) {
               userTranscriptRef.current = '';
             }
+            // If the assistant starts outputting before the user's turnComplete arrives,
+            // commit the pending user transcript now so it updates in-place rather than
+            // creating a duplicate user bubble when turnComplete eventually fires.
+            if (message.serverContent?.outputTranscription?.text && userTranscriptRef.current.trim()) {
+              const pendingText = userTranscriptRef.current.trim();
+              userTranscriptRef.current = '';
+              onTranscriptRef.current?.('user', pendingText);
+            }
+
             // Accumulate output transcription (AI speech → text) and stream live into one bubble
             if (message.serverContent?.outputTranscription?.text) {
               // When tool answer was emitted, skip Gemini's speech transcript —
