@@ -10,7 +10,7 @@ import { GoogleGenAI } from '@google/genai';
 /** Sticky flag — once OpenAI chat quota is exhausted this process run, always use Gemini */
 let openaiChatExhausted = false;
 
-const GEMINI_CHAT_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-preview-04-17'];
+const GEMINI_CHAT_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
 const CHAT_MAX_RETRIES = 1; // 1 retry per model — fail fast so Groq fallback kicks in quickly
 const CHAT_INITIAL_BACKOFF_MS = 2_000;
 const GROQ_MODELS = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
