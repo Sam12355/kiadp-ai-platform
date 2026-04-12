@@ -184,10 +184,29 @@ export async function processDocument(documentId: string, filePath: string): Pro
     } catch (readErr) {
       logger.info(`Local file not found at ${filePath}. Attempting Cloudinary fallback for doc ${documentId}...`);
       if (doc.storedFilename && doc.storedFilename.startsWith('http')) {
-        // PDFs are uploaded publicly to Cloudinary (type: 'upload' default).
-        // Fetch the stored URL directly — private_download_url only works for
-        // assets uploaded with type: 'private' and returns 404 for public ones.
-        const fetchResp = await fetch(doc.storedFilename);
+        // Try direct fetch first; fall back to a signed URL if the account
+        // requires authenticated delivery (401).
+        configureCloudinary();
+        let fetchResp = await fetch(doc.storedFilename);
+        if (fetchResp.status === 401) {
+          // Extract public ID from URL:
+          // https://res.cloudinary.com/.../upload/v1234/kiadp/documents/abc.pdf
+          const m = doc.storedFilename.match(/\/upload\/(?:v\d+\/)?(.+)$/);
+          if (m) {
+            const resourcePath = m[1];                           // kiadp/documents/abc.pdf
+            const publicId = resourcePath.replace(/\.[^.]+$/, ''); // kiadp/documents/abc
+            const ext = resourcePath.match(/\.([^.]+)$/)?.[1] || 'pdf';
+            const signedUrl = cloudinary.url(publicId, {
+              sign_url: true,
+              resource_type: 'image',
+              type: 'upload',
+              format: ext,
+              secure: true,
+            });
+            logger.info(`Direct fetch returned 401, retrying with signed URL for ${publicId}`);
+            fetchResp = await fetch(signedUrl);
+          }
+        }
         if (!fetchResp.ok) throw new Error(`Cloudinary fallback failed (${fetchResp.status}): ${doc.storedFilename}`);
         data = Buffer.from(await fetchResp.arrayBuffer());
       } else {
