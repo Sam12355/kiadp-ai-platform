@@ -22,6 +22,7 @@ export function createApp(): Express {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         'img-src': ["'self'", 'data:', 'https://res.cloudinary.com'],
+        'connect-src': ["'self'", 'wss://generativelanguage.googleapis.com', 'https://generativelanguage.googleapis.com'],
       },
     },
   }));
