@@ -1,7 +1,7 @@
 import { getPrisma } from '../config/database.js';
 import { getOpenAI } from '../config/openai.js';
 import { getEnv } from '../config/env.js';
-import { NotFoundError } from '../utils/errors.js';
+import { AppError, NotFoundError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
 import { CohereClient } from 'cohere-ai';
 import { embedText } from './embedding.service.js';
@@ -9,6 +9,56 @@ import { GoogleGenAI } from '@google/genai';
 
 /** Sticky flag — once OpenAI chat quota is exhausted this process run, always use Gemini */
 let openaiChatExhausted = false;
+
+const GEMINI_CHAT_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+const CHAT_MAX_RETRIES = 4;
+const CHAT_INITIAL_BACKOFF_MS = 3_000;
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+async function geminiChatComplete(
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+  opts: { temperature?: number; max_tokens?: number } = {},
+  geminiKey: string,
+): Promise<string | null> {
+  const ai = new GoogleGenAI({ apiKey: geminiKey });
+  const sysMsg = messages.find(m => m.role === 'system')?.content;
+  const convMsgs = messages
+    .filter(m => m.role !== 'system')
+    .map(m => ({ role: m.role === 'assistant' ? 'model' as const : 'user' as const, parts: [{ text: m.content }] }));
+
+  for (const model of GEMINI_CHAT_MODELS) {
+    for (let attempt = 0; attempt <= CHAT_MAX_RETRIES; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: convMsgs,
+          config: {
+            ...(sysMsg ? { systemInstruction: sysMsg } : {}),
+            temperature: opts.temperature ?? 0,
+            ...(opts.max_tokens !== undefined ? { maxOutputTokens: opts.max_tokens } : {}),
+          },
+        });
+        return response.text ?? '';
+      } catch (e: any) {
+        const status: number = e?.status ?? e?.error?.code ?? 0;
+        const isRateLimit = status === 429 || (typeof e?.message === 'string' && e.message.includes('RESOURCE_EXHAUSTED'));
+        if (isRateLimit && attempt < CHAT_MAX_RETRIES) {
+          const backoff = CHAT_INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+          getLogger().warn({ model, attempt, backoff }, 'Gemini chat rate-limited, retrying with backoff');
+          await sleep(backoff);
+          continue;
+        }
+        // Rate-limit exhausted for this model → try next model
+        if (isRateLimit) {
+          getLogger().warn({ model }, 'Gemini chat model quota exhausted, trying next model');
+          break;
+        }
+        throw e;
+      }
+    }
+  }
+  return null; // all models exhausted
+}
 
 async function chatComplete(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
@@ -36,24 +86,12 @@ async function chatComplete(
       }
     }
   }
-  // Gemini fallback
+  // Gemini fallback with retry + model cascade
   const geminiKey = env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('OpenAI quota exceeded and GEMINI_API_KEY is not configured');
-  const ai = new GoogleGenAI({ apiKey: geminiKey });
-  const sysMsg = messages.find(m => m.role === 'system')?.content;
-  const convMsgs = messages
-    .filter(m => m.role !== 'system')
-    .map(m => ({ role: m.role === 'assistant' ? 'model' as const : 'user' as const, parts: [{ text: m.content }] }));
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: convMsgs,
-    config: {
-      ...(sysMsg ? { systemInstruction: sysMsg } : {}),
-      temperature: opts.temperature ?? 0,
-      ...(opts.max_tokens !== undefined ? { maxOutputTokens: opts.max_tokens } : {}),
-    },
-  });
-  return response.text ?? '';
+  if (!geminiKey) throw new AppError('OpenAI quota exceeded and GEMINI_API_KEY is not configured', 503, 'AI_UNAVAILABLE');
+  const result = await geminiChatComplete(messages, opts, geminiKey);
+  if (result !== null) return result;
+  throw new AppError('All AI providers are currently rate-limited. Please try again in a minute.', 503, 'AI_RATE_LIMITED');
 }
 
 // ── Image-to-visual-chunk matching ──
