@@ -17,7 +17,14 @@ export function createApp(): Express {
   const app = express();
 
   // ── Security ──
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'img-src': ["'self'", 'data:', 'https://res.cloudinary.com'],
+      },
+    },
+  }));
   app.use(cors({
     origin: env.CORS_ORIGIN.split(',').map(s => s.trim()),
     credentials: true,
