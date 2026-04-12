@@ -677,14 +677,14 @@ export async function voiceAsk(
     FROM document_chunks dc
     WHERE dc.embedding IS NOT NULL AND dc.chunk_index < 999
     ORDER BY dc.embedding <=> '${vectorStr}'::vector
-    LIMIT 25
+    LIMIT 60
   `);
 
   const keywordPromise = keywords.length >= 2
     ? prisma.documentChunk.findMany({
         where: { AND: [{ chunkIndex: { lt: 999 } }, ...keywords.slice(0, 3).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } }))] },
         select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
-        take: 10,
+        take: 25,
       })
     : Promise.resolve([]);
 
@@ -783,6 +783,7 @@ export async function voiceAsk(
         where: { OR: missingPairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
         select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
       });
+      getLogger().debug(`voiceAsk: text-page imgs found=${textImgs.length} on pages=${missingPairs.map(p => p.pageNumber).join(',')}`);
       const textScoreMap = new Map<string, { rerankScore: number; text: string }>();
       for (const tp of missingPairs) textScoreMap.set(`${tp.documentId}:${tp.pageNumber}`, { rerankScore: tp.rerankScore ?? 0.3, text: tp.text });
       for (const img of textImgs) {
@@ -810,6 +811,33 @@ export async function voiceAsk(
         }
       }
     }
+
+    // ── Keyword-based image description search (fallback for short/vague queries) ──
+    // When visual chunks and text-page matching both miss, search image descriptions
+    // directly so vague voice queries like "handicrafts photos" still find Figure 24.
+    const keptImageIds = new Set(visualHits.map((img: any) => img.id));
+    const imageKeywords = keywords.filter(kw => !['photo','photos','image','images','picture','pictures','show','display','tell','about'].includes(kw));
+    if (imageKeywords.length >= 1) {
+      const descImages = await prisma.documentImage.findMany({
+        where: {
+          AND: imageKeywords.slice(0, 2).map(kw => ({ description: { contains: kw, mode: 'insensitive' as const } })),
+        },
+        select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
+        take: 10,
+      });
+      for (const img of descImages) {
+        if (keptImageIds.has(img.id)) continue;
+        if (VISUAL_BL.test(img.description ?? '')) continue;
+        (img as any)._score = 0.3;
+        visualHits.push(img);
+        keptImageIds.add(img.id);
+      }
+      if (descImages.length > 0) {
+        getLogger().debug({ keywords: imageKeywords.slice(0, 2), found: descImages.length }, 'voiceAsk: keyword image desc search');
+      }
+    }
+
+    getLogger().debug({ visualHitsBeforeRerank: visualHits.length }, 'voiceAsk: before image reranking');
 
     // ── Rerank with direct-figure bypass (same as askQuestion) ──
     visualHits.sort((a: any, b: any) => (b._score ?? 0) - (a._score ?? 0));
@@ -1213,6 +1241,30 @@ export async function askQuestion(
       if (extraVisual.length > 0) {
         getLogger().debug({ extraVisualFromTextPages: extraVisual.length }, 'found images on text-chunk pages');
         visualHits.push(...extraVisual);
+      }
+    }
+
+    // ── Keyword-based image description search (fallback for short/vague queries) ──
+    const keptImageIds = new Set(visualHits.map((img: any) => img.id));
+    const queryWords2 = embeddingQuery.toLowerCase().split(/\s+/).filter((w: string) => w.length >= 3 && !stopWords.has(w));
+    const imageKeywords = queryWords2.filter(kw => !['photo','photos','image','images','picture','pictures','show','display','tell','about'].includes(kw));
+    if (imageKeywords.length >= 1) {
+      const descImages = await prisma.documentImage.findMany({
+        where: {
+          AND: imageKeywords.slice(0, 2).map(kw => ({ description: { contains: kw, mode: 'insensitive' as const } })),
+        },
+        include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
+        take: 10,
+      });
+      for (const img of descImages) {
+        if (keptImageIds.has(img.id)) continue;
+        if (VISUAL_BLOCKLIST.test(img.description ?? '')) continue;
+        (img as any)._score = 0.3;
+        visualHits.push(img);
+        keptImageIds.add(img.id);
+      }
+      if (descImages.length > 0) {
+        getLogger().debug({ keywords: imageKeywords.slice(0, 2), found: descImages.length }, 'keyword image desc search');
       }
     }
 
