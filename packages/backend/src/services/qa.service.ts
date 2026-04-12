@@ -11,8 +11,9 @@ import { GoogleGenAI } from '@google/genai';
 let openaiChatExhausted = false;
 
 const GEMINI_CHAT_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-preview-04-17'];
-const CHAT_MAX_RETRIES = 4;
-const CHAT_INITIAL_BACKOFF_MS = 3_000;
+const CHAT_MAX_RETRIES = 1; // 1 retry per model — fail fast so Groq fallback kicks in quickly
+const CHAT_INITIAL_BACKOFF_MS = 2_000;
+const GROQ_MODELS = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 async function geminiChatComplete(
@@ -61,6 +62,37 @@ async function geminiChatComplete(
   return null; // all models exhausted
 }
 
+async function groqChatComplete(
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+  opts: { temperature?: number; max_tokens?: number },
+  groqKey: string,
+): Promise<string | null> {
+  const { default: OpenAI } = await import('openai');
+  const client = new OpenAI({ apiKey: groqKey, baseURL: 'https://api.groq.com/openai/v1' });
+  for (const model of GROQ_MODELS) {
+    try {
+      const resp = await client.chat.completions.create({
+        model,
+        messages,
+        temperature: opts.temperature ?? 0,
+        ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
+      });
+      return resp.choices[0].message.content ?? '';
+    } catch (e: any) {
+      const status: number = e?.status ?? 0;
+      const code: string = e?.code ?? e?.error?.code ?? '';
+      const isRateLimit = status === 429 || code === 'rate_limit_exceeded';
+      const isNotFound = status === 404 || code === 'model_not_found';
+      if (isRateLimit || isNotFound) {
+        getLogger().warn({ model, status, code }, 'Groq model unavailable, trying next');
+        continue;
+      }
+      throw e;
+    }
+  }
+  return null;
+}
+
 async function chatComplete(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   opts: { model?: string; temperature?: number; max_tokens?: number } = {},
@@ -89,9 +121,17 @@ async function chatComplete(
   }
   // Gemini fallback with retry + model cascade
   const geminiKey = env.GEMINI_API_KEY;
-  if (!geminiKey) throw new AppError('OpenAI quota exceeded and GEMINI_API_KEY is not configured', 503, 'AI_UNAVAILABLE');
-  const result = await geminiChatComplete(messages, opts, geminiKey);
-  if (result !== null) return result;
+  if (geminiKey) {
+    const result = await geminiChatComplete(messages, opts, geminiKey);
+    if (result !== null) return result;
+    getLogger().warn('All Gemini models exhausted — trying Groq fallback');
+  }
+  // Groq fallback
+  const groqKey = env.GROQ_API_KEY;
+  if (groqKey) {
+    const result = await groqChatComplete(messages, opts, groqKey);
+    if (result !== null) return result;
+  }
   throw new AppError('All AI providers are currently rate-limited. Please try again in a minute.', 503, 'AI_RATE_LIMITED');
 }
 

@@ -17,6 +17,9 @@ const envSchema = z.object({
   // Gemini
   GEMINI_API_KEY: z.string().optional(),
 
+  // Groq (optional — 3rd-tier chat fallback after Gemini)
+  GROQ_API_KEY: z.string().optional(),
+
   // Cohere (optional — used for reranking when provided)
   COHERE_API_KEY: z.string().optional(),
 
