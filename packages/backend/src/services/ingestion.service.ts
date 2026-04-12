@@ -296,11 +296,9 @@ export async function processDocument(documentId: string, filePath: string): Pro
                 const embeddingText = contextText
                   ? `[Visual Evidence from Page ${pageNum}]: ${contextText}\n\n${visualDescription}`
                   : `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`;
-                chunks.push({
-                  pageNumber: pageNum,
-                  text: embeddingText,
-                  chunkIndex: 10000 + pageNum * 10 + imgIdx
-                });
+                // IMPORTANT: create the DB record FIRST, push the chunk AFTER.
+                // If documentImage.create fails (e.g. schema mismatch), no orphaned
+                // visual chunk is left pointing to a non-existent image row.
                 await prisma.documentImage.create({
                   data: {
                     documentId,
@@ -312,6 +310,11 @@ export async function processDocument(documentId: string, filePath: string): Pro
                     width: img.width,
                     height: img.height,
                   }
+                });
+                chunks.push({
+                  pageNumber: pageNum,
+                  text: embeddingText,
+                  chunkIndex: 10000 + pageNum * 10 + imgIdx
                 });
               }
               break;
@@ -344,11 +347,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
               const embeddingText = contextText
                 ? `[Visual Evidence from Page ${pageNum}]: ${contextText}\n\n${visualDescription}`
                 : `[Visual Evidence from Page ${pageNum}]: ${visualDescription}`;
-              chunks.push({
-                pageNumber: pageNum,
-                text: embeddingText,
-                chunkIndex: 999 + pageNum
-              });
+              // IMPORTANT: create the DB record FIRST, push the chunk AFTER.
               await prisma.documentImage.create({
                 data: {
                   documentId,
@@ -358,6 +357,11 @@ export async function processDocument(documentId: string, filePath: string): Pro
                   contextText: contextText || null,
                   altText: `Figure on page ${pageNum}`
                 }
+              });
+              chunks.push({
+                pageNumber: pageNum,
+                text: embeddingText,
+                chunkIndex: 999 + pageNum
               });
             }
             break;
