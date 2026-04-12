@@ -3,7 +3,7 @@ services:
   - type: web
     name: kiadp-ai-platform
     runtime: node
-    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm -r build
+    buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && cd packages/backend && npx prisma db push --accept-data-loss && cd /opt/render/project/src && pnpm -r build
     startCommand: node /opt/render/project/src/packages/backend/dist/server.js
     envVars:
       - key: NODE_ENV
