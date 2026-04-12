@@ -60,4 +60,28 @@ router.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
+// Temporary diagnostic endpoint - check DB image/chunk counts
+router.get('/diag', async (_req: Request, res: Response) => {
+  const prisma = getPrisma();
+  const [docs, chunks, images, visualChunks] = await Promise.all([
+    prisma.document.findMany({ select: { id: true, title: true, status: true, pageCount: true, originalFilename: true } }),
+    prisma.documentChunk.count(),
+    prisma.documentImage.count(),
+    prisma.documentChunk.count({ where: { chunkIndex: { gte: 999 } } }),
+  ]);
+  // Sample image descriptions
+  const sampleImages = await prisma.documentImage.findMany({
+    select: { pageNumber: true, description: true, filePath: true, pineconeVectorId: true },
+    take: 5,
+    orderBy: { pageNumber: 'asc' },
+  });
+  res.json({
+    documents: docs,
+    totalChunks: chunks,
+    visualChunks,
+    totalImages: images,
+    sampleImages,
+  });
+});
+
 export default router;
