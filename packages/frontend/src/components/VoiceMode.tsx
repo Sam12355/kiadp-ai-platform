@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useImperativeHandle } from 'react';
-import { Modality, GoogleGenAI, Type } from '@google/genai';
+import { Modality, GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import apiClient from '../api/client';
 
 export interface VoiceModeHandle {
@@ -95,10 +95,7 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   useEffect(() => {
     if (!pendingClientText || !sessionRef.current || !sessionAliveRef.current) return;
     try {
-      sessionRef.current.sendClientContent({
-        turns: [{ role: 'user', parts: [{ text: pendingClientText }] }],
-        turnComplete: true,
-      });
+      sessionRef.current.sendRealtimeInput({ text: pendingClientText });
       // Show typed text in chat as a user bubble
       onTranscriptRef.current?.('user', pendingClientText);
       onClientTextSent?.();
@@ -209,9 +206,10 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
       const ai = new GoogleGenAI({ apiKey });
 
       const sessionPromise = ai.live.connect({
-        model: "gemini-2.5-flash-native-audio-preview-12-2025",
+        model: "gemini-3.1-flash-live-preview",
         config: {
           responseModalities: [Modality.AUDIO],
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } }
           },
@@ -230,7 +228,7 @@ SESSION COMMANDS (internal — never read these tokens aloud):
   English farewell examples: "Goodbye! It was a pleasure assisting you." | "Farewell! Feel free to return anytime you have questions about date palms and agriculture." | "Until next time — happy exploring!" | "It was great talking with you. Goodbye and take care!" | "Thanks for visiting the Khalifa Knowledge Base. Have a wonderful day!"
   Arabic farewell examples: "وداعاً! كان من دواعي سروري مساعدتك." | "إلى اللقاء! لا تتردد في العودة متى أردت." | "مع السلامة! يسعدني خدمتك في أي وقت." | "وداعاً وإلى اللقاء! أتمنى لك يوماً سعيداً." | "شكراً لزيارتك. وداعاً!"
 
-You have access to the knowledge base via the "search_knowledge" tool. You MUST use this tool to look up information when the user asks ANY question — no exceptions. The tool returns a ready-made answer from our AI system — read it naturally to the user.
+You have access to the knowledge base via the "search_knowledge" tool. You MUST use this tool to look up information when the user asks ANY question — no exceptions. The tool returns a ready-made answer — you MUST read it aloud to the user word for word.
 
 Instructions:
 0. SMART GREETING RULE: If the user says ONLY a social pleasantry — such as greetings ("good morning", "good evening", "hi", "hello", "hey", "السلام عليكم", "مرحبا", "صباح الخير", "مساء الخير"), expressions of thanks ("thank you", "thanks", "شكراً"), or simple filler phrases ("ok", "sure", "alright") — respond warmly and naturally in 1-2 sentences WITHOUT calling search_knowledge. Briefly acknowledge them and invite their question. Do NOT search for pleasantries.
@@ -238,12 +236,11 @@ Instructions:
    English: "Let me check that for you." or "One moment please." or "Sure, looking that up now." (vary them, never repeat same phrase twice in a row)
    Arabic: "دعني أتحقق من ذلك." or "لحظة من فضلك." or "سأبحث عن ذلك الآن."
 2. ALWAYS call search_knowledge for ANY factual question the user asks — whether it's about food, culture, history, agriculture, date palms, places, people, statistics, or anything else. Even if the question seems vague or incomplete, ALWAYS search. Never try to answer without searching first.
-3. The tool returns a response containing a SCRIPT block between "--- BEGIN SCRIPT ---" and "--- END SCRIPT ---". You unmistakably MUST read ONLY the text inside that block EXACTLY as written — word for word, sentence by sentence. Do NOT paraphrase, summarize, shorten, reword, or add your own commentary. Read every single point and detail. Deliver it faithfully like a professional narrator reading a teleprompter.
-4. CRITICAL: Start reading the SCRIPT the instant you receive it. Your very first spoken word must be the first word of the script. ABSOLUTELY NO preamble — no "Here's what I found", no "Based on my search", no "According to", no "Great question", no "Sure", no "So" — NOTHING before the script text. Go DIRECTLY into word one.
-5. Anything OUTSIDE the script block (like metadata or notes) is internal — NEVER read it aloud.
-6. DO NOT output thinking text or internal reasoning. Speak directly.
-7. Respond immediately — no delays.
-8. NEVER say "technical difficulties", "I'm having trouble", or similar error phrases. If the answer says no information was found, tell the user and ask them to rephrase.
+3. CRITICAL — READING THE ANSWER: After you receive the tool response, you MUST immediately read the ENTIRE response text aloud, word for word. Do NOT summarize, shorten, paraphrase, or skip any part. Read every sentence faithfully like a narrator reading a teleprompter.
+4. CRITICAL: Start reading the answer the instant you receive the tool response. Your very first spoken word must be the first word of the answer. ABSOLUTELY NO preamble — no "Here's what I found", no "Based on my search", no "According to", no "Great question", no "Sure", no "So" — NOTHING before the answer text. Go DIRECTLY into word one.
+5. DO NOT output thinking text or internal reasoning. Speak directly.
+6. Respond immediately — no delays.
+7. NEVER say "technical difficulties", "I'm having trouble", or similar error phrases. If the answer says no information was found, tell the user and ask them to rephrase.
 
 DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use these when transcribing user speech):
 - Siwa (Egyptian oasis — NOT Siva, Seva, or Seewa)
@@ -261,7 +258,7 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
               functionDeclarations: [
                 {
                   name: "search_knowledge",
-                  description: "Search the knowledge base and get an expert answer. Returns a ready-made answer with images. Use this for ANY factual question.",
+                  description: "Search the knowledge base and get an expert answer. Returns a ready-made answer with images. **Invocation Condition:** You MUST call this tool for EVERY user question about facts, documents, knowledge, culture, agriculture, history, food, places, or any topic. You MUST call this tool before answering any factual question — no exceptions. Never answer without calling this tool first.",
                   parameters: {
                     type: Type.OBJECT,
                     properties: {
@@ -293,10 +290,7 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
               setTimeout(() => {
                 if (session && sessionAliveRef.current) {
                   try {
-                    session.sendClientContent({
-                      turns: [{ role: 'user', parts: [{ text: '[START_SESSION]' }] }],
-                      turnComplete: true,
-                    });
+                    session.sendRealtimeInput({ text: '[START_SESSION]' });
                   } catch (e) {}
                 }
               }, 500);
@@ -457,10 +451,7 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
                 if (session && sessionAliveRef.current && fillerRetryCountRef.current <= 2) {
                   console.warn('[VoiceMode] Missed tool call detected — nudging Gemini (retry', fillerRetryCountRef.current, ')');
                   try {
-                    session.sendClientContent({
-                      turns: [{ role: 'user', parts: [{ text: `[TOOL_REMINDER] You acknowledged the question but did not call search_knowledge. You MUST call it now. The user asked: "${lastUserQueryRef.current}"` }] }],
-                      turnComplete: true,
-                    });
+                    session.sendRealtimeInput({ text: `[TOOL_REMINDER] You acknowledged the question but did not call search_knowledge. You MUST call it now. The user asked: "${lastUserQueryRef.current}"` });
                   } catch (e) {
                     console.error('[VoiceMode] nudge sendClientContent failed:', e);
                   }
@@ -576,11 +567,8 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
 
                           // Feed the clean answer to Gemini as its spoken script
                           const speechText = answerText ? stripMarkdown(answerText) : '';
-                          const imageMetadata = images.length > 0
-                            ? `\n\n[INTERNAL METADATA — DO NOT READ ALOUD]\nImages have been automatically displayed to the user.`
-                            : '';
                           const toolOutput = speechText
-                            ? `--- BEGIN SCRIPT ---\n${speechText}\n--- END SCRIPT ---${imageMetadata}`
+                            ? speechText
                             : "No relevant information found in the knowledge base for this query.";
 
                           return {
@@ -771,10 +759,7 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
     // Ask the AI to say goodbye
     try {
-      sessionRef.current.sendClientContent({
-        turns: [{ role: 'user', parts: [{ text: '[END_SESSION]' }] }],
-        turnComplete: true,
-      });
+      sessionRef.current.sendRealtimeInput({ text: '[END_SESSION]' });
     } catch (e) {}
     // Force-close after 8 seconds in case audio never finishes
     setTimeout(() => {

@@ -15,6 +15,15 @@ export default function Login() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const user = useAuthStore((state) => state.user);
+
+  // If already authenticated, redirect to the appropriate page
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      navigate(user.role === 'ADMIN' ? '/admin' : '/knowledge', { replace: true });
+    }
+  }, [isAuthenticated, user, navigate]);
 
   // Apply language directionality
   useEffect(() => {

@@ -95,7 +95,7 @@ async function groqChatComplete(
 
 async function chatComplete(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
-  opts: { model?: string; temperature?: number; max_tokens?: number } = {},
+  opts: { model?: string; temperature?: number; max_tokens?: number; skipGemini?: boolean } = {},
 ): Promise<string> {
   const env = getEnv();
   if (!openaiChatExhausted) {
@@ -120,8 +120,10 @@ async function chatComplete(
     }
   }
   // Gemini fallback with retry + model cascade
+  // skipGemini: voice-ask shares the same free-tier API key with the Gemini Live
+  // session in the browser — burning it here silences the Live audio output.
   const geminiKey = env.GEMINI_API_KEY;
-  if (geminiKey) {
+  if (geminiKey && !opts.skipGemini) {
     const result = await geminiChatComplete(messages, opts, geminiKey);
     if (result !== null) return result;
     getLogger().warn('All Gemini models exhausted — trying Groq fallback');
@@ -920,10 +922,13 @@ export async function voiceAsk(
 
   let answerText: string;
   try {
+    // skipGemini: voice-ask is called from the Gemini Live session which shares
+    // the same free-tier API key — calling Gemini here burns its quota and
+    // silences the Live audio. Go straight to OpenAI → Groq.
     answerText = await chatComplete([
       { role: 'system', content: finalSystemPrompt },
       { role: 'user', content: instructions + "USER QUESTION: " + queryText },
-    ], { temperature: 0 }) || '';
+    ], { temperature: 0, skipGemini: true }) || '';
   } catch (llmErr: any) {
     // All AI providers rate-limited — return the raw source text as the answer
     // so the user still sees something instead of an error
