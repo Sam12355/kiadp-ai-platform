@@ -4,7 +4,7 @@ services:
     name: kiadp-ai-platform
     runtime: node
     buildCommand: cd /opt/render/project/src && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm -r build
-    startCommand: cd /opt/render/project/src/packages/backend && npx prisma db push --accept-data-loss && node /opt/render/project/src/packages/backend/dist/server.js
+    startCommand: cd /opt/render/project/src/packages/backend && npx prisma db push --accept-data-loss && node /opt/render/project/src/packages/backend/dist/server.js & node /opt/render/project/src/packages/backend/dist/worker.js
     envVars:
       - key: NODE_ENV
         value: production
