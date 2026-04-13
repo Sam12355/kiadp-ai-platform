@@ -11,6 +11,7 @@
 import { getOpenAI } from '../config/openai.js';
 import { getEnv } from '../config/env.js';
 import { getLogger } from '../utils/logger.js';
+import { trackUsage } from '../utils/usageTracker.js';
 
 const TARGET_DIMS = 1536;
 const GEMINI_BATCH_SIZE = 20;     // texts per sub-batch to stay within free-tier limits
@@ -57,6 +58,9 @@ async function geminiBatchWithRetry(
       const data = await resp.json() as any;
       const embeddings: number[][] = (data.embeddings ?? []).map((e: any) => e.values as number[]);
       if (embeddings.length === texts.length && embeddings[0]?.length) {
+        // Gemini batchEmbedContents doesn't return token counts; estimate from chars
+        const estimatedTokens = texts.reduce((sum, t) => sum + Math.ceil(t.length / 4), 0);
+        trackUsage('gemini', model, estimatedTokens, 0);
         return embeddings;
       }
     }
@@ -137,6 +141,10 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
         model: env.OPENAI_EMBEDDING_MODEL,
         input: texts,
       });
+      trackUsage('openai', env.OPENAI_EMBEDDING_MODEL,
+        response.usage?.prompt_tokens ?? texts.length,
+        0,
+      );
       return response.data.map(d => d.embedding);
     } catch (err: any) {
       const status = err?.status ?? err?.statusCode;

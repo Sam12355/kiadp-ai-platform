@@ -6,6 +6,7 @@ import { getLogger } from '../utils/logger.js';
 import { CohereClient } from 'cohere-ai';
 import { embedText } from './embedding.service.js';
 import { GoogleGenAI } from '@google/genai';
+import { trackUsage } from '../utils/usageTracker.js';
 
 /** Sticky flag — once OpenAI chat quota is exhausted this process run, always use Gemini */
 let openaiChatExhausted = false;
@@ -39,6 +40,10 @@ async function geminiChatComplete(
             ...(opts.max_tokens !== undefined ? { maxOutputTokens: opts.max_tokens } : {}),
           },
         });
+        trackUsage('gemini', model,
+          response.usageMetadata?.promptTokenCount ?? 0,
+          response.usageMetadata?.candidatesTokenCount ?? 0,
+        );
         return response.text ?? '';
       } catch (e: any) {
         const status: number = e?.status ?? e?.error?.code ?? 0;
@@ -77,6 +82,10 @@ async function groqChatComplete(
         temperature: opts.temperature ?? 0,
         ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
       });
+      trackUsage('groq', model,
+        resp.usage?.prompt_tokens ?? 0,
+        resp.usage?.completion_tokens ?? 0,
+      );
       return resp.choices[0].message.content ?? '';
     } catch (e: any) {
       const status: number = e?.status ?? 0;
@@ -107,6 +116,10 @@ async function chatComplete(
         temperature: opts.temperature ?? 0,
         ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
       });
+      trackUsage('openai', opts.model ?? env.OPENAI_CHAT_MODEL_MINI,
+        resp.usage?.prompt_tokens ?? 0,
+        resp.usage?.completion_tokens ?? 0,
+      );
       return resp.choices[0].message.content ?? '';
     } catch (e: any) {
       const code: string = e?.code ?? e?.error?.code ?? '';

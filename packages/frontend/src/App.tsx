@@ -7,6 +7,7 @@ import AdminLayout from './pages/admin/Layout';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminDocuments from './pages/admin/Documents';
 import AdminUsers from './pages/admin/Users';
+import AdminQuestions from './pages/admin/QuestionAnalytics';
 
 import ClientLayout from './pages/client/Layout';
 import ClientKnowledge from './pages/client/KnowledgeAssistant';
@@ -23,6 +24,7 @@ export default function App() {
         <Route index element={<AdminDashboard />} />
         <Route path="documents" element={<AdminDocuments />} />
         <Route path="users" element={<AdminUsers />} />
+        <Route path="questions" element={<AdminQuestions />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 

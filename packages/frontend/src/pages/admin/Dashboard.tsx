@@ -3,6 +3,8 @@ import apiClient from '../../api/client';
 import { FileText, Database, HelpCircle, Users, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
+import ApiStatus from './ApiStatus';
+import QuestionSummaryCards from './QuestionSummaryCards';
 
 interface DashboardStats {
   totalDocuments: number;
@@ -175,6 +177,10 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Question Analytics summary (click to go full page) */}
+      <QuestionSummaryCards />
+      <ApiStatus />
     </div>
   );
 }

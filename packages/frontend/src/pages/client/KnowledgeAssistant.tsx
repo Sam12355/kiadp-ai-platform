@@ -79,16 +79,29 @@ export default function KnowledgeAssistant() {
   const lastVoiceAssistantMsgIdRef = useRef<string | null>(null);
   // Tracks the first user message ID in this voice session (for auto-titling)
   const firstVoiceUserMsgIdRef = useRef<string | null>(null);
+  const suppressVoiceCloseNavigateRef = useRef(false);
   useEffect(() => {
     if (!isVoiceModeOpen && voiceSessionIdRef.current) {
       // Voice mode just closed — navigate to the voice session so the chat stays visible
       const vsid = voiceSessionIdRef.current;
+      const hadUserMessage = !!firstVoiceUserMsgIdRef.current; // capture before clearing
       voiceSessionIdRef.current = null;
       lastVoiceUserMsgIdRef.current = null;
       lastVoiceAssistantMsgIdRef.current = null;
       firstVoiceUserMsgIdRef.current = null;
+      // If the user never spoke, discard the session entirely (don't pollute history)
+      if (!hadUserMessage) {
+        setSessions(prev => prev.filter(s => s.id !== vsid));
+        suppressVoiceCloseNavigateRef.current = false;
+        return;
+      }
+      if (suppressVoiceCloseNavigateRef.current) {
+        suppressVoiceCloseNavigateRef.current = false;
+        return;
+      }
       if (!urlSessionId) navigate(`/knowledge/chat/${vsid}`, { replace: true });
     } else if (!isVoiceModeOpen) {
+      suppressVoiceCloseNavigateRef.current = false;
       voiceSessionIdRef.current = null;
       lastVoiceUserMsgIdRef.current = null;
       lastVoiceAssistantMsgIdRef.current = null;
@@ -165,6 +178,11 @@ export default function KnowledgeAssistant() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
+  // Keep local chat history isolated per logged-in user account.
+  const storageScope = user ? `${user.role.toLowerCase()}_${user.id}` : 'guest';
+  const sessionsIndexKey = `khalifa_sessions_index_${storageScope}`;
+  const sessionMessagesKey = (sessionId: string) => `khalifa_session_${storageScope}_${sessionId}`;
+
   // Active session logic — during voice mode, use voiceSessionIdRef (no URL navigation while voice is active)
   const effectiveSessionId = urlSessionId || (isVoiceModeOpen ? voiceSessionIdRef.current : null);
   const activeSession = effectiveSessionId 
@@ -174,36 +192,23 @@ export default function KnowledgeAssistant() {
   const messages = activeSession?.messages || [];
   // 1. Initial Load — metadata only (lazy: messages loaded on demand)
   useEffect(() => {
-    const savedIndex = localStorage.getItem('khalifa_sessions_index');
+    setSessions([]);
+    const savedIndex = localStorage.getItem(sessionsIndexKey);
     if (savedIndex) {
       try {
         const metas: { id: string; title: string; updatedAt: number }[] = JSON.parse(savedIndex);
         setSessions(metas.map(m => ({ ...m, messages: [] })));
       } catch (e) { console.error(e); }
-    } else {
-      // Migrate from old single-blob format → per-session format
-      const oldSaved = localStorage.getItem('khalifa_all_sessions');
-      if (oldSaved) {
-        try {
-          const all: ChatSession[] = JSON.parse(oldSaved);
-          localStorage.setItem('khalifa_sessions_index', JSON.stringify(
-            all.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
-          ));
-          all.forEach(s => localStorage.setItem(`khalifa_session_${s.id}`, JSON.stringify(s.messages)));
-          localStorage.removeItem('khalifa_all_sessions');
-          setSessions(all.map(s => ({ ...s, messages: [] })));
-        } catch (e) { console.error(e); }
-      }
     }
-  }, []);
+  }, [sessionsIndexKey]);
 
   // 2a. Persist session index (metadata only — fast, tiny payload)
   useEffect(() => {
     if (sessions.length === 0) return;
-    localStorage.setItem('khalifa_sessions_index', JSON.stringify(
+    localStorage.setItem(sessionsIndexKey, JSON.stringify(
       sessions.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
     ));
-  }, [sessions]);
+  }, [sessions, sessionsIndexKey]);
 
   // 2b. Persist active session messages (writes only the one active session)
   useEffect(() => {
@@ -211,21 +216,21 @@ export default function KnowledgeAssistant() {
     if (!sid) return;
     const active = sessions.find(s => s.id === sid);
     if (!active || active.messages.length === 0) return;
-    localStorage.setItem(`khalifa_session_${sid}`, JSON.stringify(active.messages));
-  }, [sessions, urlSessionId, isVoiceModeOpen]);
+    localStorage.setItem(sessionMessagesKey(sid), JSON.stringify(active.messages));
+  }, [sessions, urlSessionId, isVoiceModeOpen, storageScope]);
 
   // 2c. Lazy-load session messages on navigate (only when messages not yet in memory)
   useEffect(() => {
     if (!urlSessionId) return;
     const session = sessions.find(s => s.id === urlSessionId);
     if (!session || session.messages.length > 0) return; // not in index or already loaded
-    const saved = localStorage.getItem(`khalifa_session_${urlSessionId}`);
+    const saved = localStorage.getItem(sessionMessagesKey(urlSessionId));
     if (!saved) return;
     try {
       const msgs: Message[] = JSON.parse(saved);
       setSessions(prev => prev.map(s => s.id === urlSessionId ? { ...s, messages: msgs } : s));
     } catch (e) { console.error(e); }
-  }, [urlSessionId, sessions]);
+  }, [urlSessionId, sessions, storageScope]);
 
   // 3. Auto-scroll and focus
   useEffect(() => {
@@ -242,6 +247,7 @@ export default function KnowledgeAssistant() {
   // ── Handlers ──
   const handleNewChat = () => {
     if (isVoiceModeOpen) {
+      suppressVoiceCloseNavigateRef.current = true;
       voiceModeRef.current?.stop();
       setIsVoiceModeOpen(false);
     }
@@ -254,7 +260,7 @@ export default function KnowledgeAssistant() {
     setMenuOpenId(null);
     const filtered = sessions.filter(s => s.id !== id);
     setSessions(filtered);
-    localStorage.removeItem(`khalifa_session_${id}`);
+    localStorage.removeItem(sessionMessagesKey(id));
     if (urlSessionId === id) {
       handleNewChat();
     }
