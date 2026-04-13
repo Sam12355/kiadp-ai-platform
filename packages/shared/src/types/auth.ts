@@ -14,6 +14,7 @@ export interface UserProfile {
   avatarUrl?: string | null;
   role: UserRole;
   isActive: boolean;
+  isPendingApproval?: boolean;
   createdAt: string;
 }
 
@@ -36,6 +37,11 @@ export interface AuthTokens {
 export interface LoginResponse {
   user: UserProfile;
   tokens: AuthTokens;
+}
+
+export interface RegisterResponse {
+  pending: true;
+  message: string;
 }
 
 export interface RefreshRequest {

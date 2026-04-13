@@ -31,7 +31,7 @@ function hashRefreshToken(token: string): string {
 
 // ── Service Methods ──
 
-export async function registerUser(input: RegisterInput): Promise<{ user: UserProfile; tokens: AuthTokens }> {
+export async function registerUser(input: RegisterInput): Promise<{ pending: true; message: string }> {
   const prisma = getPrisma();
   
   const existingUser = await prisma.user.findUnique({
@@ -44,41 +44,20 @@ export async function registerUser(input: RegisterInput): Promise<{ user: UserPr
 
   const passwordHash = await bcrypt.hash(input.password, 12);
 
-  const newUser = await prisma.user.create({
+  await prisma.user.create({
     data: {
       email: input.email,
       fullName: input.fullName,
       passwordHash,
-      role: 'CLIENT', // Default role
-    },
-  });
-
-  const tokens = generateTokens(newUser.id, newUser.email, newUser.role);
-  
-  // Store refresh token
-  const env = getEnv();
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + env.REFRESH_TOKEN_EXPIRY_DAYS);
-
-  await prisma.refreshToken.create({
-    data: {
-      userId: newUser.id,
-      tokenHash: hashRefreshToken(tokens.refreshToken),
-      expiresAt,
+      role: 'CLIENT',
+      isActive: false,
+      isPendingApproval: true,
     },
   });
 
   return {
-    user: {
-      id: newUser.id,
-      email: newUser.email,
-      fullName: newUser.fullName,
-      avatarUrl: newUser.avatarUrl,
-      role: newUser.role as unknown as UserProfile['role'],
-      isActive: newUser.isActive,
-      createdAt: newUser.createdAt.toISOString(),
-    },
-    tokens,
+    pending: true,
+    message: 'Your registration has been submitted. An administrator will review and approve your account.',
   };
 }
 
@@ -89,7 +68,15 @@ export async function loginUser(input: LoginInput): Promise<{ user: UserProfile;
     where: { email: input.email },
   });
 
-  if (!user || !user.isActive) {
+  if (!user) {
+    throw new UnauthorizedError('Invalid credentials or account disabled');
+  }
+
+  if (user.isPendingApproval) {
+    throw new UnauthorizedError('Your account is pending admin approval. Please wait for an administrator to activate your account.');
+  }
+
+  if (!user.isActive) {
     throw new UnauthorizedError('Invalid credentials or account disabled');
   }
 
@@ -120,6 +107,7 @@ export async function loginUser(input: LoginInput): Promise<{ user: UserProfile;
       avatarUrl: user.avatarUrl,
       role: user.role as unknown as UserProfile['role'],
       isActive: user.isActive,
+      isPendingApproval: user.isPendingApproval,
       createdAt: user.createdAt.toISOString(),
     },
     tokens,

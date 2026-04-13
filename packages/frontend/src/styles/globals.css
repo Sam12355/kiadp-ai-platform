@@ -365,7 +365,6 @@ a:disabled,
 .glow-prompt-bar {
   position: relative;
   width: 100%;
-  max-width: 640px;
   padding: 1.2px; /* Thinner border */
   border-radius: 20px;
   overflow: hidden;

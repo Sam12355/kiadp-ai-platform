@@ -73,6 +73,7 @@ router.get('/users', authenticate, requireRole(UserRole.ADMIN as any), async (re
         fullName: true,
         role: true,
         isActive: true,
+        isPendingApproval: true,
         createdAt: true,
       }
     });
@@ -105,6 +106,36 @@ router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMI
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: { isActive: !user.isActive }
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/users/{id}/approve:
+ *   post:
+ *     summary: Approve a pending user registration (Admin only)
+ *     tags: [Admin]
+ */
+router.post('/users/:id/approve', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id as string },
+      select: { id: true, isPendingApproval: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { isActive: true, isPendingApproval: false }
     });
 
     res.json({ success: true, data: updated });

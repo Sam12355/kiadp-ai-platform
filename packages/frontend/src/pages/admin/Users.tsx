@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/client';
 import { avatarUrl } from '../../api/urls';
-import { Users, Shield, ShieldAlert, UserCheck, UserMinus, Search, Mail, Calendar, UserPlus, Plus } from 'lucide-react';
+import { Users, Shield, ShieldAlert, UserCheck, UserMinus, Search, Mail, Calendar, UserPlus, Clock } from 'lucide-react';
 import { useState } from 'react';
 import ConfirmModal from './components/ConfirmModal';
 import CreateUserModal from './components/CreateUserModal';
@@ -15,6 +15,7 @@ interface User {
   role: string;
   avatarUrl?: string;
   isActive: boolean;
+  isPendingApproval?: boolean;
   createdAt: string;
 }
 
@@ -44,9 +45,22 @@ export default function UsersPage() {
     },
   });
 
-  const filteredUsers = users?.filter(user => 
-    user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  const approveMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiClient.post(`/admin/users/${userId}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+  });
+
+  const pendingUsers = users?.filter(u => u.isPendingApproval);
+  const filteredUsers = users?.filter(user =>
+    !user.isPendingApproval && (
+      user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   );
 
   return (
@@ -78,6 +92,49 @@ export default function UsersPage() {
           </button>
         </div>
       </div>
+
+      {/* Pending Approvals */}
+      {pendingUsers && pendingUsers.length > 0 && (
+        <div className="glass rounded-[2rem] overflow-hidden border border-amber-500/20 shadow-2xl">
+          <div className="px-8 py-5 bg-amber-500/5 border-b border-amber-500/10 flex items-center gap-3">
+            <Clock className="w-4 h-4 text-amber-400" />
+            <h2 className="text-[11px] font-black uppercase tracking-widest text-amber-400">
+              Pending Approvals
+            </h2>
+            <span className="ml-auto px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black">
+              {pendingUsers.length}
+            </span>
+          </div>
+          <div className="divide-y divide-white/5">
+            {pendingUsers.map((user) => (
+              <div key={user.id} className="px-8 py-5 flex items-center gap-4 hover:bg-white/[0.02] transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white font-black border border-white/10 shadow-lg">
+                  {user.fullName.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white leading-none">{user.fullName}</p>
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-white/40 mt-1 uppercase tracking-tight">
+                    <Mail className="w-3 h-3" />
+                    {user.email}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-white/30 uppercase tracking-widest me-4">
+                  <Calendar className="w-3 h-3" />
+                  {new Date(user.createdAt).toLocaleDateString()}
+                </div>
+                <button
+                  onClick={() => approveMutation.mutate(user.id)}
+                  disabled={approveMutation.isPending}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border text-emerald-400 border-emerald-400/20 hover:bg-emerald-400/10 disabled:opacity-50"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  Approve
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="glass rounded-[2rem] overflow-hidden border border-white/5 shadow-2xl">
         <div className="overflow-x-auto">

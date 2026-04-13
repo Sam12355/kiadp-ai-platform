@@ -241,6 +241,10 @@ export default function KnowledgeAssistant() {
 
   // ── Handlers ──
   const handleNewChat = () => {
+    if (isVoiceModeOpen) {
+      voiceModeRef.current?.stop();
+      setIsVoiceModeOpen(false);
+    }
     navigate('/knowledge');
     setQuery('');
   };
