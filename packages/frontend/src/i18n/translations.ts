@@ -109,7 +109,6 @@ const en = {
     enterName: 'Enter name',
     setPassword: 'Set password',
     discard: 'Discard',
-    registering: 'Registering...',
     
     // Documents
     uploadNew: 'Upload New',
@@ -295,7 +294,6 @@ const ar = {
     enterName: 'أدخل الاسم',
     setPassword: 'تعيين كلمة المرور',
     discard: 'تجاهل',
-    registering: 'جاري التسجيل...',
 
     // Documents
     uploadNew: 'رفع جديد',
