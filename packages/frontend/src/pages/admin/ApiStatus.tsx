@@ -39,26 +39,30 @@ function fmtNum(n: number): string {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   if (status === 'online')
     return (
       <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-        <CheckCircle2 className="w-3.5 h-3.5" /> Online
+        <CheckCircle2 className="w-3.5 h-3.5" /> {t.statusOnline}
       </span>
     );
   if (status === 'unconfigured')
     return (
       <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">
-        <MinusCircle className="w-3.5 h-3.5" /> Not set
+        <MinusCircle className="w-3.5 h-3.5" /> {t.statusNotSet}
       </span>
     );
   return (
     <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-red-400">
-      <XCircle className="w-3.5 h-3.5" /> Error
+      <XCircle className="w-3.5 h-3.5" /> {t.statusError}
     </span>
   );
 }
 
 function ProgressBar({ label, usedPercent, left, right }: { label: string; usedPercent: number; left: string; right: string }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   const pct = Math.min(usedPercent, 100);
   const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
@@ -70,7 +74,7 @@ function ProgressBar({ label, usedPercent, left, right }: { label: string; usedP
       <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="text-right text-[10px] font-bold text-[var(--color-secondary)]">{pct.toFixed(1)}% used</div>
+      <div className="text-right text-[10px] font-bold text-[var(--color-secondary)]">{pct.toFixed(1)}{t.percentUsed}</div>
     </div>
   );
 }
@@ -103,6 +107,8 @@ function Tag({ children }: { children: React.ReactNode }) {
 
 // ─── Service cards ────────────────────────────────────────────────────────────
 function CloudinaryCard({ d }: { d: CloudinaryInfo }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   return (
     <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-4">
       <CardHeader icon={Cloud} color="bg-orange-500/20" name="Cloudinary" badge={<StatusBadge status={d.status} />} />
@@ -110,36 +116,36 @@ function CloudinaryCard({ d }: { d: CloudinaryInfo }) {
       {d.status === 'online' && d.storage && d.bandwidth && d.transformations && (
         <>
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">Plan</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">{t.planLabel}</span>
             <Tag>{d.plan}</Tag>
-            {d.resources !== undefined && <Tag>{fmtNum(d.resources)} files</Tag>}
+            {d.resources !== undefined && <Tag>{fmtNum(d.resources)} {t.filesLabel}</Tag>}
           </div>
           <div className="space-y-4">
             {d.storage.isUnlimited ? (
-              <Row label="Storage used" value={`${fmtBytes(d.storage.usageBytes ?? 0)} (unlimited plan)`} />
+              <Row label={t.storageUsed} value={`${fmtBytes(d.storage.usageBytes ?? 0)} (${t.unlimitedPlan})`} />
             ) : (
               <ProgressBar
-                label="Storage"
+                label={t.storageLabel}
                 usedPercent={d.storage.usedPercent ?? 0}
                 left={fmtBytes(d.storage.usageBytes ?? 0)}
                 right={fmtBytes(d.storage.limitBytes ?? 0)}
               />
             )}
             {d.bandwidth.isUnlimited ? (
-              <Row label="Bandwidth used" value={`${fmtBytes(d.bandwidth.usageBytes ?? 0)} (unlimited plan)`} />
+              <Row label={t.bandwidthUsed} value={`${fmtBytes(d.bandwidth.usageBytes ?? 0)} (${t.unlimitedPlan})`} />
             ) : (
               <ProgressBar
-                label="Bandwidth"
+                label={t.bandwidthLabel}
                 usedPercent={d.bandwidth.usedPercent ?? 0}
                 left={fmtBytes(d.bandwidth.usageBytes ?? 0)}
                 right={fmtBytes(d.bandwidth.limitBytes ?? 0)}
               />
             )}
             {d.transformations.isUnlimited ? (
-              <Row label="Transformations used" value={`${fmtNum(d.transformations.usage ?? 0)} (unlimited plan)`} />
+              <Row label={t.transformationsUsed} value={`${fmtNum(d.transformations.usage ?? 0)} (${t.unlimitedPlan})`} />
             ) : (
               <ProgressBar
-                label="Transformations"
+                label={t.transformationsLabel}
                 usedPercent={d.transformations.usedPercent ?? 0}
                 left={fmtNum(d.transformations.usage ?? 0)}
                 right={fmtNum(d.transformations.limit ?? 0)}
@@ -148,17 +154,19 @@ function CloudinaryCard({ d }: { d: CloudinaryInfo }) {
           </div>
           {d.lastUpdated && (
             <p className="text-[10px] text-[var(--color-secondary)] pt-1">
-              Updated: {new Date(d.lastUpdated).toLocaleString()}
+              {t.updatedLabel} {new Date(d.lastUpdated).toLocaleString()}
             </p>
           )}
         </>
       )}
-      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">Cloudinary env vars not configured.</p>}
+      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">{t.statusNotSet}.</p>}
     </div>
   );
 }
 
 function PineconeCard({ d }: { d: PineconeInfo }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   const fullnessPct = d.indexFullness !== null && d.indexFullness !== undefined ? +(d.indexFullness * 100).toFixed(2) : null;
   return (
     <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-4">
@@ -175,26 +183,28 @@ function PineconeCard({ d }: { d: PineconeInfo }) {
             <p className="text-3xl font-black text-white tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>
               {fmtNum(d.vectorCount ?? 0)}
             </p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mt-1">Vectors indexed</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mt-1">{t.vectorsIndexed}</p>
           </div>
           {fullnessPct !== null ? (
             <ProgressBar
-              label="Index fullness"
+              label={t.indexFullness}
               usedPercent={fullnessPct}
               left={`${fullnessPct.toFixed(2)}%`}
               right="100%"
             />
           ) : (
-            <p className="text-[10px] text-[var(--color-secondary)] italic">Capacity % is not reported for this Pinecone index type.</p>
+            <p className="text-[10px] text-[var(--color-secondary)] italic">{t.capacityNotReported}</p>
           )}
         </>
       )}
-      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">Pinecone not configured.</p>}
+      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">{t.statusNotSet}.</p>}
     </div>
   );
 }
 
 function OpenAICard({ d, period }: { d: OpenAIInfo; period?: string }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   return (
     <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-3">
       <CardHeader icon={Sparkles} color="bg-violet-500/20" name="OpenAI" badge={<StatusBadge status={d.status} />} />
@@ -203,43 +213,43 @@ function OpenAICard({ d, period }: { d: OpenAIInfo; period?: string }) {
       {/* Credit balance — from billing API */}
       {d.creditBalance !== undefined ? (
         <div className="bg-white/[0.03] rounded-xl p-4 border border-white/5">
-          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">Credit balance</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">{t.creditBalance}</p>
           <div className="flex items-end gap-1.5">
             <span className="text-3xl font-black text-white tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>
               ${d.creditBalance.toFixed(2)}
             </span>
-            <span className="text-[10px] font-black text-[var(--color-secondary)] mb-1">USD remaining</span>
+            <span className="text-[10px] font-black text-[var(--color-secondary)] mb-1">{t.usdRemaining}</span>
           </div>
           {d.creditGranted !== undefined && d.creditUsed !== undefined && (
             <ProgressBar
-              label="Used"
+              label={t.usedLabel}
               usedPercent={d.creditGranted > 0 ? +((d.creditUsed / d.creditGranted) * 100).toFixed(1) : 0}
               left={`$${d.creditUsed.toFixed(2)}`}
               right={`$${d.creditGranted.toFixed(2)}`}
             />
           )}
-          {d.creditsExpire && <p className="text-[10px] text-[var(--color-secondary)] pt-1">Expires: {d.creditsExpire}</p>}
+          {d.creditsExpire && <p className="text-[10px] text-[var(--color-secondary)] pt-1">{t.expiresLabel} {d.creditsExpire}</p>}
         </div>
       ) : (
         <p className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-          Credit balance not available for this account type — see billing dashboard.
+          {t.creditNotAvailable}
         </p>
       )}
 
       {d.monthlyUsageUsd !== undefined && (
-        <Row label="Spend this month" value={`$${d.monthlyUsageUsd.toFixed(4)}`} />
+        <Row label={t.spendThisMonth} value={`$${d.monthlyUsageUsd.toFixed(4)}`} />
       )}
       {d.models && (
         <div className="space-y-2">
-          <Row label="Chat" value={d.models.chat} />
-          <Row label="Mini" value={d.models.chatMini} />
-          <Row label="Embed" value={d.models.embedding} />
+          <Row label={t.chatLabel} value={d.models.chat} />
+          <Row label={t.miniLabel} value={d.models.chatMini} />
+          <Row label={t.embedLabel} value={d.models.embedding} />
         </div>
       )}
 
       {/* Self-tracked token usage from our DB */}
       <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">Self-tracked usage (30 days)</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">{t.selfTrackedUsageLabel}</p>
         <SelfTrackedBlock data={d.selfTracked} period={period} />
       </div>
 
@@ -256,13 +266,15 @@ function OpenAICard({ d, period }: { d: OpenAIInfo; period?: string }) {
 }
 
 function GeminiCard({ d, period }: { d: GeminiInfo; period?: string }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   return (
     <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-3">
       <CardHeader icon={Brain} color="bg-blue-500/20" name="Gemini" badge={<StatusBadge status={d.status} />} />
       {d.error && <ErrorMsg msg={d.error} />}
       {d.chatModels && (
         <div className="space-y-1.5">
-          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">Chat fallback chain</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">{t.chatFallbackChain}</p>
           <div className="flex flex-col gap-1">
             {d.chatModels.map(m => <Tag key={m}>{m}</Tag>)}
           </div>
@@ -270,13 +282,13 @@ function GeminiCard({ d, period }: { d: GeminiInfo; period?: string }) {
       )}
       {d.voiceModel && (
         <div className="space-y-1.5 pt-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">Voice model</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">{t.voiceModelLabel}</p>
           <Tag>{d.voiceModel}</Tag>
         </div>
       )}
-      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">GEMINI_API_KEY not set.</p>}
+      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">{t.statusNotSet}.</p>}
       <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">Self-tracked usage (30 days)</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">{t.selfTrackedUsageLabel}</p>
         <SelfTrackedBlock
           data={d.selfTracked}
           period={period}
@@ -298,22 +310,24 @@ function GeminiCard({ d, period }: { d: GeminiInfo; period?: string }) {
 }
 
 function GroqCard({ d, period }: { d: GroqInfo; period?: string }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   return (
     <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-3">
       <CardHeader icon={Zap} color="bg-amber-500/20" name="Groq" badge={<StatusBadge status={d.status} />} />
       {d.error && <ErrorMsg msg={d.error} />}
-      {d.tier && <Row label="Tier" value={d.tier} />}
+      {d.tier && <Row label={t.tierLabel} value={d.tier} />}
       {d.chatModels && (
         <div className="space-y-1.5">
-          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">Chat fallback models</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">{t.chatFallbackModels}</p>
           <div className="flex flex-col gap-1">
             {d.chatModels.map(m => <Tag key={m}>{m}</Tag>)}
           </div>
         </div>
       )}
-      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">GROQ_API_KEY not set.</p>}
+      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">{t.statusNotSet}.</p>}
       <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">Self-tracked usage (30 days)</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">{t.selfTrackedUsageLabel}</p>
         <SelfTrackedBlock
           data={d.selfTracked}
           period={period}
@@ -327,14 +341,16 @@ function GroqCard({ d, period }: { d: GroqInfo; period?: string }) {
 }
 
 function CohereCard({ d, period }: { d: CohereInfo; period?: string }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   return (
     <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-3">
       <CardHeader icon={Layers} color="bg-pink-500/20" name="Cohere" badge={<StatusBadge status={d.status} />} />
       {d.error && <ErrorMsg msg={d.error} />}
-      {d.usage && <Row label="Used for" value={d.usage} />}
-      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">COHERE_API_KEY not set.</p>}
+      {d.usage && <Row label={t.usedFor} value={d.usage} />}
+      {!d.configured && <p className="text-[11px] text-[var(--color-secondary)]">{t.statusNotSet}.</p>}
       <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">Self-tracked usage (30 days)</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-2">{t.selfTrackedUsageLabel}</p>
         <SelfTrackedBlock data={d.selfTracked} period={period} />
       </div>
     </div>
@@ -351,8 +367,10 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function SelfTrackedBlock({ data, period, emptyText }: { data?: SelfTracked | null; period?: string; emptyText?: string }) {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   if (!data || data.requests === 0) return (
-    <p className="text-[10px] text-[var(--color-secondary)] italic pt-1">{emptyText ?? 'No usage recorded in the selected period.'}</p>
+    <p className="text-[10px] text-[var(--color-secondary)] italic pt-1">{emptyText ?? t.noUsageRecorded}</p>
   );
   const modelEntries = Object.entries(data.byModel).sort((a, b) => b[1].requests - a[1].requests);
   return (
@@ -360,8 +378,8 @@ function SelfTrackedBlock({ data, period, emptyText }: { data?: SelfTracked | nu
       {period && <p className="text-[10px] font-bold text-[var(--color-secondary)] uppercase tracking-wider">{period}</p>}
       <div className="grid grid-cols-2 gap-2">
         {[
-          { label: 'Requests used', val: fmtNum(data.requests) },
-          { label: 'Models active', val: fmtNum(modelEntries.length) },
+          { label: t.requestsUsed, val: fmtNum(data.requests) },
+          { label: t.modelsActive, val: fmtNum(modelEntries.length) },
         ].map(({ label, val }) => (
           <div key={label} className="bg-white/[0.04] rounded-xl p-2.5 border border-white/5 text-center">
             <p className="text-base font-black text-white tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>{val}</p>
@@ -371,7 +389,7 @@ function SelfTrackedBlock({ data, period, emptyText }: { data?: SelfTracked | nu
       </div>
       {modelEntries.length > 0 && (
         <div className="space-y-1 pt-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">Usage split (used out of service total)</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)]">{t.usageSplit}</p>
           {modelEntries.map(([mdl, stats]) => {
             const pct = data.requests > 0 ? (stats.requests / data.requests) * 100 : 0;
             return (

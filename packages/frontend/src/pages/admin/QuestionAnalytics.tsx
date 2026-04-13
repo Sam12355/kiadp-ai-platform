@@ -356,7 +356,7 @@ export default function QuestionAnalytics() {
             {t.questionAnalytics}
           </h1>
           <p className="text-[var(--color-secondary)] mt-2 font-medium ms-14 text-sm">
-            Real data from your database - user activity, knowledge gaps, and conversation trends
+            {t.questionAnalyticsSubtitle}
           </p>
         </div>
         <button
@@ -365,7 +365,7 @@ export default function QuestionAnalytics() {
           disabled={isFetching}
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-          {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : 'Refresh'}
+          {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : t.refresh}
         </button>
       </div>
 
@@ -378,7 +378,7 @@ export default function QuestionAnalytics() {
       {error && (
         <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 flex items-center gap-3 text-sm">
           <AlertCircle className="w-4 h-4 shrink-0" />
-          Failed to load question analytics.
+          {t.failedLoadAnalytics}
         </div>
       )}
 
@@ -392,7 +392,7 @@ export default function QuestionAnalytics() {
               iconColor="text-purple-400"
               label={t.totalQuestions}
               value={data.summary.totalQuestions.toLocaleString()}
-              sub="all time, all users"
+              sub={t.allTimeAllUsers}
             />
             <SummaryCard
               icon={TrendingUp}
@@ -400,7 +400,7 @@ export default function QuestionAnalytics() {
               iconColor="text-emerald-400"
               label={t.answeredByAi}
               value={data.summary.totalAnswered.toLocaleString()}
-              sub="AI responses generated"
+              sub={t.aiResponsesGenerated}
             />
             <SummaryCard
               icon={AlertTriangle}
@@ -408,7 +408,7 @@ export default function QuestionAnalytics() {
               iconColor="text-red-400"
               label={t.knowledgeGaps}
               value={data.summary.knowledgeGaps.toLocaleString()}
-              sub="AI could not answer from KB"
+              sub={t.aiCouldNotAnswerKb}
             />
             <SummaryCard
               icon={Users}
@@ -444,7 +444,7 @@ export default function QuestionAnalytics() {
                 {t.topUsers}
               </h3>
               {data.topUsers.length === 0 ? (
-                <p className="text-xs text-[var(--color-secondary)] italic">No user data yet</p>
+                <p className="text-xs text-[var(--color-secondary)] italic">{t.noUserDataYet}</p>
               ) : (
                 <div className="space-y-3">
                   {data.topUsers.map((u, i) => (
@@ -473,10 +473,10 @@ export default function QuestionAnalytics() {
                 {t.mostAskedQuestions}
               </h3>
               <p className="text-[9px] text-[var(--color-secondary)] italic mb-5">
-                Grouped from recent 500 questions. Red bars = answers that resulted in a knowledge gap.
+                {t.mostAskedSubtitle}
               </p>
               {data.topQuestions.length === 0 ? (
-                <p className="text-xs text-[var(--color-secondary)] italic">No questions yet</p>
+                <p className="text-xs text-[var(--color-secondary)] italic">{t.noQuestionsYet}</p>
               ) : (
                 <LoadMoreList
                   items={data.topQuestions}
@@ -495,13 +495,13 @@ export default function QuestionAnalytics() {
                 {t.knowledgeGaps}
               </h3>
               <p className="text-[9px] text-[var(--color-secondary)] italic mb-5">
-                Unique questions the AI could not answer from the knowledge base. Deduplicated.
-                {data.recentGaps.length > 0 && ` Repeated questions show a count badge.`}
+                {t.knowledgeGapsSubtitle}
+                {data.recentGaps.length > 0 && ` ${t.repeatedQuestionsNote}`}
               </p>
               {data.recentGaps.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 gap-2 text-emerald-400">
                   <AlertTriangle className="w-8 h-8 opacity-30" />
-                  <p className="text-xs font-bold">No knowledge gaps - great coverage!</p>
+                  <p className="text-xs font-bold">{t.noKnowledgeGaps}</p>
                 </div>
               ) : (
                 <LoadMoreList

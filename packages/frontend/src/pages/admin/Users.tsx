@@ -99,7 +99,7 @@ export default function UsersPage() {
           <div className="px-8 py-5 bg-amber-500/5 border-b border-amber-500/10 flex items-center gap-3">
             <Clock className="w-4 h-4 text-amber-400" />
             <h2 className="text-[11px] font-black uppercase tracking-widest text-amber-400">
-              Pending Approvals
+              {t.pendingApprovals}
             </h2>
             <span className="ml-auto px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black">
               {pendingUsers.length}
@@ -120,7 +120,7 @@ export default function UsersPage() {
                 </div>
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-white/30 uppercase tracking-widest me-4">
                   <Calendar className="w-3 h-3" />
-                  {new Date(user.createdAt).toLocaleDateString()}
+                  {new Date(user.createdAt).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')}
                 </div>
                 <button
                   onClick={() => approveMutation.mutate(user.id)}
@@ -128,7 +128,7 @@ export default function UsersPage() {
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border text-emerald-400 border-emerald-400/20 hover:bg-emerald-400/10 disabled:opacity-50"
                 >
                   <UserCheck className="w-4 h-4" />
-                  Approve
+                  {t.approve}
                 </button>
               </div>
             ))}

@@ -2,6 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { getPrisma } from '../config/database.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { UserRole } from '@prisma/client';
+import { processTextContent } from '../services/ingestion.service.js';
+import { BadRequestError } from '../utils/errors.js';
 
 const router: Router = Router();
 
@@ -694,5 +696,72 @@ router.delete('/clear-qa-history', authenticate, requireRole(UserRole.ADMIN as a
     next(err);
   }
 });
+
+/**
+ * @openapi
+ * /admin/insert-knowledge:
+ *   post:
+ *     summary: Insert a new knowledge entry from rich text (Admin only)
+ *     tags: [Admin]
+ */
+router.post(
+  '/insert-knowledge',
+  authenticate,
+  requireRole(UserRole.ADMIN as any),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { title, category, htmlContent } = req.body;
+
+      if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        throw new BadRequestError('Title is required');
+      }
+      if (!htmlContent || typeof htmlContent !== 'string' || htmlContent.replace(/<[^>]+>/g, '').trim().length === 0) {
+        throw new BadRequestError('Content is required');
+      }
+
+      const prisma = getPrisma();
+      const safeTitle = title.trim().substring(0, 200);
+      const safeCategory = typeof category === 'string' && category.trim() ? category.trim() : 'GENERAL';
+
+      // Create the document record first
+      const newDoc = await prisma.document.create({
+        data: {
+          title: safeTitle,
+          originalFilename: `${safeTitle}.txt`,
+          storedFilename: '',
+          filePath: '',
+          mimeType: 'text/html',
+          fileSizeBytes: Buffer.byteLength(htmlContent, 'utf8'),
+          categories: [safeCategory],
+          status: 'PROCESSING',
+          uploadedBy: req.user!.userId,
+        },
+      });
+
+      // Process text synchronously (fast — no PDF rendering or vision)
+      await processTextContent(newDoc.id, htmlContent);
+
+      // Return the final document state
+      const finalDoc = await prisma.document.findUnique({
+        where: { id: newDoc.id },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          categories: true,
+          fileSizeBytes: true,
+          pageCount: true,
+          progress: true,
+          metadata: true,
+          createdAt: true,
+        },
+      });
+
+      res.status(201).json({ success: true, data: finalDoc });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 export default router;

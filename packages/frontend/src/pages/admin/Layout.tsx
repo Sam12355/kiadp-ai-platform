@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import BubblesBackground from '../../components/BubblesBackground';
-import { LayoutDashboard, FileText, Users, Settings as SettingsIcon, LogOut, Menu, X, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Settings as SettingsIcon, LogOut, Menu, X, BarChart2, BookOpen } from 'lucide-react';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 
@@ -36,7 +36,8 @@ export default function AdminLayout() {
     { name: t.dashboard, href: '/admin', icon: LayoutDashboard },
     { name: t.documentManagement, href: '/admin/documents', icon: FileText },
     { name: t.userManagement, href: '/admin/users', icon: Users },
-    { name: 'Question Analytics', href: '/admin/questions', icon: BarChart2 },
+    { name: t.questionAnalytics, href: '/admin/questions', icon: BarChart2 },
+    { name: t.insertKnowledge, href: '/admin/insert-knowledge', icon: BookOpen },
     { name: t.settings, href: '/admin/settings', icon: SettingsIcon },
   ];
 

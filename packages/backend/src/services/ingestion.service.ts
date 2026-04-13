@@ -615,3 +615,235 @@ export async function deleteDocument(documentId: string, vectorIds: string[]): P
     throw error;
   }
 }
+
+/**
+ * Process a manually inserted text/HTML knowledge entry.
+ * Strips HTML, splits into semantic chunks, embeds, and stores in Pinecone.
+ * This runs synchronously (no background queue needed — text is fast to process).
+ */
+export async function processTextContent(documentId: string, htmlContent: string): Promise<void> {
+  const prisma = getPrisma();
+  const logger = getLogger();
+  const env = getEnv();
+
+  logger.info(`Starting text content processing for document ${documentId}`);
+
+  try {
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'PROCESSING', progress: 5 },
+    });
+
+    // Strip HTML to plain text, preserving paragraph breaks
+    const plainText = htmlContent
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<\/h[1-6]>/gi, '\n\n')
+      .replace(/<h[1-6][^>]*>/gi, '\n\n')
+      .replace(/<li[^>]*>/gi, '• ')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    if (!plainText) {
+      throw new Error('No text content found in the provided HTML');
+    }
+
+    // Split into "virtual pages" of ~1500 chars each (keeping paragraph boundaries)
+    const paragraphs = plainText.split(/\n\n+/);
+    const pageTexts: { pageNumber: number; text: string }[] = [];
+    let currentPage = 1;
+    let currentText = '';
+
+    for (const para of paragraphs) {
+      if (currentText.length + para.length > 1500 && currentText.length > 0) {
+        pageTexts.push({ pageNumber: currentPage, text: currentText.trim() });
+        currentPage++;
+        currentText = para;
+      } else {
+        currentText += (currentText ? '\n\n' : '') + para;
+      }
+    }
+    if (currentText.trim()) {
+      pageTexts.push({ pageNumber: currentPage, text: currentText.trim() });
+    }
+
+    const pageCount = pageTexts.length;
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { pageCount, progress: 15 },
+    });
+
+    // Persist pages to DB
+    for (const page of pageTexts) {
+      await prisma.documentPage.upsert({
+        where: { documentId_pageNumber: { documentId, pageNumber: page.pageNumber } },
+        create: {
+          documentId,
+          pageNumber: page.pageNumber,
+          rawText: page.text,
+          wordCount: page.text.split(/\s+/).length,
+          isOcr: false,
+        },
+        update: { rawText: page.text },
+      });
+    }
+
+    // Build semantic chunks
+    const chunks = buildSemanticChunks(pageTexts);
+    if (chunks.length === 0) {
+      throw new Error('No valid chunks could be built from this content');
+    }
+
+    logger.info(`Built ${chunks.length} semantic chunks. Generating embeddings...`);
+
+    const pinecone = getPinecone();
+    const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
+    const BATCH_SIZE = 100;
+
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batchChunks = chunks.slice(i, i + BATCH_SIZE);
+      const texts = batchChunks.map(c => c.text);
+      const embeddingVectors = await embedTexts(texts);
+
+      const vectorsToUpsert = [];
+      const chunkRecords = [];
+      const chunkEmbeddings: { idx: number; vector: number[] }[] = [];
+
+      for (let idx = 0; idx < batchChunks.length; idx++) {
+        const chunk = batchChunks[idx];
+        const pineconeVectorId = `doc_${documentId}_p${chunk.pageNumber}_c${chunk.chunkIndex}_${crypto.randomUUID()}`;
+
+        vectorsToUpsert.push({
+          id: pineconeVectorId,
+          values: embeddingVectors[idx],
+          metadata: {
+            documentId,
+            pageNumber: chunk.pageNumber,
+            text: chunk.text,
+            type: 'text',
+          },
+        });
+
+        chunkRecords.push({
+          documentId,
+          content: chunk.text,
+          pageNumber: chunk.pageNumber,
+          chunkIndex: chunk.chunkIndex,
+          pineconeVectorId,
+          tokenCount: Math.ceil(chunk.text.length / 4),
+        });
+
+        chunkEmbeddings.push({ idx, vector: embeddingVectors[idx] });
+      }
+
+      await pineconeIndex.upsert(vectorsToUpsert);
+      await prisma.documentChunk.createMany({ data: chunkRecords });
+
+      for (const { idx, vector } of chunkEmbeddings) {
+        const rec = chunkRecords[idx];
+        await prisma.$executeRaw`
+          UPDATE document_chunks
+          SET embedding = ${JSON.stringify(vector)}::vector
+          WHERE document_id = ${documentId}::uuid
+            AND page_number = ${rec.pageNumber}
+            AND chunk_index = ${rec.chunkIndex}
+            AND pinecone_vector_id = ${rec.pineconeVectorId}
+        `;
+      }
+
+      const batchProgress = Math.floor(15 + ((i + batchChunks.length) / chunks.length) * 75);
+      await prisma.document.update({
+        where: { id: documentId },
+        data: { progress: Math.min(batchProgress, 90) },
+      });
+
+      logger.info(`Embedded batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)}`);
+    }
+
+    // Generate AI summary
+    try {
+      const allText = chunks.slice(0, 8).map(c => c.text).join('\n\n');
+      const openai = getOpenAI();
+      const summaryResponse = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert agricultural knowledge assistant. Analyze the following document excerpt and categorize it into the most relevant "Smart Folders". Respond ONLY with a valid JSON object.
+
+Smart Folders keys:
+- "PESTS_DISEASE_MANAGEMENT"
+- "CULTIVATION_BIOLOGY"
+- "EARLY_DETECTION_AI"
+- "IRRIGATION_SOIL_HEALTH"
+- "POST_HARVEST_ECONOMICS"
+- "ENVIRONMENTAL_IMPACT"
+
+Format (Strict JSON):
+{
+  "summary": "A 2-3 sentence overview.",
+  "keyPoints": ["Point 1", "Point 2", "Point 3"],
+  "topics": ["topic1", "topic2"],
+  "suggestedCategories": ["PESTS_DISEASE_MANAGEMENT", "EARLY_DETECTION_AI"]
+}`,
+          },
+          {
+            role: 'user',
+            content: `Document text:\n\n${allText.slice(0, 4000)}`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 600,
+      });
+
+      const rawJson = summaryResponse.choices[0]?.message?.content?.trim() || '{}';
+      let aiMeta: any = {};
+      try {
+        aiMeta = JSON.parse(rawJson);
+      } catch {
+        logger.warn(`Failed to parse summary JSON for ${documentId}`);
+      }
+
+      await prisma.document.update({
+        where: { id: documentId },
+        data: {
+          categories: aiMeta.suggestedCategories?.length ? aiMeta.suggestedCategories : undefined,
+          metadata: {
+            summary: aiMeta.summary || null,
+            keyPoints: aiMeta.keyPoints || [],
+            topics: aiMeta.topics || [],
+            summaryGeneratedAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      logger.info(`AI summary generated for text document ${documentId}`);
+    } catch (summaryError) {
+      logger.warn({ err: summaryError }, `Summary generation failed for text document ${documentId}`);
+    }
+
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'COMPLETED', progress: 100 },
+    });
+
+    logger.info(`Text document ${documentId} processing complete! (${chunks.length} chunks)`);
+  } catch (error) {
+    logger.error({ err: error }, `Error processing text document ${documentId}`);
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'FAILED' },
+    });
+    throw error;
+  }
+}
+
