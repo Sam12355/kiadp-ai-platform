@@ -468,12 +468,13 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
                       const data = res.data?.data || {};
                       const answerText: string = data.answerText || '';
                       const images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] = data.images || [];
+                      const isGrounded: boolean = data.isGrounded !== false;
                       if (answerText) {
                         toolAnswerEmittedRef.current = true;
                         onTranscriptRef.current?.('user', '');
                         onTranscriptRef.current?.('assistant', answerText);
                       }
-                      if (images.length > 0) onImagesRef.current?.(images);
+                      if (isGrounded && images.length > 0) onImagesRef.current?.(images);
                     } catch (err) {
                       console.error('[VoiceMode] fallback voice-ask failed:', err);
                     } finally {
@@ -528,7 +529,8 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
                           const data = res.data?.data || {};
                           const answerText: string = data.answerText || '';
                           const images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] = data.images || [];
-                          console.log('[VoiceMode] voice-ask returned answer length:', answerText.length, 'images:', images.length);
+                          const isGrounded: boolean = data.isGrounded !== false;
+                          console.log('[VoiceMode] voice-ask returned answer length:', answerText.length, 'images:', images.length, 'isGrounded:', isGrounded);
 
                           // Only emit if this is still the active tool call (not superseded)
                           if (toolCallGenRef.current === thisToolGen) {
@@ -545,8 +547,8 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
                               onTranscriptRef.current?.('assistant', answerText);
                             }
 
-                            // Now attach images to the just-created assistant bubble
-                            if (images.length > 0) onImagesRef.current?.(images);
+                            // Only attach images when the answer is grounded in the knowledge base
+                            if (isGrounded && images.length > 0) onImagesRef.current?.(images);
                           }
 
                           // Strip markdown formatting so Gemini reads clean speech-ready text

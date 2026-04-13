@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { MessageSquare, AlertTriangle, TrendingUp, Users, ArrowRight } from 'lucide-react';
 import apiClient from '../../api/client';
+import { useLanguageStore } from '../../store/languageStore';
+import { translations } from '../../i18n/translations';
 
 interface Summary {
   totalQuestions: number;
@@ -11,6 +13,8 @@ interface Summary {
 }
 
 export default function QuestionSummaryCards() {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   const { data, isLoading } = useQuery<Summary>({
     queryKey: ['admin-question-analytics-summary'],
     queryFn: async () => {
@@ -24,21 +28,21 @@ export default function QuestionSummaryCards() {
   const cards = [
     {
       icon: MessageSquare, color: 'bg-purple-500/20 border-purple-500/20', iconColor: 'text-purple-400',
-      label: 'Total Questions', value: data?.totalQuestions.toLocaleString() ?? '—',
+      label: t.totalQuestions, value: data?.totalQuestions.toLocaleString() ?? '—',
     },
     {
       icon: TrendingUp, color: 'bg-emerald-500/20 border-emerald-500/20', iconColor: 'text-emerald-400',
-      label: 'Answered by AI', value: data?.totalAnswered.toLocaleString() ?? '—',
+      label: t.answeredByAi, value: data?.totalAnswered.toLocaleString() ?? '—',
     },
     {
       icon: AlertTriangle, color: 'bg-amber-500/20 border-amber-500/20', iconColor: 'text-amber-400',
-      label: 'Knowledge Gaps', value: data?.knowledgeGaps.toLocaleString() ?? '—',
+      label: t.knowledgeGaps, value: data?.knowledgeGaps.toLocaleString() ?? '—',
     },
     {
       icon: Users, color: 'bg-sky-500/20 border-sky-500/20', iconColor: 'text-sky-400',
-      label: 'Gap Rate',
+      label: t.gapRate,
       value: data ? `${data.gapPercent}%` : '—',
-      sub: data ? (data.gapPercent >= 20 ? 'High — review KB' : 'Healthy') : undefined,
+      sub: data ? (data.gapPercent >= 20 ? t.gapHigh : t.gapHealthy) : undefined,
       subColor: data ? (data.gapPercent >= 20 ? 'text-amber-400' : 'text-emerald-400') : undefined,
     },
   ];
@@ -49,13 +53,13 @@ export default function QuestionSummaryCards() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] flex items-center gap-2">
           <MessageSquare className="w-3.5 h-3.5" />
-          Question Analytics
+          {t.questionAnalytics}
         </h2>
         <Link
           to="/admin/questions"
           className="flex items-center gap-1.5 text-[10px] font-bold text-purple-400 hover:text-purple-300 transition-colors"
         >
-          View full analytics <ArrowRight className="w-3 h-3" />
+          {t.viewFullAnalytics} <ArrowRight className="w-3 h-3" />
         </Link>
       </div>
 

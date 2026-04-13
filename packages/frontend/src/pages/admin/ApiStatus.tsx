@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Cloud, Database, Zap, Brain, Layers, Sparkles, AlertCircle, CheckCircle2, XCircle, MinusCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import apiClient from '../../api/client';
+import { useLanguageStore } from '../../store/languageStore';
+import { translations } from '../../i18n/translations';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface UsageBar { usageBytes?: number; limitBytes?: number | null; usage?: number; limit?: number | null; usedPercent?: number | null; isUnlimited?: boolean }
@@ -392,6 +394,8 @@ function SelfTrackedBlock({ data, period, emptyText }: { data?: SelfTracked | nu
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function ApiStatus() {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   const { data, isLoading, error, refetch, isFetching } = useQuery<ApiStatusData>({
     queryKey: ['admin-api-status'],
     queryFn: async () => {
@@ -410,7 +414,7 @@ export default function ApiStatus() {
           <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
             <Sparkles className="w-5 h-5 text-emerald-400" />
           </div>
-          API Services &amp; Quotas
+          {t.apiServicesQuotas}
         </h2>
         <button
           onClick={() => refetch()}
@@ -418,7 +422,7 @@ export default function ApiStatus() {
           className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] hover:text-white transition-colors disabled:opacity-40"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
+          {t.refresh}
         </button>
       </div>
 

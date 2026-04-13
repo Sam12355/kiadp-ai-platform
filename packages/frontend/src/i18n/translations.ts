@@ -182,6 +182,30 @@ const en = {
     searching: 'Searching...',
     deepDiveMode: 'Deep Dive Mode : Knowledge from the internet',
     askFollowUp: 'Ask follow-up using general knowledge...',
+
+    // Question Analytics
+    questionAnalytics: 'Question Analytics',
+    viewFullAnalytics: 'View full analytics',
+    totalQuestions: 'Total Questions',
+    answeredByAi: 'Answered by AI',
+    knowledgeGaps: 'Knowledge Gaps',
+    gapRate: 'Gap Rate',
+    gapHigh: 'High — review KB',
+    gapHealthy: 'Healthy',
+    last30Days: 'last 30 days',
+    answered: 'Answered',
+    noActivity30Days: 'No activity in the last 30 days',
+    topUsers: 'Top Users by Activity',
+    questionsLabel: 'questions',
+    recentGaps: 'Recent Knowledge Gaps',
+    mostAskedQuestions: 'Most Asked Questions',
+    gap: 'gap',
+    loadMore: 'Load',
+    moreRemaining: 'remaining',
+
+    // API Services
+    apiServicesQuotas: 'API Services & Quotas',
+    refresh: 'Refresh',
 };
 
 const ar = {
@@ -367,6 +391,30 @@ const ar = {
     searching: 'جاري البحث...',
     deepDiveMode: 'وضع التعمق: معرفة من الإنترنت',
     askFollowUp: 'اسأل متابعة باستخدام المعرفة العامة...',
+
+    // Question Analytics
+    questionAnalytics: 'تحليلات الأسئلة',
+    viewFullAnalytics: 'عرض التحليلات الكاملة',
+    totalQuestions: 'إجمالي الأسئلة',
+    answeredByAi: 'أجاب عنها الذكاء الاصطناعي',
+    knowledgeGaps: 'ثغرات المعرفة',
+    gapRate: 'معدل الثغرات',
+    gapHigh: 'مرتفع — راجع قاعدة المعرفة',
+    gapHealthy: 'جيد',
+    last30Days: 'آخر 30 يوماً',
+    answered: 'مجاب عنه',
+    noActivity30Days: 'لا نشاط في آخر 30 يوماً',
+    topUsers: 'أكثر المستخدمين نشاطاً',
+    questionsLabel: 'أسئلة',
+    recentGaps: 'ثغرات المعرفة الأخيرة',
+    mostAskedQuestions: 'الأسئلة الأكثر طرحاً',
+    gap: 'ثغرة',
+    loadMore: 'تحميل',
+    moreRemaining: 'متبقية',
+
+    // API Services
+    apiServicesQuotas: 'خدمات API والحصص',
+    refresh: 'تحديث',
 };
 
 export const translations = {

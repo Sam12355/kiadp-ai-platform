@@ -612,7 +612,7 @@ export default function KnowledgeAssistant() {
                   <div className="prose prose-invert prose-emerald text-[0.9rem] leading-relaxed">
                     {formatContent(m.content)}
                   </div>
-                  {m.images && m.images.length > 0 && (
+                  {m.isGrounded !== false && m.images && m.images.length > 0 && (
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                       {m.images.map(img => (
                         <div key={img.id} onClick={() => { setSelectedImage(img); setZoomScale(1); }} className="group relative rounded-xl overflow-hidden border border-white/5 cursor-zoom-in">

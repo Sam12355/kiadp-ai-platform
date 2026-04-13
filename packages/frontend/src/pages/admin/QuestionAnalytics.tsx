@@ -5,6 +5,8 @@ import {
   RefreshCw, AlertCircle, BarChart2,
 } from 'lucide-react';
 import apiClient from '../../api/client';
+import { useLanguageStore } from '../../store/languageStore';
+import { translations } from '../../i18n/translations';
 
 // ---------- Types -----------------------------------------------------------
 interface Summary {
@@ -69,13 +71,20 @@ function shortDate(isoOrDate: string): string {
 // ---------- Bar Chart -------------------------------------------------------
 interface BarDetail { day: string; total: number; gaps: number }
 
-function VolumeChart({ data }: { data: DayVolume[] }) {
+function VolumeChart({ data, labelAnswered, labelGaps, labelQuestions, labelLast30, labelNoActivity }: {
+  data: DayVolume[];
+  labelAnswered: string;
+  labelGaps: string;
+  labelQuestions: string;
+  labelLast30: string;
+  labelNoActivity: string;
+}) {
   const [selected, setSelected] = useState<BarDetail | null>(null);
 
   if (data.length === 0) {
     return (
       <div className="h-40 flex items-center justify-center text-sm text-[var(--color-secondary)]">
-        No activity in the last 30 days
+        {labelNoActivity}
       </div>
     );
   }
@@ -102,17 +111,17 @@ function VolumeChart({ data }: { data: DayVolume[] }) {
         <div className="flex items-center gap-4 text-[10px] font-bold text-[var(--color-secondary)]">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded-sm bg-emerald-400/70" />
-            Answered
+            {labelAnswered}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded-sm bg-red-400/70" />
-            Knowledge gaps
+            {labelGaps}
           </span>
         </div>
         <div className="flex items-center gap-3 text-[10px] font-bold">
-          <span className="text-white/60">{totalAll} questions</span>
-          {totalGapsAll > 0 && <span className="text-red-400/80">{totalGapsAll} gaps</span>}
-          <span className="text-[var(--color-secondary)]">last 30 days</span>
+          <span className="text-white/60">{totalAll} {labelQuestions}</span>
+          {totalGapsAll > 0 && <span className="text-red-400/80">{totalGapsAll} {labelGaps.toLowerCase()}</span>}
+          <span className="text-[var(--color-secondary)]">{labelLast30}</span>
         </div>
       </div>
 
@@ -296,7 +305,7 @@ function SummaryCard({
 // ---------- Load-more list --------------------------------------------------
 const PAGE = 10;
 
-function LoadMoreList<T>({ items, renderItem }: { items: T[]; renderItem: (item: T, i: number) => React.ReactNode }) {
+function LoadMoreList<T>({ items, renderItem, loadMoreLabel }: { items: T[]; renderItem: (item: T, i: number) => React.ReactNode; loadMoreLabel?: (n: number, rem: number) => string }) {
   const [visible, setVisible] = useState(PAGE);
   const shown = items.slice(0, visible);
   return (
@@ -309,7 +318,9 @@ function LoadMoreList<T>({ items, renderItem }: { items: T[]; renderItem: (item:
           onClick={() => setVisible(v => v + PAGE)}
           className="mt-4 w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-[var(--color-secondary)] hover:text-white transition-all"
         >
-          Load {Math.min(PAGE, items.length - visible)} more ({items.length - visible} remaining)
+          {loadMoreLabel
+            ? loadMoreLabel(Math.min(PAGE, items.length - visible), items.length - visible)
+            : `Load ${Math.min(PAGE, items.length - visible)} more (${items.length - visible} remaining)`}
         </button>
       )}
     </div>
@@ -318,6 +329,8 @@ function LoadMoreList<T>({ items, renderItem }: { items: T[]; renderItem: (item:
 
 // ---------- Main page -------------------------------------------------------
 export default function QuestionAnalytics() {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   const { data, isLoading, error, isFetching, refetch, dataUpdatedAt } = useQuery<AnalyticsData>({
     queryKey: ['admin-question-analytics'],
     queryFn: async () => {
@@ -340,7 +353,7 @@ export default function QuestionAnalytics() {
             <div className="w-11 h-11 rounded-xl bg-purple-500/20 flex items-center justify-center border border-purple-500/20">
               <BarChart2 className="w-5 h-5 text-purple-400" />
             </div>
-            Question Analytics
+            {t.questionAnalytics}
           </h1>
           <p className="text-[var(--color-secondary)] mt-2 font-medium ms-14 text-sm">
             Real data from your database - user activity, knowledge gaps, and conversation trends
@@ -377,7 +390,7 @@ export default function QuestionAnalytics() {
               icon={MessageSquare}
               color="bg-purple-500/20 border-purple-500/20"
               iconColor="text-purple-400"
-              label="Total Questions"
+              label={t.totalQuestions}
               value={data.summary.totalQuestions.toLocaleString()}
               sub="all time, all users"
             />
@@ -385,7 +398,7 @@ export default function QuestionAnalytics() {
               icon={TrendingUp}
               color="bg-emerald-500/20 border-emerald-500/20"
               iconColor="text-emerald-400"
-              label="Answered"
+              label={t.answeredByAi}
               value={data.summary.totalAnswered.toLocaleString()}
               sub="AI responses generated"
             />
@@ -393,7 +406,7 @@ export default function QuestionAnalytics() {
               icon={AlertTriangle}
               color="bg-red-500/20 border-red-500/20"
               iconColor="text-red-400"
-              label="Knowledge Gaps"
+              label={t.knowledgeGaps}
               value={data.summary.knowledgeGaps.toLocaleString()}
               sub="AI could not answer from KB"
             />
@@ -401,9 +414,9 @@ export default function QuestionAnalytics() {
               icon={Users}
               color="bg-sky-500/20 border-sky-500/20"
               iconColor="text-sky-400"
-              label="Gap Rate"
+              label={t.gapRate}
               value={`${data.summary.gapPercent}%`}
-              sub={data.summary.gapPercent >= 20 ? 'High - review KB coverage' : 'Healthy coverage'}
+              sub={data.summary.gapPercent >= 20 ? t.gapHigh : t.gapHealthy}
               subColor={data.summary.gapPercent >= 20 ? 'text-red-400' : 'text-emerald-400'}
             />
           </div>
@@ -413,15 +426,22 @@ export default function QuestionAnalytics() {
             <div className="lg:col-span-2 glass rounded-[1.5rem] p-6 border border-white/5">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-5 flex items-center gap-2">
                 <TrendingUp className="w-3.5 h-3.5" />
-                Daily question volume - last 30 days
+                {t.last30Days}
               </h3>
-              <VolumeChart data={data.dailyVolume} />
+              <VolumeChart
+                data={data.dailyVolume}
+                labelAnswered={t.answered}
+                labelGaps={t.knowledgeGaps}
+                labelQuestions={t.questionsLabel}
+                labelLast30={t.last30Days}
+                labelNoActivity={t.noActivity30Days}
+              />
             </div>
 
             <div className="glass rounded-[1.5rem] p-6 border border-white/5">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-5 flex items-center gap-2">
                 <Users className="w-3.5 h-3.5" />
-                Most active users
+                {t.topUsers}
               </h3>
               {data.topUsers.length === 0 ? (
                 <p className="text-xs text-[var(--color-secondary)] italic">No user data yet</p>
@@ -450,7 +470,7 @@ export default function QuestionAnalytics() {
             <div className="glass rounded-[1.5rem] p-6 border border-white/5">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-1 flex items-center gap-2">
                 <MessageSquare className="w-3.5 h-3.5" />
-                Most asked questions
+                {t.mostAskedQuestions}
               </h3>
               <p className="text-[9px] text-[var(--color-secondary)] italic mb-5">
                 Grouped from recent 500 questions. Red bars = answers that resulted in a knowledge gap.
@@ -460,6 +480,7 @@ export default function QuestionAnalytics() {
               ) : (
                 <LoadMoreList
                   items={data.topQuestions}
+                  loadMoreLabel={(n, rem) => `${t.loadMore} ${n} (${rem} ${t.moreRemaining})`}
                   renderItem={(q, i) => (
                     <HBar key={i} label={q.text} count={q.count} max={data.topQuestions[0].count} hadGap={q.hadGap} />
                   )}
@@ -471,7 +492,7 @@ export default function QuestionAnalytics() {
             <div className="glass rounded-[1.5rem] p-6 border border-white/5">
               <h3 className="text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2 text-red-400/80">
                 <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                Knowledge gaps
+                {t.knowledgeGaps}
               </h3>
               <p className="text-[9px] text-[var(--color-secondary)] italic mb-5">
                 Unique questions the AI could not answer from the knowledge base. Deduplicated.
@@ -485,6 +506,7 @@ export default function QuestionAnalytics() {
               ) : (
                 <LoadMoreList
                   items={data.recentGaps}
+                  loadMoreLabel={(n, rem) => `${t.loadMore} ${n} (${rem} ${t.moreRemaining})`}
                   renderItem={(gap) => (
                     <div
                       key={gap.questionId}
