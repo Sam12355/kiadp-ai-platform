@@ -620,8 +620,15 @@ export async function deleteDocument(documentId: string, vectorIds: string[]): P
  * Process a manually inserted text/HTML knowledge entry.
  * Strips HTML, splits into semantic chunks, embeds, and stores in Pinecone.
  * This runs synchronously (no background queue needed — text is fast to process).
+ * @param preUploadedImages  Base64 images already uploaded to Cloudinary by the route handler.
+ *                           A synthetic visual-evidence chunk is created for each so that
+ *                           qa.service.ts image retrieval logic can find them.
  */
-export async function processTextContent(documentId: string, htmlContent: string): Promise<void> {
+export async function processTextContent(
+  documentId: string,
+  htmlContent: string,
+  preUploadedImages: { cloudinaryUrl: string; pageNumber: number; altText: string }[] = [],
+): Promise<void> {
   const prisma = getPrisma();
   const logger = getLogger();
   const env = getEnv();
@@ -835,6 +842,45 @@ Format (Strict JSON):
       where: { id: documentId },
       data: { status: 'COMPLETED', progress: 100 },
     });
+
+    // ── Store pre-uploaded images and create visual-evidence chunks ───────────
+    if (preUploadedImages.length > 0) {
+      logger.info(`Processing ${preUploadedImages.length} pre-uploaded image(s) for text document ${documentId}`);
+      const pinecone = getPinecone();
+      const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
+      for (let i = 0; i < preUploadedImages.length; i++) {
+        const img = preUploadedImages[i];
+        const visualText = `[Visual Evidence from Page ${img.pageNumber}]: Embedded image in textual knowledge content. ${img.altText}`;
+        const [visualVec] = await embedTexts([visualText]);
+
+        await prisma.documentImage.create({
+          data: {
+            documentId,
+            pageNumber: img.pageNumber,
+            filePath: img.cloudinaryUrl,
+            description: `Embedded image in textual knowledge entry`,
+            altText: img.altText,
+          },
+        });
+
+        const pineconeVectorId = `doc_${documentId}_img${i}_${crypto.randomUUID()}`;
+        await pineconeIndex.upsert([{
+          id: pineconeVectorId,
+          values: visualVec,
+          metadata: { documentId, pageNumber: img.pageNumber, text: visualText, type: 'visual' },
+        }]);
+        await prisma.documentChunk.create({
+          data: {
+            documentId,
+            content: visualText,
+            pageNumber: img.pageNumber,
+            chunkIndex: -(i + 1), // negative to distinguish visual pseudo-chunks
+            pineconeVectorId,
+            tokenCount: Math.ceil(visualText.length / 4),
+          },
+        });
+      }
+    }
 
     logger.info(`Text document ${documentId} processing complete! (${chunks.length} chunks)`);
   } catch (error) {

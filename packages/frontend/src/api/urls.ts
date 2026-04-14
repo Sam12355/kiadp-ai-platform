@@ -21,3 +21,11 @@ export function avatarUrl(path: string): string {
   if (path.startsWith('http')) return path;
   return `${backendBase}${path}`;
 }
+
+/**
+ * Route a document image through the backend proxy.
+ * This avoids 404/auth issues when the Cloudinary direct URL fails.
+ */
+export function imageProxyUrl(imageId: string): string {
+  return `${backendBase}/api/v1/documents/images/proxy/${imageId}`;
+}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { uploadUrl } from '../../api/urls';
+import { uploadUrl, imageProxyUrl } from '../../api/urls';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { useLanguageStore } from '../../store/languageStore';
@@ -60,7 +60,7 @@ export default function KnowledgeAssistant() {
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadQuery, setThreadQuery] = useState('');
   const [isThreadLoading, setIsThreadLoading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<{ url: string; description: string; pageNumber: number; width?: number | null; height?: number | null } | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
@@ -616,7 +616,7 @@ export default function KnowledgeAssistant() {
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                       {m.images.map(img => (
                         <div key={img.id} onClick={() => { setSelectedImage(img); setZoomScale(1); }} className="group relative rounded-xl overflow-hidden border border-white/5 cursor-zoom-in">
-                          <img src={img.url}
+                          <img src={imageProxyUrl(img.id)}
                                className="w-full h-auto object-contain"
                                style={img.width && img.height ? { aspectRatio: `${img.width} / ${img.height}` } : undefined} />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end">
@@ -871,7 +871,7 @@ export default function KnowledgeAssistant() {
                 </div>
                 <div className="overflow-auto max-w-[90vw] max-h-[80vh] flex items-center justify-center"
                      onWheel={e => { e.stopPropagation(); setZoomScale(s => Math.min(5, Math.max(0.5, s + (e.deltaY > 0 ? -0.15 : 0.15)))); }}>
-                  <img src={selectedImage.url}
+                  <img src={imageProxyUrl(selectedImage.id)}
                        className="rounded-lg shadow-2xl transition-transform duration-150"
                        style={{ transform: `scale(${zoomScale})`, transformOrigin: 'center center',
                                 maxWidth: zoomScale <= 1 ? '90vw' : 'none', maxHeight: zoomScale <= 1 ? '75vh' : 'none' }}

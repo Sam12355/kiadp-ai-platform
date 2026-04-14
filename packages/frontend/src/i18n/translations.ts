@@ -2,7 +2,7 @@
 const en = {
     // Layout & Navigation
     dashboard: 'Dashboard',
-    documentManagement: 'Document Management',
+    documentManagement: 'Document Knowledge',
     userManagement: 'User Management',
     settings: 'Settings',
     identityManagement: 'Identity Management',
@@ -205,6 +205,7 @@ const en = {
 
     // Insert Knowledge page
     insertKnowledge: 'Insert Knowledge',
+    textualKnowledge: 'Textual Knowledge',
     insertKnowledgeSubtitle: 'Type or paste content directly into the knowledge base.',
     contentBody: 'Content Body',
     insertingContent: 'Inserting...',
@@ -213,10 +214,18 @@ const en = {
     contentRequired: 'Content body is required',
     bold: 'Bold',
     italic: 'Italic',
+    underline: 'Underline',
+    strikethrough: 'Strikethrough',
     heading: 'Heading',
     bulletList: 'Bullet List',
     orderedList: 'Ordered List',
     clearFormat: 'Clear Formatting',
+    textColor: 'Text Color',
+    insertImage: 'Insert Image',
+    uploadFile: 'Upload File',
+    charsLabel: 'chars',
+    addNew: 'Add New',
+    noTextEntries: 'No text entries found.',
 
     // API Services
     apiServicesQuotas: 'API Services & Quotas',
@@ -281,7 +290,7 @@ const en = {
 const ar = {
     // Layout & Navigation
     dashboard: 'لوحة القيادة',
-    documentManagement: 'إدارة المستندات',
+    documentManagement: 'قاعدة المعرفة الوثائقية',
     userManagement: 'إدارة المستخدمين',
     settings: 'الإعدادات',
     identityManagement: 'إدارة الهوية',
@@ -484,6 +493,7 @@ const ar = {
 
     // Insert Knowledge page
     insertKnowledge: 'إدراج معرفة',
+    textualKnowledge: 'المعرفة النصية',
     insertKnowledgeSubtitle: 'اكتب أو الصق محتوى مباشرة في قاعدة المعرفة.',
     contentBody: 'محتوى النص',
     insertingContent: 'جاري الإدراج...',
@@ -492,10 +502,18 @@ const ar = {
     contentRequired: 'محتوى النص مطلوب',
     bold: 'عريض',
     italic: 'مائل',
+    underline: 'تسطير',
+    strikethrough: 'شطب',
     heading: 'عنوان',
     bulletList: 'قائمة نقطية',
     orderedList: 'قائمة مرقمة',
     clearFormat: 'مسح التنسيق',
+    textColor: 'لون النص',
+    insertImage: 'إدراج صورة',
+    uploadFile: 'رفع ملف',
+    charsLabel: 'حرف',
+    addNew: 'إضافة جديد',
+    noTextEntries: 'لا توجد إدخالات نصية.',
 
     // API Services
     apiServicesQuotas: 'خدمات API والحصص',

@@ -699,6 +699,93 @@ router.delete('/clear-qa-history', authenticate, requireRole(UserRole.ADMIN as a
 
 /**
  * @openapi
+ * /admin/textual-knowledge:
+ *   get:
+ *     summary: List all manually inserted text knowledge entries (Admin only)
+ */
+router.get('/textual-knowledge', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const page  = parseInt(req.query.page  as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip  = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      prisma.document.findMany({
+        where: { mimeType: 'text/html' },
+        orderBy: { createdAt: 'desc' },
+        skip, take: limit,
+        select: { id: true, title: true, status: true, categories: true, fileSizeBytes: true, pageCount: true, progress: true, metadata: true, createdAt: true },
+      }),
+      prisma.document.count({ where: { mimeType: 'text/html' } }),
+    ]);
+
+    res.json({ success: true, data: { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } } });
+  } catch (err) { next(err); }
+});
+
+/**
+ * @openapi
+ * /admin/textual-knowledge/{id}:
+ *   delete:
+ *     summary: Delete a text knowledge entry and its Pinecone vectors
+ */
+router.delete('/textual-knowledge/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const docId = req.params.id as string;
+
+    const doc = await prisma.document.findFirst({ where: { id: docId, mimeType: 'text/html' } });
+    if (!doc) return res.status(404).json({ success: false, error: 'Text entry not found' });
+
+    const chunks = await prisma.documentChunk.findMany({
+      where: { documentId: docId },
+      select: { pineconeVectorId: true },
+    });
+    const vectorIds = chunks
+      .map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId)
+      .filter((id: string | null): id is string => id !== null);
+
+    if (vectorIds.length > 0) {
+      const { deleteDocument: deleteDocVectors } = await import('../services/ingestion.service.js');
+      await deleteDocVectors(docId, vectorIds);
+    }
+
+    await prisma.document.delete({ where: { id: docId } });
+    res.json({ success: true, data: { message: 'Text entry deleted successfully' } });
+  } catch (err) { next(err); }
+});
+
+/**
+ * @openapi
+ * /admin/textual-knowledge/{id}:
+ *   patch:
+ *     summary: Update title / category of a text knowledge entry
+ */
+router.patch('/textual-knowledge/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const docId = req.params.id as string;
+    const { title, category } = req.body;
+
+    const doc = await prisma.document.findFirst({ where: { id: docId, mimeType: 'text/html' } });
+    if (!doc) return res.status(404).json({ success: false, error: 'Text entry not found' });
+
+    const updated = await prisma.document.update({
+      where: { id: docId },
+      data: {
+        ...(title    ? { title: (title as string).trim().substring(0, 200) }  : {}),
+        ...(category ? { categories: [(category as string).trim()] }           : {}),
+      },
+      select: { id: true, title: true, status: true, categories: true, createdAt: true },
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (err) { next(err); }
+});
+
+/**
+ * @openapi
  * /admin/insert-knowledge:
  *   post:
  *     summary: Insert a new knowledge entry from rich text (Admin only)
@@ -723,6 +810,31 @@ router.post(
       const safeTitle = title.trim().substring(0, 200);
       const safeCategory = typeof category === 'string' && category.trim() ? category.trim() : 'GENERAL';
 
+      // ── Extract and upload base64 images embedded in the HTML ──────────────
+      // Tiptap stores user-uploaded images as data:image/... base64 URIs.
+      // We upload them to Cloudinary and replace with permanent URLs so they
+      // are accessible long-term and can be served through the image proxy.
+      const { uploadBufferToCloudinary } = await import('../services/storage.service.js');
+      const base64Regex = /<img[^>]+src="(data:image\/([^;]+);base64,([^"]+))"[^>]*>/gi;
+      let processedHtml = htmlContent;
+      const embeddedImages: { cloudinaryUrl: string | null; mimeType: string }[] = [];
+
+      let imgMatch: RegExpExecArray | null;
+      while ((imgMatch = base64Regex.exec(htmlContent)) !== null) {
+        const [fullTag, dataUri, mimeTypeRaw, b64Data] = imgMatch;
+        const buffer = Buffer.from(b64Data, 'base64');
+        const ext = mimeTypeRaw.split('/')[1] || 'jpg';
+        const imgUrl = await uploadBufferToCloudinary(
+          buffer,
+          `kiadp/text-images`,
+          `text_img_${Date.now()}_${embeddedImages.length + 1}.${ext}`,
+        ).catch(() => null);
+        if (imgUrl) {
+          processedHtml = processedHtml.replace(dataUri, imgUrl);
+        }
+        embeddedImages.push({ cloudinaryUrl: imgUrl, mimeType: mimeTypeRaw });
+      }
+
       // Create the document record first
       const newDoc = await prisma.document.create({
         data: {
@@ -731,7 +843,7 @@ router.post(
           storedFilename: '',
           filePath: '',
           mimeType: 'text/html',
-          fileSizeBytes: Buffer.byteLength(htmlContent, 'utf8'),
+          fileSizeBytes: Buffer.byteLength(processedHtml, 'utf8'),
           categories: [safeCategory],
           status: 'PROCESSING',
           uploadedBy: req.user!.userId,
@@ -739,7 +851,9 @@ router.post(
       });
 
       // Process text synchronously (fast — no PDF rendering or vision)
-      await processTextContent(newDoc.id, htmlContent);
+      await processTextContent(newDoc.id, processedHtml, embeddedImages
+        .filter(i => i.cloudinaryUrl !== null)
+        .map((i, idx) => ({ cloudinaryUrl: i.cloudinaryUrl!, pageNumber: 1, altText: `Embedded image ${idx + 1}` })));
 
       // Return the final document state
       const finalDoc = await prisma.document.findUnique({

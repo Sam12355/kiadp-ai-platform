@@ -25,7 +25,11 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
     const category = req.query.category as string | undefined;
     const skip = (page - 1) * limit;
 
-    const where: any = category ? { categories: { has: category } } : {};
+    // Exclude manually inserted text entries (mimeType: 'text/html') — those belong to Textual Knowledge
+    const where: any = {
+      mimeType: { not: 'text/html' },
+      ...(category ? { categories: { has: category } } : {}),
+    };
 
     const [documents, total] = await Promise.all([
       prisma.document.findMany({
@@ -294,6 +298,64 @@ router.post('/:id/reprocess', authenticate, requireRole(UserRole.ADMIN as any), 
  * /documents/{id}:
  *   delete:
  */
+/**
+ * @openapi
+ * /documents/images/proxy/{imageId}:
+ *   get:
+ *     summary: Proxy a document image through the backend (handles Cloudinary auth)
+ */
+router.get('/images/proxy/:imageId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const img = await prisma.documentImage.findUnique({
+      where: { id: req.params.imageId as string },
+      select: { filePath: true },
+    });
+    if (!img || !img.filePath) {
+      return res.status(404).json({ success: false, error: 'Image not found' });
+    }
+
+    // Try direct URL first (works when Cloudinary asset is public)
+    try {
+      const directResp = await fetch(img.filePath, { signal: AbortSignal.timeout(6000) });
+      if (directResp.ok && directResp.body) {
+        const ct = directResp.headers.get('content-type') || 'image/jpeg';
+        res.set('Content-Type', ct);
+        res.set('Cache-Control', 'public, max-age=3600');
+        const { Readable } = await import('stream');
+        (Readable as any).fromWeb(directResp.body).pipe(res);
+        return;
+      }
+    } catch { /* fall through to signed URL */ }
+
+    // Fallback: generate a signed Cloudinary delivery URL
+    try {
+      const cloudinaryMod = await import('cloudinary');
+      const cld = cloudinaryMod.v2;
+      const { configureCloudinary } = await import('../services/storage.service.js');
+      configureCloudinary();
+      // Extract publicId: everything after /upload/(v\d+/)? and before the extension
+      const m = img.filePath.match(/\/upload\/(?:v\d+\/)?(.*?)(?:\.[^./]+)?$/);
+      if (m) {
+        const signedSrc = cld.url(m[1], { sign_url: true, type: 'upload', resource_type: 'image', secure: true });
+        const signedResp = await fetch(signedSrc, { signal: AbortSignal.timeout(6000) });
+        if (signedResp.ok && signedResp.body) {
+          const ct = signedResp.headers.get('content-type') || 'image/jpeg';
+          res.set('Content-Type', ct);
+          res.set('Cache-Control', 'public, max-age=3600');
+          const { Readable } = await import('stream');
+          (Readable as any).fromWeb(signedResp.body).pipe(res);
+          return;
+        }
+      }
+    } catch { /* fall through */ }
+
+    res.status(404).json({ success: false, error: 'Image unavailable' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.delete('/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();

@@ -522,6 +522,15 @@ a:disabled,
 .ProseMirror li { margin-bottom: 0.25rem; }
 .ProseMirror strong { color: #d1fae5; }
 .ProseMirror em { color: #a7f3d0; }
+.ProseMirror u { text-decoration: underline; }
+.ProseMirror s { text-decoration: line-through; }
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 0.75rem 0;
+  display: block;
+}
 .ProseMirror p.is-editor-empty:first-child::before {
   color: #4b5563;
   content: attr(data-placeholder);

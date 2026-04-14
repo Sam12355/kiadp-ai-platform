@@ -37,7 +37,7 @@ export default function AdminLayout() {
     { name: t.documentManagement, href: '/admin/documents', icon: FileText },
     { name: t.userManagement, href: '/admin/users', icon: Users },
     { name: t.questionAnalytics, href: '/admin/questions', icon: BarChart2 },
-    { name: t.insertKnowledge, href: '/admin/insert-knowledge', icon: BookOpen },
+    { name: t.textualKnowledge, href: '/admin/insert-knowledge', icon: BookOpen },
     { name: t.settings, href: '/admin/settings', icon: SettingsIcon },
   ];
 
