@@ -72,10 +72,35 @@ router.post('/webhook', async (req: Request, res: Response) => {
       if (q.answer?.answerText) history.push({ role: 'assistant', content: q.answer.answerText });
     }
 
-    // Call existing QA service
-    const result = await askQuestion(user.id, incomingText, history, 'en');
+    // Call existing QA service with a guarded fallback so we can reply
+    let result: any = null;
+    try {
+      result = await askQuestion(user.id, incomingText, history, 'en');
+    } catch (qaErr) {
+      // Log the error and send a polite fallback message back to the user
+      logger.error({ err: qaErr }, 'askQuestion failed');
+      const fallback = 'Sorry — the knowledge base search is temporarily unavailable. Please try again in a few minutes.';
+      try {
+        await fetch(`https://graph.facebook.com/v21.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: from,
+            type: 'text',
+            text: { body: String(fallback).slice(0, 4096) },
+          }),
+        });
+      } catch (sendErr) {
+        logger.warn({ err: sendErr }, 'Failed to send WhatsApp fallback reply');
+      }
+      return;
+    }
 
-    const reply = (result && (result as any).answerText) || 'Sorry, I could not find an answer.';
+    const reply = (result && result.answerText) || 'Sorry, I could not find an answer.';
 
     // Send text reply via WhatsApp Cloud API
     try {
@@ -97,8 +122,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
     }
 
     // Optionally send images returned by the QA service
-    if ((result as any).images && Array.isArray((result as any).images) && (result as any).images.length > 0) {
-      const images = (result as any).images as { url: string }[];
+    if (result?.images && Array.isArray(result.images) && result.images.length > 0) {
+      const images = result.images as { url: string }[];
       for (const img of images.slice(0, 3)) {
         try {
           await fetch(`https://graph.facebook.com/v21.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
