@@ -4,6 +4,7 @@ import authRoutes from './auth.routes.js';
 import documentRoutes from './document.routes.js';
 import qaRoutes from './qa.routes.js';
 import adminRoutes from './admin.routes.js';
+import whatsappRoutes from './whatsapp.routes.js';
 
 const router: Router = Router();
 
@@ -15,6 +16,9 @@ router.use('/auth', authRoutes);
 
 // Documents
 router.use('/documents', documentRoutes);
+
+// WhatsApp Bot
+router.use('/whatsapp', whatsappRoutes);
 
 // Knowledge / QA
 router.use('/knowledge', qaRoutes);
