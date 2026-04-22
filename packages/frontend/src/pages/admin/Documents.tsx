@@ -41,7 +41,7 @@ export default function DocumentsPage() {
 
     const interval = setInterval(() => {
       fetchDocuments();
-    }, 3000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [documents]);

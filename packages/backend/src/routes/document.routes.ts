@@ -304,7 +304,7 @@ router.post('/:id/reprocess', authenticate, requireRole(UserRole.ADMIN as any), 
  *   get:
  *     summary: Proxy a document image through the backend (handles Cloudinary auth)
  */
-router.get('/images/proxy/:imageId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/images/proxy/:imageId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const img = await prisma.documentImage.findUnique({
