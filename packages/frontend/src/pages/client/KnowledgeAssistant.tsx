@@ -302,18 +302,22 @@ export default function KnowledgeAssistant() {
 
   const openThread = (msg: Message) => {
     setActiveThreadId(msg.id);
-    if (!msg.thread) {
-      setThreadMessages([msg]);
-      if (msg.isGrounded === false) {
-        const userQuery = messages.find((_, i, arr) => arr[i+1]?.id === msg.id)?.content || '';
-        setThreadQuery(`Please provide a general scientific explanation for: ${userQuery}`);
-      } else {
-        setThreadQuery('');
-      }
-    } else {
+    setThreadQuery('');
+
+    // Reopening a thread that already ran: show what it found, don't ask again.
+    if (msg.thread) {
       setThreadMessages(msg.thread);
-      setThreadQuery('');
+      return;
     }
+
+    setThreadMessages([msg]);
+    // Deep Dive is opened to get a broader answer to the question already asked, so ask it.
+    // Previously the question was only pre-filled into the follow-up box, and only when the
+    // answer came back ungrounded — so in the commoner case, where the documents mention
+    // the topic without explaining it, the panel opened empty and the question had to be
+    // typed out a second time to get the thing the button exists to provide.
+    const question = messages.find((_, i, arr) => arr[i + 1]?.id === msg.id)?.content?.trim();
+    if (question) runThreadQuery(question, [msg], msg.id);
   };
 
   const persistThread = (msgId: string, fullThread: Message[]) => {
@@ -326,21 +330,19 @@ export default function KnowledgeAssistant() {
     }));
   };
 
-  const handleThreadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!threadQuery.trim() || isThreadLoading || !activeThreadId) return;
-
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: threadQuery };
-    const currentQ = threadQuery;
-    const newThread = [...threadMessages, userMsg];
+  // Takes the thread it should build on as an argument rather than reading state, so that
+  // openThread can run a query in the same tick it seeds the panel — state set moments
+  // earlier is not visible here yet.
+  const runThreadQuery = async (question: string, baseThread: Message[], threadId: string) => {
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: question };
+    const newThread = [...baseThread, userMsg];
     setThreadMessages(newThread);
-    setThreadQuery('');
     setIsThreadLoading(true);
 
     try {
-      const history = threadMessages.map(m => ({ role: m.role, content: m.content }));
+      const history = baseThread.map(m => ({ role: m.role, content: m.content }));
       const { data } = await apiClient.post('/knowledge/ask', {
-        question: currentQ,
+        question,
         history,
         language: lang,
         mode: 'general'
@@ -348,12 +350,20 @@ export default function KnowledgeAssistant() {
       const assistantMsg: Message = { id: data.data.answerId, role: 'assistant', content: data.data.answerText, isGrounded: false };
       const finalized = [...newThread, assistantMsg];
       setThreadMessages(finalized);
-      persistThread(activeThreadId, finalized);
+      persistThread(threadId, finalized);
     } catch (err) {
       console.error(err);
     } finally {
       setIsThreadLoading(false);
     }
+  };
+
+  const handleThreadSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!threadQuery.trim() || isThreadLoading || !activeThreadId) return;
+    const currentQ = threadQuery;
+    setThreadQuery('');
+    runThreadQuery(currentQ, threadMessages, activeThreadId);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
