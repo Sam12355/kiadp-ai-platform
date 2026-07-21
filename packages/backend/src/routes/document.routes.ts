@@ -59,7 +59,7 @@ async function requireDocumentInScope(req: Request, _res: Response, next: NextFu
  * /documents:
  *   get:
  */
-router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authenticate, resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const page = parseInt(req.query.page as string) || 1;
@@ -67,15 +67,12 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
     const category = req.query.category as string | undefined;
     const skip = (page - 1) * limit;
 
-    // Scope to the uploader's tenant when the user is an institution admin
-    const callerUser = await prisma.user.findUnique({
-      where: { id: req.user!.userId },
-      select: { tenantId: true },
-    });
-
-    // Super admins may pass ?tenantId= to filter a specific institution's docs
+    // Scope comes from resolveTenantContext, never from a fresh lookup of the caller's own
+    // row. Reading the user directly here is what made "view as institution" invisible to
+    // this handler: a super admin previewing one school still saw every school's documents.
+    // Only a platform-wide caller may narrow by ?tenantId=; an institution admin is pinned.
     const queryTenantId = req.query.tenantId as string | undefined;
-    const effectiveTenantId = callerUser?.tenantId ?? queryTenantId ?? null;
+    const effectiveTenantId = req.callerTenantId ?? (req.isSuperAdmin ? queryTenantId ?? null : null);
 
     // Exclude manually inserted text entries (mimeType: 'text/html') — those belong to Textual Knowledge
     const where: any = {
@@ -125,14 +122,12 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
   }
 });
 
-router.get('/suggestions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/suggestions', authenticate, resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
-    const callerUser = await prisma.user.findUnique({
-      where: { id: req.user!.userId },
-      select: { tenantId: true },
-    });
-    const tenantId = callerUser?.tenantId ?? (req.query.tenantId as string | undefined) ?? null;
+    // Same rule as the document list above — suggestions quote real chunks, so an
+    // unscoped list would surface one school's material on another school's home page.
+    const tenantId = req.callerTenantId ?? (req.isSuperAdmin ? (req.query.tenantId as string | undefined) ?? null : null);
 
     // Count available chunks so we can random-sample
     const total = await prisma.documentChunk.count({
@@ -221,6 +216,7 @@ router.post(
   '/upload',
   authenticate,
   requireRole(UserRole.ADMIN as any),
+  resolveTenantContext,
   uploadPDF.single('file'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -233,12 +229,10 @@ router.post(
       const { title, category, tenantId: bodyTenantId, courseId } = req.body;
       const prisma = getPrisma();
 
-      // Inherit tenantId from the uploading user; super admins may pass tenantId in body
-      const uploaderUser = await prisma.user.findUnique({
-        where: { id: req.user!.userId },
-        select: { tenantId: true },
-      });
-      const effectiveTenantId = uploaderUser?.tenantId ?? bodyTenantId ?? null;
+      // Ownership follows the active scope. Without this, a super admin uploading while
+      // viewing an institution would file the document under nobody — visible to every
+      // tenant filter and belonging to none.
+      const effectiveTenantId = req.callerTenantId ?? (req.isSuperAdmin ? bodyTenantId ?? null : null);
 
       // 1. Initial record
       const newDoc = await prisma.document.create({
