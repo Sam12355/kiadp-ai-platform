@@ -371,7 +371,14 @@ router.post('/webhook', async (req: Request, res: Response) => {
       logger.debug({ ackMessageId }, 'WhatsApp ack sent');
     }
 
-    // Find or create a local user for this phone number so questions are stored
+    // Find or create a local user for this phone number so questions are stored.
+    //
+    // The tenant is the security boundary here. A WhatsApp sender is identified by nothing
+    // but their phone number, and one number serves the whole deployment, so an incoming
+    // message carries no evidence of which school the sender belongs to. Users created here
+    // previously had no tenant at all and the question was then asked with no tenant scope,
+    // which searched EVERY school's documents — a student at one school could ask about
+    // another school's material and be answered from it.
     const email = `whatsapp:${from}@whatsapp.local`;
     let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -382,8 +389,32 @@ router.post('/webhook', async (req: Request, res: Response) => {
           fullName: `WhatsApp ${from}`,
           role: 'STUDENT' as any,
           isActive: true,
+          // Null when unconfigured; the guard below refuses rather than answering globally.
+          tenantId: env.WHATSAPP_TENANT_ID ?? null,
         },
       });
+    } else if (!user.tenantId && env.WHATSAPP_TENANT_ID) {
+      // Adopt the configured tenant for numbers that predate this setting.
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { tenantId: env.WHATSAPP_TENANT_ID },
+      });
+    }
+
+    // Fail closed. Answering with no tenant scope is the leak, so an unassignable sender
+    // gets told to use the web app rather than being quietly served everyone's documents.
+    if (!user.tenantId) {
+      logger.warn(
+        { from, hasEnvTenant: Boolean(env.WHATSAPP_TENANT_ID) },
+        'WhatsApp question refused: sender has no tenant and WHATSAPP_TENANT_ID is not set',
+      );
+      await sendWhatsAppText(
+        from,
+        '👋 This number is not linked to an institution yet, so I cannot look anything up. Please ask your school administrator to set this up, or sign in to the web app.',
+        env.WHATSAPP_PHONE_NUMBER_ID!,
+        env.WHATSAPP_ACCESS_TOKEN!,
+      ).catch((err) => logger.warn({ err }, 'Failed to send WhatsApp unlinked-number reply'));
+      return;
     }
 
     // Build simple history from recent Q/A pairs (helps context)
@@ -397,7 +428,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
     // Call existing QA service with a guarded fallback so we can reply
     let result: any = null;
     try {
-      result = await askQuestion(user.id, incomingText, history, detectedLanguage);
+      // 'grounded' is the existing default, named here only because tenantId sits after it.
+      result = await askQuestion(user.id, incomingText, history, detectedLanguage, 'grounded', user.tenantId);
     } catch (qaErr) {
       // Log the error and send a polite fallback message back to the user
       logger.error({ err: qaErr }, 'askQuestion failed');

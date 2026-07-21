@@ -241,6 +241,15 @@ router.post('/ask', authenticateApiKey, async (req: Request, res: Response, next
 
     const { question, courseId, language } = parsed.data;
     const tenantId = req.apiKey!.tenantId ?? undefined;
+    // A platform-level key has no tenant, and askQuestion with no tenant searches every
+    // institution. Today that is caught downstream only because the system-user lookup
+    // interpolates "undefined" into an email that happens not to exist — create that user
+    // and the endpoint answers from everyone's documents. Refuse explicitly instead, as
+    // the sync endpoint above already does.
+    if (!tenantId) {
+      res.status(403).json({ error: 'This endpoint requires an institution-scoped API key' });
+      return;
+    }
 
     const prisma = getPrisma();
     const systemEmail = `moodle-system+${tenantId}@system.local`;

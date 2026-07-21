@@ -41,6 +41,11 @@ const envSchema = z.object({
   WHATSAPP_VERIFY_TOKEN: z.string().optional(),
   WHATSAPP_ACCESS_TOKEN: z.string().optional(),
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  // Which institution WhatsApp questions are answered from. One WhatsApp number serves the
+  // whole deployment and a sender is only ever identified by their phone number, so there
+  // is nothing in an incoming message that says which school they belong to. Without this
+  // set, WhatsApp questions are refused rather than answered from every school's documents.
+  WHATSAPP_TENANT_ID: z.string().uuid().optional(),
 
   // Bootstrap
   ADMIN_BOOTSTRAP_SECRET: z.string().optional(),
