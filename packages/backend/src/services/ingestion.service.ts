@@ -15,11 +15,97 @@ import { embedTexts } from './embedding.service.js';
 
 // ── Semantic chunking helpers ──
 
-/** Split text into sentences at punctuation followed by whitespace + uppercase/Arabic/digit. */
+/**
+ * A fragment shorter than this is merged into a neighbour rather than kept alone.
+ * It is a grouping threshold, NOT a filter \u2014 see the note in splitIntoSentences.
+ */
+const MIN_FRAGMENT_CHARS = 25;
+
+/**
+ * Split a page into fragments for chunking: line by line, then by sentence within a line.
+ *
+ * Two things this deliberately does NOT do, both of which it used to:
+ *
+ * 1. It does not collapse newlines into spaces. In slide decks, syllabi, tables and
+ *    numbered lists the line structure IS the content. Flattening turned
+ *    "MODULE CONTENT\n1. Software Engineering..." into one run-on line, so a request to
+ *    read a slide "as it is" could never be satisfied \u2014 the structure was gone before
+ *    the text was ever stored.
+ *
+ * 2. It does not discard short fragments. The old `.filter(s => s.length >= 25)` threw
+ *    them away entirely, which silently lost real content: list markers, short headings
+ *    and table cells. Concretely, sentence-splitting produced the fragment
+ *    "MODULE CONTENT 1." (17 chars), which was dropped \u2014 which is why the first list
+ *    item lost its "1." while items 2-5 kept their numbers. Short fragments are now
+ *    merged into an adjacent one instead, so nothing is thrown away.
+ */
 function splitIntoSentences(text: string): string[] {
-  const cleaned = text.replace(/\s+/g, ' ').trim();
-  const parts = cleaned.split(/(?<=[.!?\u060C\u061B\u061F])\s+(?=[A-Z0-9"'(\u0600-\u06FF])/);
-  return parts.map(s => s.trim()).filter(s => s.length >= 25);
+  // Normalise horizontal whitespace only; keep line breaks as real boundaries.
+  const rawLines = text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(l => l.replace(/[^\S\n]+/g, ' ').trim())
+    .filter(l => l.length > 0);
+
+  // Rejoin lines that a PDF wrapped mid-sentence, so prose reads as prose again while
+  // genuine line structure (list items, headings) is left intact. A line is treated as a
+  // continuation of the previous one unless the previous line looks finished, or this
+  // line starts a new item.
+  const lines: string[] = [];
+  for (const line of rawLines) {
+    const prev = lines[lines.length - 1];
+    const startsNewItem = /^((?:\d+|[a-zA-Z]|[ivxIVX]+)[.)]\s|[•·*\-–—]\s)/.test(line);
+    const prevLooksFinished = prev === undefined || /[.!?:;،؛؟]$/.test(prev);
+    const prevIsHeading = prev !== undefined && /^[^a-z]{5,}$/.test(prev);
+
+    if (prev !== undefined && !startsNewItem && !prevLooksFinished && !prevIsHeading) {
+      lines[lines.length - 1] = prev + ' ' + line;
+    } else {
+      lines.push(line);
+    }
+  }
+
+  // Long prose lines are still sentence-split, so chunking stays semantic for books.
+  //
+  // A leading list marker is detached before splitting and re-attached afterwards. The
+  // sentence rule ("." + space + capital) otherwise fires on the marker itself, cutting
+  // "1. Software Engineering as an academic discipline" into "1." and the text \u2014 which
+  // is how the numbering came adrift from the items. The marker text is re-attached
+  // unchanged, so this only moves a split point; it never rewrites content.
+  const ENUMERATOR = /^((?:\d+|[a-zA-Z]|[ivxIVX]+)[.)]\s+)/;
+  const SENTENCE_BOUNDARY = /(?<=[.!?\u060C\u061B\u061F])\s+(?=[A-Z0-9"'(\u0600-\u06FF])/;
+
+  const fragments: string[] = [];
+  for (const line of lines) {
+    const m = line.match(ENUMERATOR);
+    const marker = m ? m[1] : '';
+    const rest = m ? line.slice(marker.length) : line;
+
+    const parts = rest.split(SENTENCE_BOUNDARY);
+    parts.forEach((part, idx) => {
+      const s = (idx === 0 ? marker + part : part).trim();
+      if (s) fragments.push(s);
+    });
+  }
+
+  // Merge short fragments into the preceding one, preserving the line break between them.
+  const merged: string[] = [];
+  for (const frag of fragments) {
+    if (merged.length > 0 && frag.length < MIN_FRAGMENT_CHARS) {
+      merged[merged.length - 1] += '\n' + frag;
+    } else {
+      merged.push(frag);
+    }
+  }
+
+  // A short leading fragment (a slide title, typically) has nothing before it to merge
+  // into, so fold it forward instead of leaving it stranded or dropping it.
+  if (merged.length > 1 && merged[0].length < MIN_FRAGMENT_CHARS) {
+    merged[1] = merged[0] + '\n' + merged[1];
+    merged.shift();
+  }
+
+  return merged;
 }
 
 /**
@@ -90,8 +176,18 @@ function buildSemanticChunks(
 
       if (picked.length === 0) { i++; continue; }
 
-      const body = picked.join(' ');
-      const text_with_heading = chunkHeading ? `[${chunkHeading}] ${body}` : body;
+      // Join with newlines, not spaces, so the line structure preserved by
+      // splitIntoSentences survives into the stored chunk.
+      const body = picked.join('\n');
+
+      // Skip the [Heading] prefix when the body already opens with that heading —
+      // otherwise a slide titled "MODULE CONTENT" is stored as
+      // "[MODULE CONTENT] MODULE CONTENT ...", which reads badly when quoted verbatim.
+      const bodyLeadsWithHeading = chunkHeading !== null
+        && body.slice(0, chunkHeading.length).toUpperCase() === chunkHeading.toUpperCase();
+      const text_with_heading = chunkHeading && !bodyLeadsWithHeading
+        ? `[${chunkHeading}] ${body}`
+        : body;
       chunks.push({ pageNumber, text: text_with_heading, chunkIndex: chunkIdx++ });
       i = Math.max(i + 1, j - OVERLAP);
     }
