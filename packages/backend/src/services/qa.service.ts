@@ -550,6 +550,20 @@ async function buildVerbatimAnswer(
 ): Promise<string> {
   if (sources.length === 0) return '';
 
+  // Chunking emits an overlap chunk per page — a short tail of the fuller one, same page.
+  // Both are genuine, but offering both lets the chooser land on the fragment: asking for
+  // "the five points" returned the overlap chunk "[MODULE CONTENT] 5. Planning..." because
+  // its leading "5." looked like a match. Keep only the longest chunk per page, which is
+  // the most complete rendering of that page and a superset of its own overlap.
+  const byPage = new Map<string, { filename: string; pageNumber: number; text: string }>();
+  for (const s of sources) {
+    const key = `${s.filename}|${s.pageNumber}`;
+    const existing = byPage.get(key);
+    if (!existing || s.text.length > existing.text.length) byPage.set(key, s);
+  }
+  // Map preserves insertion order, so retrieval ranking survives the dedupe.
+  sources = [...byPage.values()];
+
   let picked = 0;
   if (sources.length > 1) {
     const menu = sources
