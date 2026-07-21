@@ -1,15 +1,26 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { UserRole } from '@prisma/client';
+import { resolveTenantContext, requireTenantParam, requireSuperAdmin } from '../middleware/rbac.js';
 import { getPrisma } from '../config/database.js';
 import { uploadImage } from '../middleware/upload.js';
 import { uploadBufferToCloudinary } from '../services/storage.service.js';
-import { BadRequestError } from '../utils/errors.js';
+import { BadRequestError, ForbiddenError } from '../utils/errors.js';
 
 const router: Router = Router();
 
-// All tenant routes require admin authentication
-router.use(authenticate, requireRole('ADMIN'));
+// All tenant routes require admin authentication.
+//
+// Requiring the ADMIN role alone is NOT sufficient here: an institution admin is also an
+// ADMIN, so without the tenant guards below every school admin could read, rename and
+// deactivate every other school on the platform. resolveTenantContext establishes who
+// the caller is; each route then declares its own scope.
+router.use(authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext);
+
+// Applies to every /:id route below — rejects non-UUIDs and cross-tenant access.
+// Mounted before the handlers so no handler ever sees an id it may not touch.
+router.use('/:id', requireTenantParam('id'));
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -22,8 +33,8 @@ const updateSchema = z.object({
   logoUrl: z.string().url().optional().nullable(),
 });
 
-// POST /tenants — create institution
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+// POST /tenants — create institution. Onboarding a school is a platform-owner action.
+router.post('/', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = createSchema.parse(req.body);
     const prisma = getPrisma();
@@ -34,11 +45,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// GET /tenants — list all institutions with user/document counts
-router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+// GET /tenants — list institutions with user/document counts.
+// Scoped rather than blocked: a super admin sees every school, an institution admin
+// sees only their own, so the response never reveals that other schools exist.
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const tenants = await prisma.tenant.findMany({
+      where: req.isSuperAdmin ? {} : { id: req.callerTenantId ?? undefined },
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { users: true, documents: true, questions: true } },
@@ -85,12 +99,36 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
-// POST /tenants/:id/users/:userId — assign a user to this institution
+// POST /tenants/:id/users/:userId — assign a user to this institution.
+//
+// requireTenantParam already pins :id to the caller's own tenant. The remaining risk is
+// the TARGET: without this check an institution admin could claim any account on the
+// platform — including a super admin, whose tenantId is null — and thereby capture it
+// into their own school. A super admin may move anyone; an institution admin may only
+// take on unaffiliated non-admin accounts, or touch users already theirs.
 router.post('/:id/users/:userId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
-    const user = await prisma.user.update({
+    const target = await prisma.user.findUnique({
       where: { id: req.params.userId },
+      select: { id: true, role: true, tenantId: true },
+    });
+
+    if (!target) {
+      res.status(404).json({ success: false, error: 'User not found' });
+      return;
+    }
+
+    if (!req.isSuperAdmin) {
+      const alreadyMine = target.tenantId === req.callerTenantId;
+      const claimable = target.tenantId === null && target.role !== 'ADMIN';
+      if (!alreadyMine && !claimable) {
+        throw new ForbiddenError('That user belongs to another institution');
+      }
+    }
+
+    const user = await prisma.user.update({
+      where: { id: target.id },
       data: { tenantId: req.params.id },
       select: { id: true, email: true, fullName: true, role: true, tenantId: true },
     });
@@ -100,13 +138,24 @@ router.post('/:id/users/:userId', async (req: Request, res: Response, next: Next
   }
 });
 
-// DELETE /tenants/:id/users/:userId — remove user from institution (set tenantId null)
+// DELETE /tenants/:id/users/:userId — remove user from institution (set tenantId null).
+// Only detaches users who are actually in the named institution, so a stale or guessed
+// userId cannot be used to strip another school's user of their tenant.
 router.delete('/:id/users/:userId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
-    const user = await prisma.user.update({
-      where: { id: req.params.userId },
+    const { count } = await prisma.user.updateMany({
+      where: { id: req.params.userId, tenantId: req.params.id },
       data: { tenantId: null },
+    });
+
+    if (count === 0) {
+      res.status(404).json({ success: false, error: 'User is not a member of this institution' });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.userId },
       select: { id: true, email: true, fullName: true, role: true, tenantId: true },
     });
     res.json({ success: true, data: user });
@@ -147,14 +196,17 @@ router.get('/:id/analytics', async (req: Request, res: Response, next: NextFunct
     since.setDate(since.getDate() - 13);
     since.setHours(0, 0, 0, 0);
 
-    const dailyRaw = await prisma.$queryRawUnsafe<{ day: string; count: bigint }[]>(`
+    // Parameterised, not $queryRawUnsafe with string interpolation. tenantId reaches this
+    // handler from the URL; requireTenantParam already constrains it to a UUID belonging
+    // to the caller, but the query must not depend on an upstream guard for its safety.
+    const dailyRaw = await prisma.$queryRaw<{ day: string; count: bigint }[]>`
       SELECT DATE_TRUNC('day', created_at)::date::text AS day, COUNT(*)::bigint AS count
       FROM questions
-      WHERE tenant_id = '${tenantId}'
-        AND created_at >= '${since.toISOString()}'
+      WHERE tenant_id = ${tenantId}::uuid
+        AND created_at >= ${since}
       GROUP BY day
       ORDER BY day
-    `);
+    `;
 
     // Fill in zeros for missing days
     const dailyMap = new Map(dailyRaw.map(r => [r.day, Number(r.count)]));

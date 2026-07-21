@@ -1,13 +1,72 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { getPrisma } from '../config/database.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { UserRole } from '@prisma/client';
+import { resolveTenantContext, tenantScope } from '../middleware/rbac.js';
+import { UserRole, Prisma } from '@prisma/client';
 import { processTextContent } from '../services/ingestion.service.js';
-import { BadRequestError } from '../utils/errors.js';
+import { BadRequestError, NotFoundError } from '../utils/errors.js';
 import { generateApiKey } from '../middleware/api-key.middleware.js';
 import { z } from 'zod';
 
 const router: Router = Router();
+
+/**
+ * Rejects a /users/:id route when that user belongs to another institution.
+ *
+ * These endpoints were reachable by any ADMIN, so an institution admin could disable or
+ * approve accounts at other schools. Run AFTER resolveTenantContext. 404 rather than 403,
+ * so the response does not confirm that an out-of-scope account exists.
+ */
+async function requireUserInScope(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (req.isSuperAdmin) {
+      next();
+      return;
+    }
+
+    const target = await getPrisma().user.findUnique({
+      where: { id: req.params.id as string },
+      select: { tenantId: true },
+    });
+
+    if (!target || target.tenantId !== (req.callerTenantId ?? null)) {
+      next(new NotFoundError('User not found'));
+      return;
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Rejects an /api-keys/:id route when the key belongs to another institution.
+ * Without it, revoking or rotating a key needed only its id — letting one school
+ * disable another school's live integrations. Run AFTER resolveTenantContext.
+ */
+async function requireApiKeyInScope(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (req.isSuperAdmin) {
+      next();
+      return;
+    }
+
+    const key = await getPrisma().apiKey.findUnique({
+      where: { id: req.params.id as string },
+      select: { tenantId: true },
+    });
+
+    if (!key || key.tenantId !== (req.callerTenantId ?? null)) {
+      next(new NotFoundError('API key not found'));
+      return;
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
 
 /**
  * @openapi
@@ -18,16 +77,22 @@ const router: Router = Router();
  *     security:
  *       - BearerAuth: []
  */
-router.get('/stats', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/stats', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
-    
+
+    // Empty for a super admin (platform-wide totals), { tenantId } for an institution
+    // admin — otherwise a school's dashboard reports every other school's numbers.
+    const scope = tenantScope(req);
+
     const [totalDocs, totalChunks, totalQuestions, activeUsers, recentDocuments] = await Promise.all([
-      prisma.document.count(),
-      prisma.documentChunk.count(),
-      prisma.question.count(),
-      prisma.user.count({ where: { isActive: true } }),
+      prisma.document.count({ where: scope }),
+      // DocumentChunk has no tenantId of its own; scope it through its parent document.
+      prisma.documentChunk.count({ where: { document: scope } }),
+      prisma.question.count({ where: scope }),
+      prisma.user.count({ where: { isActive: true, ...scope } }),
       prisma.document.findMany({
+        where: scope,
         take: 5,
         orderBy: { createdAt: 'desc' },
         select: {
@@ -66,10 +131,12 @@ router.get('/stats', authenticate, requireRole(UserRole.ADMIN as any), async (re
  *     summary: List all users (Admin only)
  *     tags: [Admin]
  */
-router.get('/users', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/users', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const users = await prisma.user.findMany({
+      // Unscoped, this returned every user of every institution to any admin.
+      where: tenantScope(req),
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -78,6 +145,7 @@ router.get('/users', authenticate, requireRole(UserRole.ADMIN as any), async (re
         role: true,
         isActive: true,
         isPendingApproval: true,
+        tenantId: true,
         createdAt: true,
       }
     });
@@ -95,7 +163,7 @@ router.get('/users', authenticate, requireRole(UserRole.ADMIN as any), async (re
  *     summary: Toggle user active status (Admin only)
  *     tags: [Admin]
  */
-router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireUserInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({
@@ -125,7 +193,7 @@ router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMI
  *     summary: Approve a pending user registration (Admin only)
  *     tags: [Admin]
  */
-router.post('/users/:id/approve', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/users/:id/approve', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireUserInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({
@@ -210,9 +278,9 @@ router.post('/bootstrap', async (req: Request, res: Response, next: NextFunction
  *     summary: Create a new user (Admin only)
  *     tags: [Admin]
  */
-router.post('/users', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/users', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { fullName, email, password, role } = req.body;
+    const { fullName, email, password, role, tenantId: bodyTenantId } = req.body;
     const prisma = getPrisma();
 
     // Check if user exists
@@ -226,12 +294,21 @@ router.post('/users', authenticate, requireRole(UserRole.ADMIN as any), async (r
 
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // The new account inherits the creator's institution. Previously nothing was set
+    // here, which had two consequences: an institution admin's new users landed with no
+    // tenant (so a student could see nothing, and the school UI had to follow up with a
+    // second assign call), and — worse — any ADMIN created this way became a de-facto
+    // platform super admin, since "super admin" means exactly "ADMIN with tenantId null".
+    // Only a super admin may direct a new user into a specific institution.
+    const effectiveTenantId = req.isSuperAdmin ? (bodyTenantId ?? null) : req.callerTenantId;
+
     const newUser = await prisma.user.create({
       data: {
         fullName,
         email,
         passwordHash,
         role: role || 'STUDENT',
+        ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}),
       },
     });
 
@@ -242,6 +319,7 @@ router.post('/users', authenticate, requireRole(UserRole.ADMIN as any), async (r
         email: newUser.email,
         fullName: newUser.fullName,
         role: newUser.role,
+        tenantId: newUser.tenantId,
         isActive: newUser.isActive,
         createdAt: newUser.createdAt,
       },
@@ -513,18 +591,26 @@ router.get('/api-status', authenticate, requireRole(UserRole.ADMIN as any), asyn
 });
 
 // ── Question Analytics ──────────────────────────────────────────────────────
-router.get('/question-analytics', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/question-analytics', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const since30 = new Date();
     since30.setDate(since30.getDate() - 30);
 
+    // An institution admin must see only their own school's question history; a super
+    // admin still gets platform-wide figures. The raw-SQL branches need the predicate as
+    // a Prisma.sql fragment (parameterised — never string-interpolated).
+    const scope = tenantScope(req);
+    const tenantSql = scope.tenantId
+      ? Prisma.sql`AND tenant_id = ${scope.tenantId}::uuid`
+      : Prisma.empty;
+
     // Run all queries in parallel
     const [totalQuestions, totalAnswered, totalGaps, dailyVolumeRaw, dailyGapsRaw, topUserGroups, recentGaps, recentQuestions] =
       await Promise.all([
-        prisma.question.count(),
-        prisma.answer.count(),
-        prisma.answer.count({ where: { isGrounded: false } }),
+        prisma.question.count({ where: scope }),
+        prisma.answer.count({ where: scope }),
+        prisma.answer.count({ where: { isGrounded: false, ...scope } }),
 
         // Daily question volume (last 30 days) using raw SQL for date grouping
         prisma.$queryRaw<{ day: string; count: bigint }[]>`
@@ -532,6 +618,7 @@ router.get('/question-analytics', authenticate, requireRole(UserRole.ADMIN as an
                  COUNT(*)::bigint AS count
           FROM questions
           WHERE created_at >= ${since30}
+          ${tenantSql}
           GROUP BY day
           ORDER BY day ASC
         `,
@@ -543,12 +630,14 @@ router.get('/question-analytics', authenticate, requireRole(UserRole.ADMIN as an
           FROM answers
           WHERE is_grounded = false
             AND created_at >= ${since30}
+          ${tenantSql}
           GROUP BY day
           ORDER BY day ASC
         `,
 
         // Top users by question count
         prisma.question.groupBy({
+          where: scope,
           by: ['userId'],
           _count: { id: true },
           orderBy: { _count: { id: 'desc' } },
@@ -557,7 +646,7 @@ router.get('/question-analytics', authenticate, requireRole(UserRole.ADMIN as an
 
         // Knowledge-gap answers — fetch many for deduplication
         prisma.answer.findMany({
-          where: { isGrounded: false },
+          where: { isGrounded: false, ...scope },
           include: {
             question: {
               include: { user: { select: { id: true, fullName: true, email: true } } },
@@ -569,6 +658,7 @@ router.get('/question-analytics', authenticate, requireRole(UserRole.ADMIN as an
 
         // Recent 500 questions for "most asked" grouping
         prisma.question.findMany({
+          where: scope,
           include: {
             user: { select: { id: true, fullName: true, email: true } },
             answer: { select: { isGrounded: true, confidenceScore: true } },
@@ -937,13 +1027,16 @@ const apiKeyCreateSchema = z.object({
 });
 
 // POST /admin/api-keys — issue a new API key (raw key returned ONCE)
-router.post('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = apiKeyCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: parsed.error.flatten().fieldErrors });
     }
-    const { name, tenantId, expiresAt } = parsed.data;
+    const { name, tenantId: bodyTenantId, expiresAt } = parsed.data;
+    // Only a super admin may choose which institution a key belongs to; an institution
+    // admin's keys are pinned to their own tenant regardless of what the body says.
+    const tenantId = req.isSuperAdmin ? bodyTenantId : req.callerTenantId;
     const { rawKey, hash, prefix } = generateApiKey();
     const prisma = getPrisma();
     const apiKey = await prisma.apiKey.create({
@@ -965,10 +1058,13 @@ router.post('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async
 });
 
 // GET /admin/api-keys — list all API keys (no raw keys, prefix only)
-router.get('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const keys = await prisma.apiKey.findMany({
+      // The school UI filtered these client-side, which meant every school admin's
+      // browser still received every other institution's key metadata. Filter server-side.
+      where: tenantScope(req),
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, keyPrefix: true, name: true, tenantId: true,
@@ -984,7 +1080,7 @@ router.get('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async 
 });
 
 // DELETE /admin/api-keys/:id — revoke a key
-router.delete('/api-keys/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/api-keys/:id', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireApiKeyInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     await prisma.apiKey.update({
@@ -998,7 +1094,7 @@ router.delete('/api-keys/:id', authenticate, requireRole(UserRole.ADMIN as any),
 });
 
 // POST /admin/api-keys/:id/rotate — revoke old key, issue a new one with same settings
-router.post('/api-keys/:id/rotate', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/api-keys/:id/rotate', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireApiKeyInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const old = await prisma.apiKey.findUnique({

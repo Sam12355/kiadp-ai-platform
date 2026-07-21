@@ -5,7 +5,7 @@ import { getPrisma } from '../config/database.js';
 import { getLogger } from '../utils/logger.js';
 import { authenticateApiKey } from '../middleware/api-key.middleware.js';
 
-const router = Router();
+const router: Router = Router();
 const logger = getLogger();
 
 const askSchema = z.object({

@@ -170,11 +170,13 @@ export default function SchoolDashboard() {
                 </defs>
                 <XAxis dataKey="day" tickFormatter={fmt} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.3)' }} axisLine={false} tickLine={false} interval={2} />
                 <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.3)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                {/* labelFormatter receives the label as ReactNode, unlike XAxis's
+                    tickFormatter which passes the raw string, so fmt is wrapped. */}
                 <Tooltip
                   contentStyle={{ background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: 12 }}
                   labelStyle={{ color: 'rgba(255,255,255,0.6)' }}
                   itemStyle={{ color: '#3b82f6' }}
-                  labelFormatter={fmt}
+                  labelFormatter={(label) => fmt(String(label))}
                 />
                 <Area type="monotone" dataKey="questions" stroke="#3b82f6" strokeWidth={2} fill="url(#qGrad)" dot={false} activeDot={{ r: 4, fill: '#3b82f6' }} />
               </AreaChart>

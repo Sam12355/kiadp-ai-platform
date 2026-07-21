@@ -193,7 +193,7 @@ async function sendWhatsAppText(to: string, text: string, phoneNumberId: string,
   return firstMessageId;
 }
 
-const router = Router();
+const router: Router = Router();
 const logger = getLogger();
 
 /**

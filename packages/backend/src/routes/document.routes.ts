@@ -3,6 +3,7 @@ import { getPrisma } from '../config/database.js';
 import { uploadPDF } from '../middleware/upload.js';
 import { uploadToCloudinary } from '../services/storage.service.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { resolveTenantContext } from '../middleware/rbac.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { UserRole } from '@prisma/client';
 import { getBoss } from '../queue/boss.js';
@@ -11,6 +12,47 @@ import { getLogger } from '../utils/logger.js';
 
 const router: Router = Router();
 const logger = getLogger();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Rejects a /:id document route when the document belongs to another institution.
+ *
+ * The list endpoint has always been tenant-scoped, but the by-id endpoints were not:
+ * knowing a UUID was enough for any authenticated user — including a student at a
+ * different school — to read, edit or delete a document. Run AFTER resolveTenantContext.
+ *
+ * Responds 404 rather than 403 on a cross-tenant hit: a 403 would confirm that a
+ * document with that id exists, which is itself a cross-tenant disclosure.
+ */
+async function requireDocumentInScope(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = req.params.id;
+    if (!id || !UUID_RE.test(id)) {
+      next(new NotFoundError('Document not found'));
+      return;
+    }
+
+    const doc = await getPrisma().document.findUnique({
+      where: { id },
+      select: { tenantId: true },
+    });
+
+    if (!doc) {
+      next(new NotFoundError('Document not found'));
+      return;
+    }
+
+    if (!req.isSuperAdmin && doc.tenantId !== (req.callerTenantId ?? null)) {
+      next(new NotFoundError('Document not found'));
+      return;
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
 
 /**
  * @openapi
@@ -83,12 +125,77 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
   }
 });
 
+router.get('/suggestions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const callerUser = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: { tenantId: true },
+    });
+    const tenantId = callerUser?.tenantId ?? (req.query.tenantId as string | undefined) ?? null;
+
+    // Count available chunks so we can random-sample
+    const total = await prisma.documentChunk.count({
+      where: {
+        content: { not: '' },
+        document: {
+          mimeType: { not: 'text/html' },
+          status: 'COMPLETED',
+          ...(tenantId ? { tenantId } : {}),
+        },
+      },
+    });
+
+    if (total === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Pick up to 12 random offsets, fetch those chunks, return the trimmed content
+    const COUNT = Math.min(12, total);
+    const offsets = Array.from({ length: COUNT }, () => Math.floor(Math.random() * total));
+    const chunks = await Promise.all(
+      offsets.map(skip =>
+        prisma.documentChunk.findFirst({
+          where: {
+            content: { not: '' },
+            document: {
+              mimeType: { not: 'text/html' },
+              status: 'COMPLETED',
+              ...(tenantId ? { tenantId } : {}),
+            },
+          },
+          select: { content: true },
+          skip,
+        })
+      )
+    );
+
+    // Take first sentence of each chunk, deduplicate, trim to 120 chars
+    const seen = new Set<string>();
+    const suggestions: string[] = [];
+    for (const chunk of chunks) {
+      if (!chunk?.content) continue;
+      const sentence = chunk.content.replace(/\s+/g, ' ').split(/(?<=[.?!])\s+/)[0].trim();
+      if (sentence.length < 20 || sentence.length > 200) continue;
+      const key = sentence.slice(0, 60).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      suggestions.push(sentence.length > 120 ? sentence.slice(0, 117) + '…' : sentence);
+      if (suggestions.length >= 8) break;
+    }
+
+    res.json({ success: true, data: suggestions });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /**
  * @openapi
  * /documents/{id}:
  *   get:
  */
-router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authenticate, resolveTenantContext, requireDocumentInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const docId = req.params.id as string;
@@ -194,7 +301,7 @@ router.post(
  * /documents/{id}:
  *   patch:
  */
-router.patch('/:id', authenticate, requireRole(UserRole.ADMIN as any), uploadPDF.single('file'), async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireDocumentInScope, uploadPDF.single('file'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const docId = req.params.id as string;
     const { title, category } = req.body;
@@ -267,7 +374,7 @@ router.patch('/:id', authenticate, requireRole(UserRole.ADMIN as any), uploadPDF
  *   post:
  *     summary: Re-run ingestion for an existing document (Admin only)
  */
-router.post('/:id/reprocess', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:id/reprocess', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireDocumentInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const docId = req.params.id as string;
@@ -376,7 +483,7 @@ router.get('/images/proxy/:imageId', async (req: Request, res: Response, next: N
   }
 });
 
-router.delete('/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireDocumentInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const docId = req.params.id as string;
@@ -408,69 +515,5 @@ router.delete('/:id', authenticate, requireRole(UserRole.ADMIN as any), async (r
 });
 
 // GET /documents/suggestions — returns random chunk excerpts for home-page prompt cards
-router.get('/suggestions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const prisma = getPrisma();
-    const callerUser = await prisma.user.findUnique({
-      where: { id: req.user!.userId },
-      select: { tenantId: true },
-    });
-    const tenantId = callerUser?.tenantId ?? (req.query.tenantId as string | undefined) ?? null;
-
-    // Count available chunks so we can random-sample
-    const total = await prisma.documentChunk.count({
-      where: {
-        content: { not: '' },
-        document: {
-          mimeType: { not: 'text/html' },
-          status: 'READY',
-          ...(tenantId ? { tenantId } : {}),
-        },
-      },
-    });
-
-    if (total === 0) {
-      return res.json({ success: true, data: [] });
-    }
-
-    // Pick up to 12 random offsets, fetch those chunks, return the trimmed content
-    const COUNT = Math.min(12, total);
-    const offsets = Array.from({ length: COUNT }, () => Math.floor(Math.random() * total));
-    const chunks = await Promise.all(
-      offsets.map(skip =>
-        prisma.documentChunk.findFirst({
-          where: {
-            content: { not: '' },
-            document: {
-              mimeType: { not: 'text/html' },
-              status: 'READY',
-              ...(tenantId ? { tenantId } : {}),
-            },
-          },
-          select: { content: true },
-          skip,
-        })
-      )
-    );
-
-    // Take first sentence of each chunk, deduplicate, trim to 120 chars
-    const seen = new Set<string>();
-    const suggestions: string[] = [];
-    for (const chunk of chunks) {
-      if (!chunk?.content) continue;
-      const sentence = chunk.content.replace(/\s+/g, ' ').split(/(?<=[.?!])\s+/)[0].trim();
-      if (sentence.length < 20 || sentence.length > 200) continue;
-      const key = sentence.slice(0, 60).toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      suggestions.push(sentence.length > 120 ? sentence.slice(0, 117) + '…' : sentence);
-      if (suggestions.length >= 8) break;
-    }
-
-    res.json({ success: true, data: suggestions });
-  } catch (err) {
-    next(err);
-  }
-});
 
 export default router;

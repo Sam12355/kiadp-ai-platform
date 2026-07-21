@@ -10,6 +10,7 @@ import { askQuestion } from '../services/qa.service.js';
 import { authenticateApiKey } from '../middleware/api-key.middleware.js';
 import { generateApiKey } from '../middleware/api-key.middleware.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { UserRole } from '@prisma/client';
 
 const router: Router = Router();
 const logger = getLogger();
@@ -21,7 +22,7 @@ const logger = getLogger();
  * Admin creates an API key for a tenant (institution).
  * Returns the raw key ONCE — store it immediately.
  */
-router.post('/api-keys', authenticate, requireRole('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, tenantId, expiresAt } = req.body;
     if (!name || !tenantId) {
@@ -60,13 +61,13 @@ router.post('/api-keys', authenticate, requireRole('ADMIN'), async (req: Request
  * GET /moodle/api-keys?tenantId=...
  * List API keys for a tenant (key hash never returned).
  */
-router.get('/api-keys', authenticate, requireRole('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const { tenantId } = req.query;
     const keys = await prisma.apiKey.findMany({
       where: tenantId ? { tenantId: String(tenantId) } : {},
-      select: { id: true, name: true, prefix: true, tenantId: true, isActive: true, lastUsedAt: true, requestCount: true, expiresAt: true, createdAt: true },
+      select: { id: true, name: true, keyPrefix: true, tenantId: true, isActive: true, lastUsedAt: true, requestCount: true, expiresAt: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
     res.json({ success: true, data: keys });
@@ -79,7 +80,7 @@ router.get('/api-keys', authenticate, requireRole('ADMIN'), async (req: Request,
  * DELETE /moodle/api-keys/:id
  * Revoke an API key.
  */
-router.delete('/api-keys/:id', authenticate, requireRole('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/api-keys/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     await prisma.apiKey.update({

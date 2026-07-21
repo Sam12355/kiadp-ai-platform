@@ -33,28 +33,19 @@ COPY packages/backend/ ./packages/backend/
 COPY packages/frontend/ ./packages/frontend/
 RUN pnpm --filter @khalifa/backend db:generate
 
-# tsc is run for its EMIT ONLY, not as a gate.
+# Both builds run their package's own script, so tsc is a real gate: a type error fails
+# the image rather than shipping.
 #
-# The tree carries pre-existing type errors: dev runs through tsx, which strips types
-# without checking them, so `tsc` has never had to pass. These are all type-level errors
-# (assignability, missing annotations) — none block code generation, and tsc emits valid
-# JS for every one of them, so the output here is exactly what tsx executes in dev.
-# Its exit code is therefore ignored, and the artifact is asserted instead, so a genuine
-# failure to emit still fails the build.
-#
-# This is deliberate, not a workaround to leave in place: see the deploy notes for the
-# three real runtime bugs the type checker surfaced (document status 'READY', ApiKey
-# 'prefix', and the Question select shape in tenant.routes).
-RUN cd packages/backend \
-    && (./node_modules/.bin/tsc || echo "[build] tsc reported type errors — emitting anyway, see Dockerfile comment") \
-    && test -f dist/server.js
+# This previously had to bypass tsc — the tree carried ~45 pre-existing type errors,
+# invisible because dev runs through tsx, which strips types without checking them. The
+# bulk of them came from @types/express v5 being installed against express v4 (v5 widens
+# req.params values to string | string[]); that is now pinned in the root package.json
+# overrides, and the genuine bugs it was masking are fixed.
+RUN pnpm --filter @khalifa/backend build \
+    && test -f packages/backend/dist/server.js
 
-# vite build directly, rather than the package's "tsc -b && vite build", for the same
-# reason. Vite strips types with esbuild and never type-checks, so this is the normal
-# production path regardless.
-RUN cd packages/frontend \
-    && ./node_modules/.bin/vite build \
-    && test -f dist/index.html
+RUN pnpm --filter @khalifa/frontend build \
+    && test -f packages/frontend/dist/index.html
 
 # ── Runtime ──
 FROM base AS production
