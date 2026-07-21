@@ -7,6 +7,7 @@ import { getPrisma } from '../config/database.js';
 import { uploadImage } from '../middleware/upload.js';
 import { uploadBufferToCloudinary } from '../services/storage.service.js';
 import { BadRequestError, ForbiddenError } from '../utils/errors.js';
+import { getLogger } from '../utils/logger.js';
 
 const router: Router = Router();
 
@@ -31,6 +32,17 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
   logoUrl: z.string().url().optional().nullable(),
+});
+
+/**
+ * Billing state. Split from updateSchema because these two fields decide whether an
+ * institution can use the product at all, and an institution admin edits their own name
+ * and logo — they must not be able to extend their own trial.
+ */
+const planSchema = z.object({
+  plan: z.enum(['trial', 'paid']).optional(),
+  // Null clears the trial end date, which for a 'trial' plan means it never lapses.
+  trialEndsAt: z.string().datetime().nullable().optional(),
 });
 
 // POST /tenants — create institution. Onboarding a school is a platform-owner action.
@@ -93,6 +105,37 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
       where: { id: req.params.id },
       data,
     });
+    res.json({ success: true, data: tenant });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /tenants/:id/plan — set an institution's billing state and trial expiry.
+ *
+ * Platform owner only. requireTenantParam would happily let an institution admin through
+ * to their own tenant, and self-service on the field that decides whether your trial has
+ * ended is not a feature.
+ *
+ * Accepts an explicit timestamp rather than a number of days, so an exact expiry can be
+ * set — including one in the past, which is how you watch the lockout actually fire
+ * instead of waiting a week to find out whether it works.
+ */
+router.patch('/:id/plan', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = planSchema.parse(req.body);
+    const tenant = await getPrisma().tenant.update({
+      where: { id: req.params.id },
+      data: {
+        ...(data.plan ? { plan: data.plan } : {}),
+        ...(data.trialEndsAt !== undefined
+          ? { trialEndsAt: data.trialEndsAt === null ? null : new Date(data.trialEndsAt) }
+          : {}),
+      },
+      select: { id: true, name: true, plan: true, trialEndsAt: true },
+    });
+    getLogger().info({ tenantId: tenant.id, plan: tenant.plan, trialEndsAt: tenant.trialEndsAt }, 'tenant plan updated');
     res.json({ success: true, data: tenant });
   } catch (err) {
     next(err);

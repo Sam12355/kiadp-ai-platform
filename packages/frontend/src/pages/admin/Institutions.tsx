@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/client';
@@ -8,7 +8,10 @@ import {
   Building2, Plus, Users, FileText, HelpCircle, ChevronRight, X,
   AlertCircle, UserPlus, UserMinus, ToggleLeft, ToggleRight, Search,
   Lock, Mail, User, Save, Trash2, RefreshCw, Pencil, Upload, Eye,
+  CalendarClock, FlaskConical,
 } from 'lucide-react';
+
+type Plan = 'trial' | 'paid';
 
 interface Tenant {
   id: string;
@@ -16,6 +19,8 @@ interface Tenant {
   slug: string;
   isActive: boolean;
   createdAt: string;
+  plan: string;
+  trialEndsAt: string | null;
   _count: { users: number; documents: number; questions: number };
 }
 
@@ -42,6 +47,41 @@ const STATUS_COLORS: Record<string, string> = {
   UPLOADED: 'text-blue-700 dark:text-blue-400 bg-blue-500/10 border-blue-500/25',
   FAILED: 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25',
 };
+
+/** Countdown wording. Ceil so "7 days" reads as "7 days left", not "6". */
+function formatRemaining(ms: number): string {
+  const mins = Math.ceil(ms / 60_000);
+  if (mins < 60) return `${mins} min left`;
+  const hrs = Math.ceil(mins / 60);
+  if (hrs < 48) return `${hrs} hr left`;
+  return `${Math.ceil(hrs / 24)} days left`;
+}
+
+/** Billing state as shown to the operator, derived from plan + trialEndsAt vs now. */
+function trialState(t: Pick<Tenant, 'plan' | 'trialEndsAt'>): { label: string; tone: string } {
+  if (t.plan === 'paid') {
+    return { label: 'Paid', tone: 'text-blue-700 dark:text-blue-400 bg-blue-500/10 border-blue-500/25' };
+  }
+  if (!t.trialEndsAt) {
+    return { label: 'Trial · no expiry', tone: 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25' };
+  }
+  const ms = new Date(t.trialEndsAt).getTime() - Date.now();
+  if (ms <= 0) {
+    return { label: 'Trial expired', tone: 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25' };
+  }
+  const tone = ms < 86_400_000
+    ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/25'
+    : 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25';
+  return { label: formatRemaining(ms), tone };
+}
+
+/** ISO → the local wall-clock string a datetime-local input expects. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
 
 function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
@@ -83,6 +123,11 @@ export default function Institutions() {
   const [newUserRole, setNewUserRole] = useState('STUDENT');
   const [newUserError, setNewUserError] = useState('');
 
+  // Trial & billing controls (detail panel)
+  const [planDraft, setPlanDraft] = useState<Plan>('trial');
+  const [trialDraft, setTrialDraft] = useState('');
+  const [planError, setPlanError] = useState('');
+
   // Upload document modal
   const [showUploadDoc, setShowUploadDoc] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -117,6 +162,14 @@ export default function Institutions() {
     enabled: !!selected && tab === 'documents',
   });
 
+  // Keep the trial controls in step with whichever institution is selected, and with the
+  // values the server hands back after a change.
+  useEffect(() => {
+    setPlanDraft(selected?.plan === 'paid' ? 'paid' : 'trial');
+    setTrialDraft(toLocalInput(selected?.trialEndsAt ?? null));
+    setPlanError('');
+  }, [selected?.id, selected?.plan, selected?.trialEndsAt]);
+
   // ── Mutations ─────────────────────────────────────────────
   const editTenantMutation = useMutation({
     mutationFn: async () => (await apiClient.patch(`/tenants/${editing!.id}`, { name: editName })).data.data,
@@ -125,7 +178,7 @@ export default function Institutions() {
       if (selected?.id === editing?.id) setSelected(s => s ? { ...s, name: editName } : s);
       setEditing(null); setEditName(''); setEditError('');
     },
-    onError: (err: any) => setEditError(err.response?.data?.error || 'Failed to update institution'),
+    onError: (err: any) => setEditError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to update institution'),
   });
 
   const createTenantMutation = useMutation({
@@ -134,7 +187,20 @@ export default function Institutions() {
       qc.invalidateQueries({ queryKey: ['admin-tenants'] });
       setShowCreate(false); setCreateName(''); setCreateSlug(''); setCreateError('');
     },
-    onError: (err: any) => setCreateError(err.response?.data?.error || 'Failed to create institution'),
+    onError: (err: any) => setCreateError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to create institution'),
+  });
+
+  const planMutation = useMutation({
+    mutationFn: async (vars: { plan?: Plan; trialEndsAt?: string | null }) => {
+      const { data } = await apiClient.patch(`/tenants/${selected!.id}/plan`, vars);
+      return data.data as Pick<Tenant, 'id' | 'name' | 'plan' | 'trialEndsAt'>;
+    },
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ['admin-tenants'] });
+      setSelected(s => s && s.id === updated.id ? { ...s, plan: updated.plan, trialEndsAt: updated.trialEndsAt } : s);
+      setPlanError('');
+    },
+    onError: (err: any) => setPlanError(err.response?.data?.error?.message || 'Failed to update plan'),
   });
 
   const toggleMutation = useMutation({
@@ -182,7 +248,7 @@ export default function Institutions() {
       setShowCreateUser(false);
       setNewUserName(''); setNewUserEmail(''); setNewUserPassword(''); setNewUserError('');
     },
-    onError: (err: any) => setNewUserError(err.response?.data?.error || 'Failed to create user'),
+    onError: (err: any) => setNewUserError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to create user'),
   });
 
   const deleteDocMutation = useMutation({
@@ -205,7 +271,7 @@ export default function Institutions() {
       setShowUploadDoc(false);
       setUploadTitle(''); setUploadFile(null); setUploadError('');
     },
-    onError: (err: any) => setUploadError(err.response?.data?.error || 'Failed to upload document'),
+    onError: (err: any) => setUploadError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to upload document'),
   });
 
   // ── Derived ───────────────────────────────────────────────
@@ -221,6 +287,11 @@ export default function Institutions() {
   );
 
   const autoSlug = (n: string) => n.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  // Quick-sets force plan back to 'trial' — expiring a date on a 'paid' tenant would
+  // change nothing, and the point of these buttons is to make the lockout actually fire.
+  const quickSetTrial = (offsetMs: number) =>
+    planMutation.mutate({ plan: 'trial', trialEndsAt: new Date(Date.now() + offsetMs).toISOString() });
 
   return (
     <div className="animate-fade-in max-w-7xl mx-auto space-y-8">
@@ -459,6 +530,9 @@ export default function Institutions() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-bold text-ink">{t.name}</p>
                     {!t.isActive && <span className="text-[9px] font-black uppercase tracking-widest text-red-700 dark:text-red-400 bg-red-500/10 border border-red-500/25 px-2 py-0.5 rounded-full">Inactive</span>}
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${trialState(t).tone}`}>
+                      {trialState(t).label}
+                    </span>
                   </div>
                   <p className="text-xs text-ink-faint font-mono mt-0.5">{t.slug}</p>
                   <div className="flex items-center gap-4 mt-2 text-[10px] text-ink-faint uppercase tracking-widest">
@@ -506,6 +580,82 @@ export default function Institutions() {
               <Eye className="w-3.5 h-3.5" />
               View as this institution
             </button>
+
+            {/* ── Trial & billing ── */}
+            <div className="space-y-3 p-4 bg-raised border border-line-soft rounded-2xl">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-ink-mute flex items-center gap-1.5">
+                  <CalendarClock className="w-3.5 h-3.5" /> Trial &amp; Billing
+                </p>
+                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${trialState(selected).tone}`}>
+                  {trialState(selected).label}
+                </span>
+              </div>
+
+              {planError && (
+                <div className="flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-[11px]">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{planError}
+                </div>
+              )}
+
+              {/* Plan toggle — applies immediately */}
+              <div className="flex bg-surface rounded-xl p-1 gap-1">
+                {(['trial', 'paid'] as const).map((p) => (
+                  <button key={p}
+                    disabled={planMutation.isPending}
+                    onClick={() => { setPlanDraft(p); planMutation.mutate({ plan: p }); }}
+                    className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${planDraft === p ? 'bg-overlay text-ink' : 'text-ink-faint hover:text-ink'}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+
+              {/* Exact expiry */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Trial ends at</label>
+                <div className="flex gap-2">
+                  <input type="datetime-local" value={trialDraft}
+                    onChange={(e) => setTrialDraft(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2 bg-surface border border-line rounded-xl text-ink text-xs focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  />
+                  <button
+                    disabled={planMutation.isPending}
+                    onClick={() => planMutation.mutate({
+                      trialEndsAt: trialDraft ? new Date(trialDraft).toISOString() : null,
+                    })}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer whitespace-nowrap">
+                    {planMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    Save
+                  </button>
+                </div>
+                <p className="text-[10px] text-ink-faint px-1">Leave empty and save to clear the expiry (trial never lapses).</p>
+              </div>
+
+              {/* Quick-sets for testing the lockout */}
+              <div className="space-y-1.5 pt-1 border-t border-line-soft">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400 flex items-center gap-1.5 pt-2">
+                  <FlaskConical className="w-3.5 h-3.5" /> Testing — force a trial state
+                </p>
+                <div className="flex gap-2">
+                  {([
+                    { label: 'Expire now', offset: -60_000 },
+                    { label: '2 minutes', offset: 2 * 60_000 },
+                    { label: '7 days', offset: 7 * 24 * 60 * 60_000 },
+                  ] as const).map((q) => (
+                    <button key={q.label}
+                      disabled={planMutation.isPending}
+                      onClick={() => quickSetTrial(q.offset)}
+                      className="flex-1 py-2 bg-surface hover:bg-overlay border border-line text-ink rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-ink-faint px-1">
+                  Sets the plan to trial and moves the end date. Use “2 minutes”, then sign in as one of this
+                  institution's admins — the lock fires on its own when the clock runs out.
+                </p>
+              </div>
+            </div>
 
             {/* Tabs */}
             <div className="flex bg-raised rounded-xl p-1 gap-1">

@@ -74,7 +74,7 @@ export default function SettingsPanel({ onClose }: Props) {
       setAvatar(null);
       setTimeout(() => setProfileSuccess(''), 3000);
     } catch (err: any) {
-      setProfileError(err.response?.data?.error || t.profileUpdateFailed);
+      setProfileError((err.response?.data?.error?.message ?? err.response?.data?.error) || t.profileUpdateFailed);
     } finally { setProfileLoading(false); }
   };
 
@@ -89,7 +89,7 @@ export default function SettingsPanel({ onClose }: Props) {
       setCurrentPw(''); setNewPw(''); setConfirmPw('');
       setTimeout(() => setSecSuccess(''), 3000);
     } catch (err: any) {
-      setSecError(err.response?.data?.error || t.passwordChangeFailed);
+      setSecError((err.response?.data?.error?.message ?? err.response?.data?.error) || t.passwordChangeFailed);
     } finally { setSecLoading(false); }
   };
 

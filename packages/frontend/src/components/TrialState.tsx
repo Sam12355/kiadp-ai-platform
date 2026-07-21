@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { isTrialExpired, trialDaysLeft } from '../lib/homeRoute';
@@ -66,4 +67,45 @@ export function TrialBanner() {
       </Link>
     </div>
   );
+}
+
+/**
+ * Locks the app the moment the trial lapses, without waiting for a reload or a request.
+ *
+ * Two independent triggers, because either alone leaves a hole:
+ *  - A timer set for the exact expiry instant catches an idle tab whose clock simply runs
+ *    out. Polling would mean showing a working product for up to a poll interval after it
+ *    had stopped being paid for.
+ *  - `trialLocked`, set by the 402 interceptor, catches an end date changed on the server
+ *    since this page loaded — the browser's copy would otherwise still look valid.
+ *
+ * Returns whether the app should be locked right now.
+ */
+export function useTrialLock(subject?: { plan?: string | null; trialEndsAt?: string | null } | null): boolean {
+  const user = useAuthStore((s) => s.user);
+  const trialLocked = useAuthStore((s) => s.trialLocked);
+  const setTrialLocked = useAuthStore((s) => s.setTrialLocked);
+
+  // `subject` is the institution actually on screen. It differs from the signed-in user
+  // only during "view as", where the platform owner has no trial of their own — without
+  // it the preview would show a working panel for an institution whose staff are locked
+  // out, which is precisely the thing the preview exists to reveal.
+  const endsAt = subject ? subject.trialEndsAt ?? null : user?.tenantTrialEndsAt ?? null;
+  const isTrial = (subject ? subject.plan : user?.tenantPlan) === 'trial';
+
+  useEffect(() => {
+    if (!isTrial || !endsAt) return;
+    const ms = new Date(endsAt).getTime() - Date.now();
+    if (ms <= 0) {
+      setTrialLocked(true);
+      return;
+    }
+    // setTimeout saturates above ~24.8 days; anything beyond that is re-armed on the next
+    // mount long before it matters.
+    const id = window.setTimeout(() => setTrialLocked(true), Math.min(ms, 2_000_000_000));
+    return () => window.clearTimeout(id);
+  }, [isTrial, endsAt, setTrialLocked]);
+
+  if (subject) return trialLocked || (isTrial && !!endsAt && new Date(endsAt).getTime() <= Date.now());
+  return trialLocked || isTrialExpired(user);
 }

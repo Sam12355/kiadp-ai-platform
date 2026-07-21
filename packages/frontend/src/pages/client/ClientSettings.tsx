@@ -92,7 +92,7 @@ export default function ClientSettings() {
       setAvatar(null);
       setTimeout(() => setProfileSuccess(''), 3000);
     } catch (err: any) {
-      setProfileError(err.response?.data?.error?.message || err.response?.data?.error || 'Failed to update profile.');
+      setProfileError(err.response?.data?.error?.message || (err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to update profile.');
     } finally {
       setProfileLoading(false);
     }
@@ -109,7 +109,7 @@ export default function ClientSettings() {
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       setTimeout(() => setSecuritySuccess(''), 3000);
     } catch (err: any) {
-      setSecurityError(err.response?.data?.error || 'Failed to change password. Check your current password.');
+      setSecurityError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to change password. Check your current password.');
     } finally {
       setSecurityLoading(false);
     }
@@ -164,9 +164,9 @@ export default function ClientSettings() {
         <div className="px-5 pt-7 pb-4">
           <button onClick={() => navigate('/knowledge')} className="flex items-center">
             <span className="whitespace-nowrap flex items-center gap-1.5 uppercase app-logo">
-              {/* .kiadp-text clips a white→grey gradient into the glyphs — invisible on a light
+              {/* .logo-text clips a white→grey gradient into the glyphs — invisible on a light
                   sidebar — so re-point it at the ink tokens. */}
-              <span className="kiadp-text" style={{ backgroundImage: 'linear-gradient(to bottom, var(--t-ink), var(--t-ink-soft))' }}>Edu</span><span className="ai-highlight">AI</span>
+              <span className="logo-text" style={{ backgroundImage: 'linear-gradient(to bottom, var(--t-ink), var(--t-ink-soft))' }}>Edu</span><span className="ai-highlight">AI</span>
             </span>
           </button>
         </div>

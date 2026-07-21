@@ -56,7 +56,7 @@ export default function SchoolProfile() {
       setInstError('');
       setTimeout(() => setInstSaved(false), 3000);
     },
-    onError: (err: any) => setInstError(err.response?.data?.error || 'Failed to update institution'),
+    onError: (err: any) => setInstError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to update institution'),
   });
 
   const uploadLogoMutation = useMutation({
@@ -76,7 +76,7 @@ export default function SchoolProfile() {
       setTimeout(() => setLogoSaved(false), 3000);
     },
     onError: (err: any) => {
-      setLogoError(err.response?.data?.error || 'Failed to upload logo');
+      setLogoError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to upload logo');
       setLogoUploading(false);
     },
   });
@@ -100,7 +100,7 @@ export default function SchoolProfile() {
       setTimeout(() => setProfileSaved(false), 3000);
     },
     onError: (err: any) => {
-      setProfileError(err.message || err.response?.data?.error || 'Failed to update profile');
+      setProfileError(err.message || (err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to update profile');
     },
   });
 

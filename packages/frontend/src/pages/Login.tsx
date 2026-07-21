@@ -118,7 +118,7 @@ export default function Login() {
               </svg>
             </div>
             <h1 className="tracking-tight whitespace-nowrap app-logo uppercase mb-2" style={{ fontSize: '2.8rem' }}>
-              <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
+              <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
             </h1>
             <p className="text-[var(--color-text-secondary)] mt-2 text-sm">{t.loginSubtitle}</p>
           </div>

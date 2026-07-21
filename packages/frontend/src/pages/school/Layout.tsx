@@ -9,13 +9,14 @@ import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 import ThemeToggle from '../../components/ThemeToggle';
 import { useImpersonationStore } from '../../store/impersonationStore';
-import { TrialExpiredScreen, TrialBanner } from '../../components/TrialState';
-import { isTrialExpired } from '../../lib/homeRoute';
+import { TrialExpiredScreen, TrialBanner, useTrialLock } from '../../components/TrialState';
 
 interface TenantInfo {
   id: string;
   name: string;
   logoUrl: string | null;
+  plan?: string | null;
+  trialEndsAt?: string | null;
 }
 
 export default function SchoolLayout() {
@@ -36,6 +37,11 @@ export default function SchoolLayout() {
     enabled: !!activeTenantId,
   });
 
+  // `tenant` is the institution this panel is showing — the impersonated one under
+  // "view as", the admin's own otherwise.
+  const locked = useTrialLock(tenant ? { plan: tenant.plan, trialEndsAt: tenant.trialEndsAt } : undefined);
+
+
   useEffect(() => {
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   }, [lang]);
@@ -54,7 +60,7 @@ export default function SchoolLayout() {
 
   // The backend already refuses the work; this is the same decision made visible, so the
   // panel explains itself instead of failing request by request.
-  if (isTrialExpired(user)) return <TrialExpiredScreen />;
+  if (locked) return <TrialExpiredScreen />;
 
   const navigation = [
     { name: t.dashboard, href: '/school', icon: LayoutDashboard },

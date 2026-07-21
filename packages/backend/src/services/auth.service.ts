@@ -202,8 +202,22 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
   };
 }
 
-/** How long a self-serve trial runs. */
-export const TRIAL_DAYS = 7;
+/** Fallback when no trial length has been configured. */
+export const DEFAULT_TRIAL_DAYS = 7;
+
+/**
+ * How long a new self-serve trial runs, in days.
+ *
+ * Read per signup rather than captured at boot, so changing it in the admin panel takes
+ * effect on the next signup instead of the next deploy. Existing trials keep the end date
+ * they were given — shortening the setting must not retroactively expire people who are
+ * already mid-trial.
+ */
+export async function getTrialDays(): Promise<number> {
+  const row = await getPrisma().appSetting.findUnique({ where: { key: 'trial_days' } });
+  const n = Number(row?.value);
+  return Number.isFinite(n) && n >= 1 && n <= 365 ? Math.floor(n) : DEFAULT_TRIAL_DAYS;
+}
 
 /**
  * True when an institution's free trial has run out.
@@ -263,7 +277,7 @@ export async function startTrial(input: {
   }
 
   const passwordHash = await bcrypt.hash(input.password, 12);
-  const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+  const trialEndsAt = new Date(Date.now() + (await getTrialDays()) * 24 * 60 * 60 * 1000);
   const slug = await uniqueSlug(input.institutionName);
 
   const user = await prisma.$transaction(async (tx) => {

@@ -11,7 +11,7 @@ i18n
     resources: {
       en: {
         translation: {
-          app_name: 'KIADP AI',
+          app_name: 'EduAI',
           new_conversation: 'New conversation',
           recent: 'Recent',
           click_rename: 'Click to rename',
@@ -31,7 +31,7 @@ i18n
       },
       fr: {
         translation: {
-          app_name: 'KIADP AI',
+          app_name: 'EduAI',
           new_conversation: 'Nouvelle conversation',
           recent: 'Récent',
           click_rename: 'Cliquez pour renommer',
@@ -51,7 +51,7 @@ i18n
       },
       ar: {
         translation: {
-          app_name: 'KIADP AI',
+          app_name: 'EduAI',
           new_conversation: 'محادثة جديدة',
           recent: 'الأخيرة',
           click_rename: 'انقر لإعادة التسمية',

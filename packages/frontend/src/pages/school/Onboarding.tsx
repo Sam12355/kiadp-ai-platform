@@ -63,7 +63,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
       setLogoError('');
       advance();
     },
-    onError: (e: any) => setLogoError((e.response?.data?.error?.message ?? e.response?.data?.error) || 'Failed to upload logo'),
+    onError: (e: any) => setLogoError((e.response?.data?.error?.message ?? (e.response?.data?.error?.message ?? e.response?.data?.error)) || 'Failed to upload logo'),
   });
 
   const userMutation = useMutation({
@@ -78,7 +78,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
       setUserError('');
       advance();
     },
-    onError: (e: any) => setUserError((e.response?.data?.error?.message ?? e.response?.data?.error) || 'Failed to create user'),
+    onError: (e: any) => setUserError((e.response?.data?.error?.message ?? (e.response?.data?.error?.message ?? e.response?.data?.error)) || 'Failed to create user'),
   });
 
   const docMutation = useMutation({
@@ -96,7 +96,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
       setDocError('');
       advance();
     },
-    onError: (e: any) => setDocError((e.response?.data?.error?.message ?? e.response?.data?.error) || 'Failed to upload document'),
+    onError: (e: any) => setDocError((e.response?.data?.error?.message ?? (e.response?.data?.error?.message ?? e.response?.data?.error)) || 'Failed to upload document'),
   });
 
   const steps = [

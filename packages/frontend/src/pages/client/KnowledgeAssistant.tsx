@@ -522,9 +522,9 @@ export default function KnowledgeAssistant() {
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <span className="whitespace-nowrap flex items-center gap-1.5 uppercase app-logo">
-                {/* .kiadp-text paints a white→grey gradient into the glyphs, which is invisible
+                {/* .logo-text paints a white→grey gradient into the glyphs, which is invisible
                     on a light sidebar; re-point it at the ink tokens so it follows the theme. */}
-                <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
+                <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
               </span>
               {(user?.tenantLogoUrl || institutionName) && (
                 <div className="flex items-center gap-2 mt-2">

@@ -36,7 +36,7 @@ export default function CreateUserModal({ onClose, onSuccess }: CreateUserModalP
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.error || t.failedCreateUser);
+      setError((err.response?.data?.error?.message ?? err.response?.data?.error) || t.failedCreateUser);
     } finally {
       setLoading(false);
     }

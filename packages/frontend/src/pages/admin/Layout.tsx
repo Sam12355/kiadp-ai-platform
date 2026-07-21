@@ -90,7 +90,7 @@ export default function AdminLayout() {
             </div>
             <div className="flex flex-col">
               <span className="tracking-tight uppercase leading-none whitespace-nowrap app-logo">
-                <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
+                <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
               </span>
               <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest mt-1">{t.adminPanel}</span>
             </div>

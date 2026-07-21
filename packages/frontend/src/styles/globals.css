@@ -15,7 +15,7 @@
 }
 
 /* ============================================
-   KIADP AI Knowledge Platform — Design Tokens
+   EduAI — Design Tokens
    ============================================ */
 
 @theme {
@@ -874,7 +874,7 @@ a:disabled,
     }
 }
 
-/* ── KIADP AI Logo ── */
+/* ── EduAI Logo ── */
 .app-logo {
   font-family: 'Bungee', system-ui, sans-serif !important;
   font-weight: 400 !important;
@@ -890,8 +890,8 @@ a:disabled,
   color: var(--t-ink);
 }
 
-/* KIADP word — white with subtle grey fade */
-.kiadp-text {
+/* Wordmark — gradient-clipped into the glyphs, themed via --t-logo-* */
+.logo-text {
   font-family: 'Bungee', system-ui, sans-serif !important;
   background: linear-gradient(to bottom, var(--t-logo-from) 0%, var(--t-logo-to) 100%);
   -webkit-background-clip: text;
@@ -915,12 +915,12 @@ a:disabled,
 
 /* RTL: keep Bungee regardless */
 [dir="rtl"] .app-logo,
-[dir="rtl"] .kiadp-text,
+[dir="rtl"] .logo-text,
 [dir="rtl"] .ai-highlight {
   font-family: 'Bungee', system-ui, sans-serif !important;
 }
 
-[dir="rtl"] .kiadp-text {
+[dir="rtl"] .logo-text {
   -webkit-background-clip: text !important;
   background-clip: text !important;
   -webkit-text-fill-color: transparent !important;

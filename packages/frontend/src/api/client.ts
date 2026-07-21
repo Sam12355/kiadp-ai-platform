@@ -27,6 +27,20 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+// ── Response interceptor: trial lockout ──
+// 402 means the institution's access has lapsed. The client's copy of the end date may be
+// stale — an admin can move it at any moment — so the server's refusal is what flips the
+// app into its locked state, immediately and without a reload.
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 402) {
+      useAuthStore.getState().setTrialLocked(true);
+    }
+    return Promise.reject(error);
+  },
+);
+
 // ── Response interceptor: handle 401 + token refresh ──
 apiClient.interceptors.response.use(
   (response) => response,

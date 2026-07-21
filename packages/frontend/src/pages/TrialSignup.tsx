@@ -131,7 +131,7 @@ export default function TrialSignup() {
         <div className="text-center mb-6">
           <Link to="/" className="inline-flex items-center">
             <span className="app-logo uppercase" style={{ fontSize: '1.35rem' }}>
-              <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
+              <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
             </span>
           </Link>
         </div>

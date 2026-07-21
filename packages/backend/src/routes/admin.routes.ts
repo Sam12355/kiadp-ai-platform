@@ -6,6 +6,7 @@ import { UserRole, Prisma } from '@prisma/client';
 import { processTextContent } from '../services/ingestion.service.js';
 import { BadRequestError, NotFoundError } from '../utils/errors.js';
 import { generateApiKey } from '../middleware/api-key.middleware.js';
+import { getTrialDays, DEFAULT_TRIAL_DAYS } from '../services/auth.service.js';
 import { z } from 'zod';
 
 const router: Router = Router();
@@ -941,6 +942,49 @@ router.post(
 
 const VALID_PROVIDERS = ['auto', 'openai', 'gemini', 'groq'] as const;
 type AIProvider = typeof VALID_PROVIDERS[number];
+
+/**
+ * @openapi
+ * /admin/settings/trial-days:
+ *   get:
+ *     summary: How long a new free trial runs (platform setting)
+ *     tags: [Admin]
+ */
+router.get('/settings/trial-days', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireSuperAdmin, async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: { days: await getTrialDays(), default: DEFAULT_TRIAL_DAYS } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/settings/trial-days:
+ *   put:
+ *     summary: Set how long a new free trial runs
+ *     tags: [Admin]
+ */
+router.put('/settings/trial-days', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const days = Number(req.body?.days);
+    // Bounded rather than free-form: zero would create trials that are already over, and an
+    // unbounded value turns "trial" into "free forever" by accident.
+    if (!Number.isFinite(days) || days < 1 || days > 365) {
+      throw new BadRequestError('Trial length must be between 1 and 365 days');
+    }
+    const value = String(Math.floor(days));
+    await getPrisma().appSetting.upsert({
+      where: { key: 'trial_days' },
+      update: { value },
+      create: { key: 'trial_days', value },
+    });
+    // Only affects signups from here on; tenants already on a trial keep their end date.
+    res.json({ success: true, data: { days: Math.floor(days) } });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * @openapi

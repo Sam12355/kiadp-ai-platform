@@ -60,7 +60,7 @@ export default function SchoolUsers() {
       setShowCreate(false);
       setNewName(''); setNewEmail(''); setNewPassword(''); setCreateError('');
     },
-    onError: (err: any) => setCreateError(err.response?.data?.error || 'Failed to create user'),
+    onError: (err: any) => setCreateError((err.response?.data?.error?.message ?? err.response?.data?.error) || 'Failed to create user'),
   });
 
   const removeMutation = useMutation({

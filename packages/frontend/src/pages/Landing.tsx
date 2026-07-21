@@ -8,7 +8,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import { useLanguageStore, LANGUAGE_LABELS, type SupportedLang } from '../store/languageStore';
 import { landingCopy, type LandingCopy } from '../i18n/landing';
 import {
-  usePrefersReducedMotion, useSmoothScroll, useReveal, useParallax, useTabHidden,
+  usePrefersReducedMotion, useSmoothScroll, useReveal, useTabHidden,
 } from '../hooks/useScrollAnimation';
 import 'lenis/dist/lenis.css';
 
@@ -40,7 +40,7 @@ const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
 function Wordmark({ size = '1.05rem' }: { size?: string }) {
   return (
     <span className="app-logo uppercase" style={{ fontSize: size }}>
-      <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
+      <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
     </span>
   );
 }
@@ -146,7 +146,7 @@ function DemoSlider({ copy, motion, tracking }: { copy: LandingCopy; motion: boo
   // leaving the new slide to inherit whatever was left of the previous one.
   useEffect(() => {
     if (!running) return;
-    const id = window.setTimeout(() => setIndex((i) => (i + 1) % items.length), 5000);
+    const id = window.setTimeout(() => setIndex((i) => (i + 1) % items.length), SLIDE_MS);
     return () => window.clearTimeout(id);
   }, [running, index, items.length]);
 
@@ -236,6 +236,12 @@ function DemoSlider({ copy, motion, tracking }: { copy: LandingCopy; motion: boo
   );
 }
 
+/**
+ * Long enough to read the answer, not just register that one is there. The exchanges run to
+ * several lines in every language, and longer still in Sinhala and Tamil.
+ */
+const SLIDE_MS = 15000;
+
 export default function Landing() {
   const { lang } = useLanguageStore();
   const copy = landingCopy[lang];
@@ -245,8 +251,6 @@ export default function Landing() {
   const motion = !reduced;
 
   useSmoothScroll(motion);
-  const blobA = useParallax<HTMLDivElement>(0.24, motion);
-  const blobB = useParallax<HTMLDivElement>(0.12, motion);
 
   // Letter-spacing breaks the cursive joins in Arabic, so the tracked micro-labels lose it.
   const tracking = isRtl ? '' : 'tracking-widest';
@@ -280,18 +284,6 @@ export default function Landing() {
       <main>
         {/* ── Hero ── */}
         <section className="relative mx-auto max-w-6xl px-4 sm:px-6 pt-14 pb-16 sm:pt-20 sm:pb-24">
-          {/* Decorative depth layers. Clipped by the wrapper so the offsets can never open a
-              horizontal scrollbar, and inert to the pointer so they cannot eat clicks. */}
-          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div
-              ref={blobA}
-              className="absolute -top-32 start-[-8rem] w-[26rem] h-[26rem] rounded-full blur-3xl opacity-25 bg-[radial-gradient(circle,var(--color-palm-400),transparent_65%)]"
-            />
-            <div
-              ref={blobB}
-              className="absolute top-48 end-[-10rem] w-[30rem] h-[30rem] rounded-full blur-3xl opacity-20 bg-[radial-gradient(circle,var(--color-palm-600),transparent_65%)]"
-            />
-          </div>
 
           <div className="relative grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             <div className="animate-fade-in">
@@ -445,7 +437,7 @@ export default function Landing() {
             </Link>
           </div>
           <p className="text-xs text-ink-faint">
-            © {new Date().getFullYear()} KIADP AI Knowledge Platform
+            © {new Date().getFullYear()} EduAI
           </p>
         </div>
       </footer>

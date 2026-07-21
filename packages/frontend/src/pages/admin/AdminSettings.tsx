@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Brain, Zap, Layers, Cpu, CheckCircle2, AlertCircle, Loader2, Save } from 'lucide-react';
+import { Brain, Zap, Layers, Cpu, CheckCircle2, AlertCircle, Loader2, Save, CalendarClock } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useLanguageStore } from '../../store/languageStore';
 
@@ -44,6 +44,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
 ];
 
+/** Pulls the server's message out of an axios error without widening to `any`. */
+function apiErrorMessage(err: unknown, fallback: string): string {
+  const message = (err as { response?: { data?: { error?: { message?: string } } } })
+    ?.response?.data?.error?.message;
+  return message || fallback;
+}
+
 export default function AdminSettings() {
   const { lang } = useLanguageStore();
   const [selected, setSelected] = useState<AIProvider>('auto');
@@ -52,6 +59,15 @@ export default function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Free trial length. Held as a string so the field can be cleared while typing.
+  const [trialDays, setTrialDays] = useState('');
+  const [savedTrialDays, setSavedTrialDays] = useState('');
+  const [defaultTrialDays, setDefaultTrialDays] = useState<number | null>(null);
+  const [trialLoading, setTrialLoading] = useState(true);
+  const [trialSaving, setTrialSaving] = useState(false);
+  const [trialError, setTrialError] = useState('');
+  const [trialSuccess, setTrialSuccess] = useState('');
 
   useEffect(() => {
     apiClient.get('/admin/settings/ai-provider')
@@ -62,6 +78,18 @@ export default function AdminSettings() {
       })
       .catch(() => setError('Failed to load settings'))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    apiClient.get('/admin/settings/trial-days')
+      .then(res => {
+        const days = String(res.data?.data?.days ?? '');
+        setTrialDays(days);
+        setSavedTrialDays(days);
+        setDefaultTrialDays(res.data?.data?.default ?? null);
+      })
+      .catch(() => setTrialError('Failed to load trial settings'))
+      .finally(() => setTrialLoading(false));
   }, []);
 
   const handleSave = async () => {
@@ -80,12 +108,34 @@ export default function AdminSettings() {
     }
   };
 
+  const handleSaveTrial = async () => {
+    setTrialSaving(true);
+    setTrialError('');
+    setTrialSuccess('');
+    try {
+      const { data } = await apiClient.put('/admin/settings/trial-days', { days: Number(trialDays) });
+      const days = String(data?.data?.days ?? trialDays);
+      setTrialDays(days);
+      setSavedTrialDays(days);
+      setTrialSuccess('Trial length updated. New signups will use it.');
+      setTimeout(() => setTrialSuccess(''), 3000);
+    } catch (err) {
+      setTrialError(apiErrorMessage(err, 'Failed to save trial length. Please try again.'));
+    } finally {
+      setTrialSaving(false);
+    }
+  };
+
   const isDirty = selected !== saved;
+
+  const trialDaysNum = Number(trialDays);
+  const trialValid = trialDays.trim() !== '' && Number.isInteger(trialDaysNum) && trialDaysNum >= 1 && trialDaysNum <= 365;
+  const trialDirty = trialDays !== savedTrialDays;
 
   return (
     <div className="p-6 md:p-10 max-w-2xl mx-auto">
       <h1 className="text-2xl font-black uppercase tracking-widest text-ink mb-1">Settings</h1>
-      <p className="text-ink-mute text-sm mb-8">Configure system-wide AI behaviour</p>
+      <p className="text-ink-mute text-sm mb-8">Configure system-wide AI and billing behaviour</p>
 
       <div className="bg-raised border border-line rounded-2xl p-6">
         <h2 className="text-xs font-black uppercase tracking-widest text-ink-soft mb-4">AI Provider</h2>
@@ -157,6 +207,77 @@ export default function AdminSettings() {
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-raised border border-line rounded-2xl p-6 mt-6">
+        <h2 className="text-xs font-black uppercase tracking-widest text-ink-soft mb-4">Free Trial</h2>
+
+        {trialLoading ? (
+          <div className="flex items-center gap-2 text-ink-mute text-sm py-4">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading…
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start gap-4 p-4 rounded-xl border border-line bg-raised">
+              <div className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400">
+                <CalendarClock className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <label htmlFor="trial-days" className="text-sm font-bold text-ink">
+                  Trial length for new institutions
+                </label>
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    id="trial-days"
+                    type="number"
+                    min={1}
+                    max={365}
+                    step={1}
+                    value={trialDays}
+                    onChange={e => setTrialDays(e.target.value)}
+                    className="w-28 px-3 py-2 bg-surface border border-line rounded-xl text-ink text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  />
+                  <span className="text-xs text-ink-mute">days</span>
+                  {defaultTrialDays !== null && (
+                    <span className="text-[10px] font-black uppercase tracking-widest text-ink-faint">
+                      Default {defaultTrialDays}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-ink-mute mt-2">
+                  Changing this only affects <span className="font-bold text-ink-soft">new signups</span> — institutions
+                  already on a trial keep the end date they were given. Must be between 1 and 365 days.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {trialError && (
+          <div className="mt-4 flex items-center gap-2 text-red-700 dark:text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {trialError}
+          </div>
+        )}
+
+        {trialSuccess && (
+          <div className="mt-4 flex items-center gap-2 text-emerald-700 dark:text-emerald-400 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            {trialSuccess}
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={handleSaveTrial}
+            disabled={!trialDirty || !trialValid || trialSaving || trialLoading}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-black text-sm uppercase tracking-widest transition-all active:scale-95"
+          >
+            {trialSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {trialSaving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>

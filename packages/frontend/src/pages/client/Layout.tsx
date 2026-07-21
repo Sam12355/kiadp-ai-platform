@@ -1,8 +1,7 @@
 import { useEffect } from 'react';
 import { Outlet, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { TrialExpiredScreen } from '../../components/TrialState';
-import { isTrialExpired } from '../../lib/homeRoute';
+import { TrialExpiredScreen, useTrialLock } from '../../components/TrialState';
 import BubblesBackground from '../../components/BubblesBackground';
 import { User, LogOut } from 'lucide-react';
 
@@ -14,6 +13,7 @@ export default function ClientLayout() {
   const { lang, setLanguage } = useLanguageStore();
   const t = translations[lang];
   const navigate = useNavigate();
+  const locked = useTrialLock();
 
   // Apply language directionality
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function ClientLayout() {
   // A student whose institution's trial has lapsed sees the same notice as their admin.
   // Their questions are the running cost, so leaving them able to ask would mean the
   // trial never actually ends.
-  if (isTrialExpired(user)) return <TrialExpiredScreen />;
+  if (locked) return <TrialExpiredScreen />;
 
   return (
     <div className="min-h-screen bg-transparent text-ink flex flex-col relative overflow-hidden">
