@@ -4,6 +4,16 @@ import { useAuthStore } from '../store/authStore';
 import { isTrialExpired, trialDaysLeft } from '../lib/homeRoute';
 
 /**
+ * Where an expired institution should write to. Set this to your real address.
+ *
+ * Empty on purpose rather than carrying a plausible-looking default: an address nobody
+ * reads is worse than no address, because the customer believes they have made contact.
+ * While it is empty the screen tells them to reach their platform administrator instead
+ * of offering a link that goes nowhere.
+ */
+const SUPPORT_EMAIL = '';
+
+/**
  * Full-screen replacement shown to an institution whose trial has lapsed.
  *
  * Their data is untouched — the backend refuses new work but deletes nothing — and the
@@ -30,12 +40,18 @@ export function TrialExpiredScreen() {
           will be exactly as you left them the moment your account is reactivated.
         </p>
 
-        <a
-          href="mailto:hello@kiadp.ai?subject=Continuing%20after%20our%20trial"
-          className="block w-full py-3 rounded-xl bg-[var(--color-palm-700)] hover:bg-[var(--color-palm-800)] text-white text-sm font-bold transition-colors"
-        >
-          Get in touch to continue
-        </a>
+        {SUPPORT_EMAIL ? (
+          <a
+            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Continuing after our trial')}`}
+            className="block w-full py-3 rounded-xl bg-[var(--color-palm-700)] hover:bg-[var(--color-palm-800)] text-white text-sm font-bold transition-colors"
+          >
+            Get in touch to continue
+          </a>
+        ) : (
+          <p className="w-full py-3 rounded-xl bg-overlay border border-line text-sm font-semibold text-ink-soft">
+            Contact your platform administrator to continue
+          </p>
+        )}
 
         <button
           onClick={logout}
