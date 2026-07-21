@@ -520,6 +520,63 @@ CONTENT RULES (Grounded Intelligence):
 6. REFUSAL: If the context is entirely irrelevant, trigger the [UNGROUNDED] protocol.
 `;
 
+/**
+ * Used instead of SYSTEM_PROMPT when the user asks to see the source text itself
+ * ("read it as it is", "word for word", "quote the exact text").
+ *
+ * SYSTEM_PROMPT cannot serve that request, and not because the model misbehaves: it
+ * mandates bolding key terms, ### headers and bullet lists, and requires an inline
+ * [Source N] after every factual sentence. Those rules force the passage to be broken
+ * up and rewritten, so a verbatim request comes back heavily paraphrased. This prompt
+ * drops the formatting and per-sentence citation mandates and asks for reproduction.
+ *
+ * Note this is deliberately NOT combined with LANGUAGE_PROMPT — instructing the model
+ * to "respond entirely in <language>" would make it translate the very text the user
+ * asked to see unchanged.
+ */
+const VERBATIM_SYSTEM_PROMPT = `
+You are reproducing source material exactly as written for a school knowledge base.
+
+The user has asked to see the text AS IT APPEARS in the source document. Your job is
+transcription, not explanation.
+
+RULES:
+1. Reproduce the relevant passage from the CONTEXT DOCUMENTS word for word. Preserve the
+   original wording, spelling, punctuation, capitalisation, numbers and line breaks.
+2. Do NOT paraphrase, summarise, shorten, simplify, correct or "improve" the text.
+3. Do NOT add bold, headers, bullet points, or any formatting that is not in the original.
+4. Do NOT add inline [Source N] citations inside the quoted text — they would corrupt it.
+   Instead, name the file and page once on a line before the quote, like:
+   From <filename>, page <N>:
+5. Reproduce the text in its ORIGINAL LANGUAGE. Do not translate it.
+6. Quote only the passage the user asked about. If they asked for a specific section and
+   the sources contain more, quote just that section.
+7. If the requested text is not present in the CONTEXT DOCUMENTS, say so plainly and
+   trigger the [UNGROUNDED] protocol. Never reconstruct it from your own knowledge.
+8. If the passage is visibly cut off at the start or end of the provided context, quote
+   what you have and add a final line noting that the excerpt is partial.
+
+Any brief remark of your own must go after the quoted text, never inside it.
+`;
+
+/**
+ * True when the user is asking for source text rather than an explanation.
+ *
+ * Deliberately a keyword test rather than an LLM classification: it runs on every
+ * question, and a wrong positive merely returns the passage unedited, which is a far
+ * cheaper failure than a wrong negative silently paraphrasing what was asked for
+ * literally. Covers the phrasings students actually use, in the four supported languages.
+ */
+function wantsVerbatim(text: string): boolean {
+  return /\b(verbatim|word[- ]for[- ]word|word by word|exact(ly)? as|as it is|as[- ]is|as written|as it appears|as they appear|copy the text|exact text|exact wording|original text|original wording|quote (the|it|that|this)|without (changing|rephrasing|paraphrasing|summari[sz]ing)|don'?t (change|rephrase|paraphrase|summari[sz]e)|do not (change|rephrase|paraphrase|summari[sz]e)|read it out|read the (text|content|passage|paragraph)|full text)\b/i.test(text)
+    // Sinhala: "as it is" / "exactly" / "word for word"
+    || /(තියෙන\s*විදිහට|ඒ\s*විදිහටම|වචනෙන්\s*වචනය|මුල්\s*පෙළ)/.test(text)
+    // Tamil: "as it is" / "exactly" / "word for word"
+    || /(அப்படியே|உள்ளது\s*போல|வார்த்தைக்கு\s*வார்த்தை|மூல\s*உரை)/.test(text)
+    // Arabic: "as is" / "literally" / "word for word"
+    || /(كما\s*هو|حرفيا|حرفيًا|نصا|نصًا|كلمة\s*بكلمة|النص\s*الأصلي)/.test(text);
+}
+
 const GENERAL_SYSTEM_PROMPT = `
 You are an intelligent educational assistant.
 You are now in 'Deep Dive' mode — you may draw on your full training knowledge to provide a comprehensive, well-structured answer beyond what is in the uploaded documents.
@@ -1566,8 +1623,16 @@ export async function askQuestion(
   }
 
   // 7. Construct Final Prompt
-  let finalSystemPrompt = (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
-  
+  // A request to see the source text as written needs a different prompt and must skip
+  // the extract-then-answer path below, whose second step rewrites into the formatted,
+  // per-sentence-cited house style.
+  const isVerbatim = mode === 'grounded' && !isChitChat && chunks.length > 0 && wantsVerbatim(queryText);
+
+  let finalSystemPrompt = isVerbatim
+    // No LANGUAGE_PROMPT here on purpose — see the note on VERBATIM_SYSTEM_PROMPT.
+    ? VERBATIM_SYSTEM_PROMPT
+    : (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
+
   if (isChitChat) {
     finalSystemPrompt = `You are a polite educational assistant. The user is just being polite (greetings or thanks). Respond briefly and politely. Just say "You're welcome" or "Hello, how can I help today?" or similar.` + LANGUAGE_PROMPT;
   }
@@ -1587,7 +1652,19 @@ export async function askQuestion(
   let answerText: string;
   let totalTokens = 0;
 
-  if (mode === 'grounded' && !isChitChat && chunks.length > 0 && isComplex) {
+  if (isVerbatim) {
+    // ── Verbatim reproduction — single pass over the raw chunks ──
+    // Must come before the extract-then-answer branch: that path's second step rewrites
+    // the extracted passages into the formatted house style, which is exactly what a
+    // "read it as it is" request must not do. The chunk text goes to the model unmodified.
+    getLogger().info({ standaloneQuery }, 'verbatim request detected — reproducing source text');
+    answerText = await chatComplete([
+      { role: 'system', content: finalSystemPrompt },
+      ...historyMessages,
+      { role: 'user', content: instructions + "USER REQUEST: " + standaloneQuery }
+    ], { model: selectedModel, temperature: 0, preferGemini: useGemini }) || 'No response generated.';
+    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after verbatim step');
+  } else if (mode === 'grounded' && !isChitChat && chunks.length > 0 && isComplex) {
     // ── 2-Step Extract-then-Answer (anti-hallucination) for COMPLEX queries ──
     // Step 1: Extract relevant passages from the sources (cheap model, fast)
     const extractedQuotes = await chatComplete([
@@ -1639,8 +1716,12 @@ Rules:
     ], { model: selectedModel, temperature: mode === 'grounded' ? 0 : 0.7, preferGemini: useGemini }) || 'No response generated.';
   }
 
-  // Clean any leftover citation markers from the answer
-  answerText = answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
+  // Clean any leftover citation markers from the answer.
+  // The run-of-spaces collapse is skipped for verbatim answers: indentation and column
+  // alignment are part of the source text the user asked to see unaltered.
+  answerText = isVerbatim
+    ? answerText.replace(/\[Source \d+\]/g, '')
+    : answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   let isGrounded = mode === 'grounded';
 
   if (mode === 'grounded' && answerText.includes("[UNGROUNDED]")) {
