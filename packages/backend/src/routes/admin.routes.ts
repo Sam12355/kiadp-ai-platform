@@ -949,7 +949,7 @@ type AIProvider = typeof VALID_PROVIDERS[number];
  *     summary: Get current AI provider setting (Admin only)
  *     tags: [Admin]
  */
-router.get('/settings/ai-provider', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/settings/ai-provider', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const setting = await prisma.appSetting.findUnique({ where: { key: 'ai_provider' } });
