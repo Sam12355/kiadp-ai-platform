@@ -1180,6 +1180,12 @@ export async function voiceAsk(
   // Check the caller's original words as well as the (possibly keyword-ised) query:
   // voice mode's tool call strips phrasing like "as it is" before it ever reaches here.
   const isVerbatim = wantsVerbatim(queryText) || wantsVerbatim(userRequest ?? '');
+  // Logged at info so a "voice still rephrases" report can be diagnosed from the server:
+  // it shows whether the raw transcript reached us at all and whether intent was detected.
+  getLogger().info(
+    { queryText, userRequest: userRequest ?? null, hasUserRequest: !!userRequest, isVerbatim },
+    'voiceAsk: verbatim detection',
+  );
   const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
   let answerText: string;
