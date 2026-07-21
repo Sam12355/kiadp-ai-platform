@@ -199,6 +199,7 @@ const en = {
     delete: 'Delete',
     searching: 'Searching...',
     deepDiveMode: 'Deep Dive Mode : Knowledge from the internet',
+    deepDiveHint: 'Not covered by your documents. Press Deep Dive ✦ to search the internet — your question is sent automatically.',
     askFollowUp: 'Ask follow-up using general knowledge...',
 
     // Question Analytics
@@ -505,6 +506,7 @@ const ar = {
     delete: 'حذف',
     searching: 'جاري البحث...',
     deepDiveMode: 'وضع التعمق: معرفة من الإنترنت',
+    deepDiveHint: 'غير مشمول في مستنداتك. اضغط على التعمق ✦ للبحث في الإنترنت — يتم إرسال سؤالك تلقائيًا.',
     askFollowUp: 'اسأل متابعة باستخدام المعرفة العامة...',
 
     // Question Analytics
@@ -674,6 +676,7 @@ const si: typeof en = {
   noRecentChats: 'මෑත සංවාද නොමැත',
   errorGeneric: 'දෝෂයක් ඇතිවිය. නැවත උත්සාහ කරන්න.',
   deepDiveMode: 'ගැඹුරු ප්‍රකාරය: අන්තර්ජාලයෙන් දැනුම',
+  deepDiveHint: 'ඔබේ ලේඛනවල මෙය නොමැත. අන්තර්ජාලයෙන් සොයා බැලීමට ගැඹුරු සෙවීම ✦ ඔබන්න — ඔබේ ප්‍රශ්නය ස්වයංක්‍රීයව යවනු ලැබේ.',
   askFollowUp: 'පොදු දැනුම භාවිතා කර හොයාගෙන ඇසිය හැක...',
 };
 
@@ -740,6 +743,7 @@ const ta: typeof en = {
   noRecentChats: 'சமீபத்திய உரையாடல்கள் இல்லை',
   errorGeneric: 'பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.',
   deepDiveMode: 'ஆழமான பயன்முறை: இணையத்திலிருந்து அறிவு',
+  deepDiveHint: 'உங்கள் ஆவணங்களில் இல்லை. இணையத்தில் தேட ஆழமான ஆய்வு ✦ ஐ அழுத்தவும் — உங்கள் கேள்வி தானாகவே அனுப்பப்படும்.',
   askFollowUp: 'பொதுவான அறிவைப் பயன்படுத்தி தொடர்ந்து கேளுங்கள்...',
 };
 

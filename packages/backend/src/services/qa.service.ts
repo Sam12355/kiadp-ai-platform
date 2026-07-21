@@ -645,19 +645,6 @@ function hasSubstance(text: string): boolean {
 }
 
 /**
- * Appended when an answer concedes the documents do not cover the question. Text chat
- * only — voice reads its answers aloud, and telling someone mid-conversation to click a
- * button they are not looking at is noise.
- */
-const DEEP_DIVE_HINT: Record<string, string> = {
-  'en': "💡 Press **Deep Dive** ✦ below to look this up on the internet — your question is sent automatically.",
-  'fr': "💡 Appuyez sur **Deep Dive** ✦ ci-dessous pour chercher sur internet — votre question est envoyée automatiquement.",
-  'ar': "💡 اضغط على **Deep Dive** ✦ أدناه للبحث عن هذا على الإنترنت — يتم إرسال سؤالك تلقائيًا.",
-  'si': "💡 අන්තර්ජාලයෙන් සොයා බැලීමට පහත **Deep Dive** ✦ ඔබන්න — ඔබේ ප්‍රශ්නය ස්වයංක්‍රීයව යවනු ලැබේ.",
-  'ta': "💡 இணையத்தில் தேட கீழே உள்ள **Deep Dive** ✦ ஐ அழுத்தவும் — உங்கள் கேள்வி தானாகவே அனுப்பப்படும்.",
-};
-
-/**
  * Said when every claim failed the citation check. Phrased to be spoken aloud as well as
  * read: voice mode reads this result out, so it cannot lean on markdown or a ✦ glyph.
  */
@@ -2213,14 +2200,6 @@ Rules:
     // Losing the whole answer means nothing in it was supported by the sources. Say so,
     // rather than shipping the fragments that happened to survive.
     answerText = hasSubstance(checked.text) ? checked.text : '[UNGROUNDED]';
-
-    // When the answer admits the documents fall short, point at the way forward. The
-    // [UNGROUNDED] path below already says this; this covers the commoner middle case,
-    // where the documents mention the topic but do not explain it, so the answer is
-    // genuinely grounded yet still leaves the student without what they asked for.
-    if (answerText !== '[UNGROUNDED]' && isCorpusDisclaimer(answerText)) {
-      answerText += `\n\n${DEEP_DIVE_HINT[language] ?? DEEP_DIVE_HINT['en']}`;
-    }
   }
 
   // Clean any leftover citation markers from the answer.

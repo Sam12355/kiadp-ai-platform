@@ -42,6 +42,23 @@ interface ChatSession {
   updatedAt: number;
 }
 
+/**
+ * True when an answer concedes the documents don't cover the question — "the documents
+ * list it as a topic but do not explain what it means".
+ *
+ * Mirrors isCorpusDisclaimer in the backend's qa.service.ts, deliberately. The suggestion
+ * to try Deep Dive is interface chrome, not part of the answer: appending it to the answer
+ * text server-side made voice mode read "press the button below" out loud, and left it off
+ * voice answers entirely once that was suppressed. Rendering it here covers both routes
+ * and keeps it out of anything that gets spoken.
+ *
+ * A corpus noun near a negation. False positives cost one extra suggestion line; a false
+ * negative leaves a student stuck at an answer that told them it had nothing for them.
+ */
+const admitsMissingSource = (text: string): boolean =>
+  /(document|source|material|text|context|file|pdf|slide|content|مستند|وثائق|مصادر|النص|ලේඛන|ලිපි|මූලාශ්‍ර|ஆவண|ஆதார|மூல)/i.test(text)
+  && /(\bnot\b|n't\b|\bno\b|\bnever\b|\bwithout\b|\black\b|\bunable\b|\bfail(s|ed)? to\b|لا|ليس|لم|غير|නොමැත|නැත|නොවේ|නොකර|இல்லை|இல்ல)/i.test(text);
+
 export default function KnowledgeAssistant() {
   const { lang, setLanguage } = useLanguageStore();
   const { sessionId: urlSessionId } = useParams();
@@ -316,7 +333,16 @@ export default function KnowledgeAssistant() {
     // answer came back ungrounded — so in the commoner case, where the documents mention
     // the topic without explaining it, the panel opened empty and the question had to be
     // typed out a second time to get the thing the button exists to provide.
-    const question = messages.find((_, i, arr) => arr[i + 1]?.id === msg.id)?.content?.trim();
+    //
+    // Search backwards for the last thing the USER said, rather than taking whatever sits
+    // directly above the answer. In a voice session the assistant interjects filler —
+    // "Sure, looking that up now." — between the question and the answer, and taking the
+    // previous message blindly sent that filler to Deep Dive, which duly replied
+    // "You're welcome!".
+    const idx = messages.findIndex(m => m.id === msg.id);
+    const question = idx > 0
+      ? messages.slice(0, idx).reverse().find(m => m.role === 'user')?.content?.trim()
+      : undefined;
     if (question) runThreadQuery(question, [msg], msg.id);
   };
 
@@ -704,9 +730,16 @@ export default function KnowledgeAssistant() {
                     </div>
                   )}
                   {m.role === 'assistant' && !/^\s*(let me (check|look|search|find)|one moment|sure[,!]?\s*(let me|i['\u2019]ll)\s*(check|look|search))/i.test(m.content?.trim() ?? '') && (
-                    <button onClick={() => openThread(m)} className="mt-4 deep-dive-btn">
-                      {t.deepDive} ✦ {m.thread && m.thread.length > 1 ? `(${m.thread.length-1})` : ''}
-                    </button>
+                    <>
+                      {admitsMissingSource(m.content ?? '') && !m.thread && (
+                        <div className="mt-4 text-[12px] leading-relaxed text-white/50">
+                          💡 {t.deepDiveHint}
+                        </div>
+                      )}
+                      <button onClick={() => openThread(m)} className="mt-4 deep-dive-btn">
+                        {t.deepDive} ✦ {m.thread && m.thread.length > 1 ? `(${m.thread.length-1})` : ''}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
