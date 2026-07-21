@@ -1,56 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 1333" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 1026" preserveAspectRatio="xMidYMid slice">
   <!--
-    Light-theme page canvas: layered off-white ribbons with two thin gold edges.
+    Light-theme page canvas: soft diagonal bands of near-white, cool-grey tinted.
 
-    Rebuilt as vector rather than shipped as the source photograph. At 2000x1333 the
-    original is a multi-megabyte raster that would be resampled at every viewport size;
-    this is a few kilobytes, stays crisp on any display, and costs one cached request.
+    Vector rather than the source raster. The original is 7801x4001 — several megabytes,
+    resampled at every viewport size — where this is under 2 KB and stays clean at any
+    resolution. The composition is pure tone with no detail to lose, so nothing is
+    sacrificed in the translation.
 
-    Kept deliberately low-contrast. This sits behind an application, not a hero section —
-    the white cards and their shadows have to remain the thing the eye lands on, so the
-    ribbons stay within a few percent of the base and the gold reads as a hairline.
+    Tonal range is roughly #ffffff to #e2e6ee: about six percent. That is the whole point.
+    It sits behind an application, so a white card lifted by its shadow must still be the
+    thing the eye lands on; anything more contrasty here would start competing with the
+    content instead of seating it.
   -->
   <defs>
-    <linearGradient id="base" x1="0" y1="0" x2="0.25" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="0.55" stop-color="#fbfcfd"/>
-      <stop offset="1" stop-color="#eff1f4"/>
+    <!-- Tone varies ACROSS the bands, i.e. along the top-left to bottom-right axis, which
+         is perpendicular to the diagonal the bands themselves run along. -->
+    <linearGradient id="bands" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0"    stop-color="#eef0f6"/>
+      <stop offset="0.30" stop-color="#f6f8fb"/>
+      <stop offset="0.45" stop-color="#fcfdfe"/>
+      <stop offset="0.53" stop-color="#f4f6fa"/>
+      <stop offset="0.66" stop-color="#eaeef4"/>
+      <stop offset="0.84" stop-color="#e6eaf1"/>
+      <stop offset="1"    stop-color="#e2e6ee"/>
     </linearGradient>
 
-    <!-- Gold picks up light along its length rather than sitting flat. -->
-    <linearGradient id="gold" x1="0" y1="0" x2="0.2" y2="1">
-      <stop offset="0" stop-color="#c9913f"/>
-      <stop offset="0.18" stop-color="#f0cf94"/>
-      <stop offset="0.42" stop-color="#e9bd71"/>
-      <stop offset="0.68" stop-color="#d9a24d"/>
-      <stop offset="1" stop-color="#c8903e"/>
+    <!-- The brighter fold in the upper right, fading out before it reaches the middle. -->
+    <linearGradient id="fold" x1="1" y1="0" x2="0.15" y2="1">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.45"/>
+      <stop offset="1"    stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
 
-    <linearGradient id="goldR" x1="1" y1="0" x2="0.3" y2="1">
-      <stop offset="0" stop-color="#d9a24d"/>
-      <stop offset="0.3" stop-color="#f3d49f"/>
-      <stop offset="0.62" stop-color="#e2b268"/>
-      <stop offset="1" stop-color="#c68d3b"/>
+    <!-- A whisper of shade under the main diagonal, which is what makes the bands read as
+         overlapping planes rather than as a flat gradient. -->
+    <linearGradient id="shade" x1="0.55" y1="0" x2="0.75" y2="1">
+      <stop offset="0"   stop-color="#c3cbdb" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#c3cbdb" stop-opacity="0.16"/>
+      <stop offset="1"   stop-color="#c3cbdb" stop-opacity="0"/>
     </linearGradient>
   </defs>
 
-  <rect width="2000" height="1333" fill="url(#base)"/>
+  <rect width="2000" height="1026" fill="url(#bands)"/>
 
-  <!-- ── Left ribbons: concentric arcs sweeping top to bottom-left ─────────── -->
-  <g>
-    <path d="M 640 0 C 470 430 300 900 250 1333 L 0 1333 L 0 0 Z" fill="#f6f8fa"/>
-    <path d="M 585 0 C 425 430 268 900 222 1333 L 0 1333 L 0 0 Z" fill="#f1f4f7"/>
-    <path d="M 545 0 C 392 430 244 900 202 1333 L 0 1333 L 0 0 Z" fill="#eceff4"/>
-    <path d="M 505 0 C 358 435 218 905 180 1333 L 0 1333 L 0 0 Z" fill="#f7f9fb"/>
-  </g>
-  <!-- The gold hairline rides the innermost arc. -->
-  <path d="M 505 0 C 358 435 218 905 180 1333" fill="none" stroke="url(#gold)" stroke-width="3.5"/>
+  <!-- Upper-right fold -->
+  <path d="M 1180 0 L 2000 0 L 2000 300 Z" fill="url(#fold)"/>
 
-  <!-- ── Right sweep: a wide curve rising from the right edge ──────────────── -->
-  <g>
-    <path d="M 2000 400 C 1790 660 1470 1010 1245 1333 L 2000 1333 Z" fill="#f5f7fa"/>
-    <path d="M 2000 452 C 1800 700 1500 1040 1290 1333 L 2000 1333 Z" fill="#eef1f5"/>
-    <path d="M 2000 505 C 1815 742 1533 1068 1338 1333 L 2000 1333 Z" fill="#f8fafc"/>
-  </g>
-  <path d="M 2000 400 C 1790 660 1470 1010 1245 1333" fill="none" stroke="url(#goldR)" stroke-width="3.5"/>
+  <!-- Main diagonal: bright plane above, shaded plane below -->
+  <path d="M 0 1026 L 2000 55 L 2000 250 L 150 1026 Z" fill="url(#shade)"/>
+  <path d="M 0 790 L 2000 0 L 2000 45 L 0 900 Z" fill="#ffffff" opacity="0.55"/>
 </svg>
