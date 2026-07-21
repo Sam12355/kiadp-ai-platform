@@ -69,7 +69,7 @@ async function main() {
       logger.info(`[worker] Picked up delete job for document: ${payload.documentId}`);
       try {
         const { deleteDocument: deleteDocService } = await import('./services/ingestion.service.js');
-        await deleteDocService(payload.documentId, payload.pineconeVectorIds);
+        await deleteDocService(payload.documentId, payload.filePath);
         logger.info(`[worker] Delete job succeeded for ${payload.documentId}`);
       } catch (error) {
         logger.error({ err: error }, `[worker] Delete job failed for ${payload.documentId}`);

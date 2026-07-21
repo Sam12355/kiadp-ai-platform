@@ -1,7 +1,7 @@
 /**
  * Embedding service — OpenAI primary, Gemini REST fallback.
  *
- * Pinecone index is 1536 dims. OpenAI text-embedding-3-small produces 1536.
+ * The pgvector column is vector(1536). OpenAI text-embedding-3-small produces 1536.
  * Gemini gemini-embedding-2-preview supports outputDimensionality — we request 1536.
  * Gemini gemini-embedding-001 as last-resort fallback (also supports 1536).
  *

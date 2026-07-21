@@ -114,7 +114,6 @@ router.get('/stats', authenticate, requireRole(UserRole.ADMIN as any), resolveTe
         recentActivity: recentDocuments,
         systemStatus: {
           database: 'online',
-          pinecone: 'online', // In a real app, check Pinecone health too
           openai: 'online'    // In a real app, check OpenAI connectivity
         }
       }
@@ -382,28 +381,6 @@ async function svcCloudinary(env: ReturnType<typeof getEnv>): Promise<SvcResult>
   };
 }
 
-async function svcPinecone(env: ReturnType<typeof getEnv>): Promise<SvcResult> {
-  const { getPinecone, getPineconeIndex } = await import('../config/pinecone.js');
-  const pc = getPinecone();
-  const idx = getPineconeIndex();
-  const [desc, stats] = await Promise.all([
-    pc.describeIndex(env.PINECONE_INDEX_NAME),
-    idx.describeIndexStats(),
-  ]);
-  const rawFullness = (stats as any).indexFullness;
-  const indexFullness = typeof rawFullness === 'number' && rawFullness > 0 ? +rawFullness.toFixed(4) : null;
-  return {
-    configured: true, status: 'online',
-    indexName: env.PINECONE_INDEX_NAME,
-    vectorCount: stats.totalRecordCount ?? 0,
-    indexFullness,
-    fullnessReported: indexFullness !== null,
-    dimension: (stats as any).dimension ?? desc.dimension,
-    metric: desc.metric,
-    host: desc.host,
-  };
-}
-
 async function svcOpenAI(env: ReturnType<typeof getEnv>): Promise<SvcResult> {
   const headers = { Authorization: `Bearer ${env.OPENAI_API_KEY}` };
   const sig = AbortSignal.timeout(8000);
@@ -518,9 +495,8 @@ router.get('/api-status', authenticate, requireRole(UserRole.ADMIN as any), asyn
     since.setDate(since.getDate() - 30);
     const sinceStr = since.toISOString().slice(0, 10);
 
-    const [cloudinary, pinecone, openai, gemini, groq, cohere, usageRows, answerUsageRows] = await Promise.allSettled([
+    const [cloudinary, openai, gemini, groq, cohere, usageRows, answerUsageRows] = await Promise.allSettled([
       svcCloudinary(env),
-      svcPinecone(env),
       svcOpenAI(env),
       svcGemini(env),
       svcGroq(env),
@@ -577,7 +553,6 @@ router.get('/api-status', authenticate, requireRole(UserRole.ADMIN as any), asyn
       success: true,
       data: {
         cloudinary: unpack(cloudinary),
-        pinecone: unpack(pinecone),
         openai:   { ...unpack(openai),  selfTracked: byService['openai']  ?? null },
         gemini:   { ...unpack(gemini),  selfTracked: byService['gemini']  ?? null },
         groq:     { ...unpack(groq),    selfTracked: byService['groq']    ?? null },
@@ -820,7 +795,7 @@ router.get('/textual-knowledge', authenticate, requireRole(UserRole.ADMIN as any
  * @openapi
  * /admin/textual-knowledge/{id}:
  *   delete:
- *     summary: Delete a text knowledge entry and its Pinecone vectors
+ *     summary: Delete a text knowledge entry
  */
 router.delete('/textual-knowledge/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -830,18 +805,10 @@ router.delete('/textual-knowledge/:id', authenticate, requireRole(UserRole.ADMIN
     const doc = await prisma.document.findFirst({ where: { id: docId, mimeType: 'text/html' } });
     if (!doc) return res.status(404).json({ success: false, error: 'Text entry not found' });
 
-    const chunks = await prisma.documentChunk.findMany({
-      where: { documentId: docId },
-      select: { pineconeVectorId: true },
-    });
-    const vectorIds = chunks
-      .map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId)
-      .filter((id: string | null): id is string => id !== null);
-
-    if (vectorIds.length > 0) {
-      const { deleteDocument: deleteDocVectors } = await import('../services/ingestion.service.js');
-      await deleteDocVectors(docId, vectorIds);
-    }
+    // Chunks cascade with the document row. A text entry has no uploaded file, but pass
+    // the path anyway so the one code path handles both kinds — it no-ops on a URL or null.
+    const { deleteDocument: removeStoredFile } = await import('../services/ingestion.service.js');
+    await removeStoredFile(docId, doc.filePath);
 
     await prisma.document.delete({ where: { id: docId } });
     res.json({ success: true, data: { message: 'Text entry deleted successfully' } });

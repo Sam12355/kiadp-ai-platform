@@ -10,5 +10,6 @@ export interface IngestDocumentPayload {
 
 export interface DeleteDocumentPayload {
   documentId: string;
-  pineconeVectorIds: string[];
+  /** The stored upload to remove. Absent or a URL means there is no local file. */
+  filePath?: string | null;
 }

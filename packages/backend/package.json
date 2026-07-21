@@ -21,7 +21,6 @@
   "dependencies": {
     "@google/genai": "^1.49.0",
     "@khalifa/shared": "workspace:*",
-    "@pinecone-database/pinecone": "^4.0.0",
     "@prisma/client": "^6.4.0",
     "bcryptjs": "^2.4.3",
     "cohere-ai": "^8.0.0",

@@ -309,22 +309,9 @@ router.patch('/:id', authenticate, requireRole(UserRole.ADMIN as any), resolveTe
     
     // Check if new file is uploaded
     if (req.file) {
-      // 1. Find existing chunks to delete from Pinecone
-      const chunks = await prisma.documentChunk.findMany({
-        where: { documentId: docId },
-        select: { pineconeVectorId: true },
-      });
-      const vectorIds = chunks.map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId).filter((id: string | null): id is string => id !== null);
-
-      if (vectorIds.length > 0) {
-        const boss = await getBoss();
-        await boss.send(JOB_QUEUES.DELETE_DOCUMENT, {
-          documentId: docId,
-          pineconeVectorIds: vectorIds,
-        });
-      }
-
-      // 2. Delete existing chunks from DB
+      // Replacing the file: drop the old chunks so re-ingestion starts clean. There is no
+      // longer a vector store to clean up alongside them — embeddings live in pgvector, in
+      // these same rows, and go with them.
       await prisma.documentChunk.deleteMany({ where: { documentId: docId } });
 
       // 3. Update document with new file info and set status to UPLOADED
@@ -382,22 +369,9 @@ router.post('/:id/reprocess', authenticate, requireRole(UserRole.ADMIN as any), 
     const doc = await prisma.document.findUnique({ where: { id: docId } });
     if (!doc) throw new NotFoundError('Document not found');
 
-    // Delete existing chunks + images so ingestion starts clean
-    const oldChunks = await prisma.documentChunk.findMany({
-      where: { documentId: docId },
-      select: { pineconeVectorId: true },
-    });
-    const vectorIds = oldChunks.map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId).filter((id: string | null): id is string => id !== null);
-
-    if (vectorIds.length > 0) {
-      const boss = await getBoss();
-      await boss.send(JOB_QUEUES.DELETE_DOCUMENT, {
-        documentId: docId,
-        pineconeVectorIds: vectorIds,
-        skipDocumentDelete: true, // only clean vectors, keep the document record
-      });
-    }
-
+    // Delete existing chunks + images so ingestion starts clean. The file itself stays —
+    // reprocessing re-reads it — and the embeddings live in these rows, so removing them is
+    // the whole cleanup.
     await prisma.documentChunk.deleteMany({ where: { documentId: docId } });
     await prisma.documentImage.deleteMany({ where: { documentId: docId } });
 
@@ -493,19 +467,15 @@ router.delete('/:id', authenticate, requireRole(UserRole.ADMIN as any), resolveT
       throw new NotFoundError('Document not found');
     }
 
-    const chunks = await prisma.documentChunk.findMany({
-      where: { documentId: docId },
-      select: { pineconeVectorId: true },
+    // Every child table cascades from Document, so chunks, pages, images and answer
+    // sources go with the row. The uploaded file does not — no foreign key reaches a
+    // filesystem — so it is queued for removal separately. Queued before the delete, since
+    // filePath is about to become unreadable.
+    const boss = await getBoss();
+    await boss.send(JOB_QUEUES.DELETE_DOCUMENT, {
+      documentId: docId,
+      filePath: doc.filePath,
     });
-    const vectorIds = chunks.map((c: { pineconeVectorId: string | null }) => c.pineconeVectorId).filter((id: string | null): id is string => id !== null);
-
-    if (vectorIds.length > 0) {
-      const boss = await getBoss();
-      await boss.send(JOB_QUEUES.DELETE_DOCUMENT, {
-        documentId: docId,
-        pineconeVectorIds: vectorIds,
-      });
-    }
 
     await prisma.document.delete({ where: { id: docId } });
     res.json({ success: true, data: { message: 'Document deleted successfully' } });

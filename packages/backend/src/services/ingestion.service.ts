@@ -3,7 +3,6 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import Tesseract from 'tesseract.js';
 import { getPrisma } from '../config/database.js';
 import { getOpenAI } from '../config/openai.js';
-import { getPinecone } from '../config/pinecone.js';
 import { getEnv } from '../config/env.js';
 import { getLogger } from '../utils/logger.js';
 import { uploadToCloudinary, uploadBufferToCloudinary, configureCloudinary } from './storage.service.js';
@@ -347,8 +346,6 @@ export async function processDocument(documentId: string, filePath: string): Pro
 
     // Prepare AI & Storage
     const openai = getOpenAI();
-    const pinecone = getPinecone();
-    const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
 
     // 3. Extract text & Visual analysis page by page
     const chunks: { pageNumber: number; text: string; chunkIndex: number }[] = [];
@@ -555,50 +552,43 @@ export async function processDocument(documentId: string, filePath: string): Pro
       // Get embeddings — OpenAI primary, Gemini REST fallback on quota exhaustion
       const embeddingVectors = await embedTexts(texts);
 
-      const vectorsToUpsert = [];
       const chunkRecords = [];
       const chunkEmbeddings: { idx: number; vector: number[] }[] = [];
-      
+
       for (let idx = 0; idx < batchChunks.length; idx++) {
         const chunk = batchChunks[idx];
-        const pineconeVectorId = `doc_${documentId}_p${chunk.pageNumber}_c${chunk.chunkIndex}_${crypto.randomUUID()}`;
-        
-        vectorsToUpsert.push({
-          id: pineconeVectorId,
-          values: embeddingVectors[idx],
-          metadata: {
-            documentId,
-            pageNumber: chunk.pageNumber,
-            text: chunk.text,
-            type: chunk.chunkIndex >= 999 ? 'visual' : 'text'
-          },
-        });
+        // A unique key per chunk, still stored in the pinecone_vector_id column. Pinecone
+        // itself is gone — it was written to on every ingest and never once queried — but
+        // this identifier earns its keep locally: createMany does not return ids, and the
+        // embedding UPDATE below needs to address exactly one row. Renaming the column to
+        // match wants a migration, so the name outlives the service for now.
+        const chunkKey = `doc_${documentId}_p${chunk.pageNumber}_c${chunk.chunkIndex}_${crypto.randomUUID()}`;
 
         chunkRecords.push({
           documentId,
           content: chunk.text,
           pageNumber: chunk.pageNumber,
           chunkIndex: chunk.chunkIndex,
-          pineconeVectorId: pineconeVectorId,
+          pineconeVectorId: chunkKey,
           tokenCount: Math.ceil(chunk.text.length / 4),
         });
 
         chunkEmbeddings.push({ idx, vector: embeddingVectors[idx] });
 
-        // CRITICAL: If this is a visual chunk, update the corresponding documentImage record with the vector ID
+        // CRITICAL: If this is a visual chunk, stamp the key onto its documentImage row so
+        // the two can be matched up later.
         if (chunk.chunkIndex >= 999) {
           await prisma.documentImage.updateMany({
-            where: { 
-              documentId, 
+            where: {
+              documentId,
               pageNumber: chunk.pageNumber,
               pineconeVectorId: null // only update the one we just created
             },
-            data: { pineconeVectorId: pineconeVectorId }
+            data: { pineconeVectorId: chunkKey }
           });
         }
       }
 
-      await pineconeIndex.upsert(vectorsToUpsert);
       await prisma.documentChunk.createMany({ data: chunkRecords });
 
       // Store embeddings in pgvector for each newly created chunk
@@ -710,31 +700,45 @@ Format (Strict JSON):
   }
 }
 
-export async function deleteDocument(documentId: string, vectorIds: string[]): Promise<void> {
+/**
+ * Remove what deleting the database row cannot: the uploaded file itself.
+ *
+ * Every child table cascades from Document, so chunks, pages, images and answer sources
+ * all go on their own. The file on disk does not — no foreign key reaches a filesystem —
+ * so each deleted document used to leave its upload behind for good. Small per document,
+ * unbounded over a school year.
+ *
+ * Missing files are not an error: reprocessed documents are served from Cloudinary and may
+ * never have had a local copy, and a delete retried after a partial failure will find the
+ * file already gone. Both mean the same thing — nothing left to clean up.
+ */
+export async function deleteDocument(documentId: string, filePath?: string | null): Promise<void> {
   const logger = getLogger();
-  const env = getEnv();
-  const pinecone = getPinecone();
-  const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
 
-  logger.info(`Starting vector deletion for document ${documentId} (${vectorIds.length} vectors)`);
+  if (!filePath || /^https?:\/\//i.test(filePath)) {
+    logger.info({ documentId, filePath: filePath ?? null }, 'delete: no local file to remove');
+    return;
+  }
 
   try {
-    // Delete in batches of 1000 (Pinecone limit for delete command by IDs)
-    const BATCH_SIZE = 1000;
-    for (let i = 0; i < vectorIds.length; i += BATCH_SIZE) {
-      const batchIds = vectorIds.slice(i, i + BATCH_SIZE);
-      await pineconeIndex.deleteMany(batchIds);
-      logger.info(`Deleted batch ${i / BATCH_SIZE + 1} of vectors for doc ${documentId}`);
+    // `fs` here is node:fs/promises — already the promise API, no .promises on it.
+    await fs.unlink(filePath);
+    logger.info({ documentId, filePath }, 'delete: removed stored file');
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') {
+      logger.info({ documentId, filePath }, 'delete: stored file already gone');
+      return;
     }
-  } catch (error) {
-    logger.error({ err: error }, `Error deleting vectors for document ${documentId}`);
-    throw error;
+    // The row is already deleted by the time this runs; failing the job would only retry a
+    // delete that cannot succeed. Record it and move on — an unreadable leftover file is
+    // worth a log line, not a poisoned queue.
+    logger.warn({ err: error, documentId, filePath }, 'delete: could not remove stored file');
   }
 }
 
 /**
  * Process a manually inserted text/HTML knowledge entry.
- * Strips HTML, splits into semantic chunks, embeds, and stores in Pinecone.
+ * Strips HTML, splits into semantic chunks, embeds, and stores them in pgvector.
  * This runs synchronously (no background queue needed — text is fast to process).
  * @param preUploadedImages  Base64 images already uploaded to Cloudinary by the route handler.
  *                           A synthetic visual-evidence chunk is created for each so that
@@ -828,8 +832,6 @@ export async function processTextContent(
 
     logger.info(`Built ${chunks.length} semantic chunks. Generating embeddings...`);
 
-    const pinecone = getPinecone();
-    const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
     const BATCH_SIZE = 100;
 
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
@@ -837,38 +839,26 @@ export async function processTextContent(
       const texts = batchChunks.map(c => c.text);
       const embeddingVectors = await embedTexts(texts);
 
-      const vectorsToUpsert = [];
       const chunkRecords = [];
       const chunkEmbeddings: { idx: number; vector: number[] }[] = [];
 
       for (let idx = 0; idx < batchChunks.length; idx++) {
         const chunk = batchChunks[idx];
-        const pineconeVectorId = `doc_${documentId}_p${chunk.pageNumber}_c${chunk.chunkIndex}_${crypto.randomUUID()}`;
-
-        vectorsToUpsert.push({
-          id: pineconeVectorId,
-          values: embeddingVectors[idx],
-          metadata: {
-            documentId,
-            pageNumber: chunk.pageNumber,
-            text: chunk.text,
-            type: 'text',
-          },
-        });
+        // Local unique chunk key — see the comment on the same line in processDocument.
+        const chunkKey = `doc_${documentId}_p${chunk.pageNumber}_c${chunk.chunkIndex}_${crypto.randomUUID()}`;
 
         chunkRecords.push({
           documentId,
           content: chunk.text,
           pageNumber: chunk.pageNumber,
           chunkIndex: chunk.chunkIndex,
-          pineconeVectorId,
+          pineconeVectorId: chunkKey,
           tokenCount: Math.ceil(chunk.text.length / 4),
         });
 
         chunkEmbeddings.push({ idx, vector: embeddingVectors[idx] });
       }
 
-      await pineconeIndex.upsert(vectorsToUpsert);
       await prisma.documentChunk.createMany({ data: chunkRecords });
 
       for (const { idx, vector } of chunkEmbeddings) {
@@ -962,8 +952,6 @@ Format (Strict JSON):
     // ── Store pre-uploaded images and create visual-evidence chunks ───────────
     if (preUploadedImages.length > 0) {
       logger.info(`Processing ${preUploadedImages.length} pre-uploaded image(s) for text document ${documentId}`);
-      const pinecone = getPinecone();
-      const pineconeIndex = pinecone.Index(env.PINECONE_INDEX_NAME);
       for (let i = 0; i < preUploadedImages.length; i++) {
         const img = preUploadedImages[i];
         const visualText = `[Visual Evidence from Page ${img.pageNumber}]: Embedded image in textual knowledge content. ${img.altText}`;
@@ -979,22 +967,25 @@ Format (Strict JSON):
           },
         });
 
-        const pineconeVectorId = `doc_${documentId}_img${i}_${crypto.randomUUID()}`;
-        await pineconeIndex.upsert([{
-          id: pineconeVectorId,
-          values: visualVec,
-          metadata: { documentId, pageNumber: img.pageNumber, text: visualText, type: 'visual' },
-        }]);
-        await prisma.documentChunk.create({
+        const chunkKey = `doc_${documentId}_img${i}_${crypto.randomUUID()}`;
+        const visualChunk = await prisma.documentChunk.create({
           data: {
             documentId,
             content: visualText,
             pageNumber: img.pageNumber,
             chunkIndex: -(i + 1), // negative to distinguish visual pseudo-chunks
-            pineconeVectorId,
+            pineconeVectorId: chunkKey,
             tokenCount: Math.ceil(visualText.length / 4),
           },
         });
+        // Retrieval reads pgvector, so the embedding has to land there. It previously went
+        // only to Pinecone, which nothing ever queried — meaning images attached to textual
+        // knowledge entries were embedded into a store no search could see.
+        await prisma.$executeRaw`
+          UPDATE document_chunks
+          SET embedding = ${JSON.stringify(visualVec)}::vector
+          WHERE id = ${visualChunk.id}::uuid
+        `;
       }
     }
 

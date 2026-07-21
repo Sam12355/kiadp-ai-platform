@@ -4,10 +4,6 @@ const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().url(),
 
-  // Pinecone
-  PINECONE_API_KEY: z.string().min(1),
-  PINECONE_INDEX_NAME: z.string().default('khalifa-knowledge'),
-
   // OpenAI
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
