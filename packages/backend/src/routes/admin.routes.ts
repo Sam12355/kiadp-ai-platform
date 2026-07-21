@@ -193,7 +193,7 @@ router.patch('/users/:id/toggle-status', authenticate, requireRole(UserRole.ADMI
  *     summary: Approve a pending user registration (Admin only)
  *     tags: [Admin]
  */
-router.post('/users/:id/approve', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireUserInScope, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/users/:id/approve', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireLiveTenant, requireUserInScope, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({

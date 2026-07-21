@@ -7,6 +7,12 @@ import type { LoginResponse } from '@khalifa/shared';
 import { useLanguageStore } from '../store/languageStore';
 import { translations } from '../i18n/translations';
 
+interface PublicTenant {
+  id: string;
+  name: string;
+  logoUrl?: string | null;
+}
+
 export default function Login() {
   const { lang, setLanguage } = useLanguageStore();
   const t = translations[lang];
@@ -14,6 +20,11 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [tenantId, setTenantId] = useState('');
+  const [tenants, setTenants] = useState<PublicTenant[]>([]);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [tenantsError, setTenantsError] = useState('');
+  const [tenantsReload, setTenantsReload] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -35,12 +46,43 @@ export default function Login() {
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   }, [lang]);
 
+  // The institution list is only needed on the register path, so it is fetched when the
+  // user switches to it rather than on mount — most visitors only ever sign in.
+  useEffect(() => {
+    if (mode !== 'register') return;
+
+    let cancelled = false;
+    setTenantsLoading(true);
+    setTenantsError('');
+
+    apiClient
+      .get<{ success: boolean; data: PublicTenant[] }>('/tenants/public')
+      .then(({ data }) => {
+        if (!cancelled) setTenants(data.data);
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setTenantsError(
+            err.response?.data?.error?.message || 'Could not load the list of institutions.'
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTenantsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, tenantsReload]);
+
   const switchMode = (m: 'login' | 'register') => {
     setMode(m);
     setError('');
     setEmail('');
     setPassword('');
     setFullName('');
+    setTenantId('');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -72,17 +114,32 @@ export default function Login() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!tenantId) {
+      setError('Please choose your institution.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await apiClient.post('/auth/register', { email, password, fullName });
+      await apiClient.post('/auth/register', { email, password, fullName, tenantId });
       setMode('pending');
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || t.registerFailed);
+      // A 422 carries per-field messages under error.details; surfacing the first one is
+      // more use than the generic "Validation failed" that sits in error.message.
+      const apiError = err.response?.data?.error;
+      const details = apiError?.details as Record<string, string[]> | undefined;
+      const firstDetail = details ? Object.values(details).flat()[0] : undefined;
+      setError(firstDetail || apiError?.message || t.registerFailed);
     } finally {
       setLoading(false);
     }
   };
+
+  const selectedTenant = tenants.find((tenant) => tenant.id === tenantId);
+  const registerBlocked =
+    mode === 'register' && (tenantsLoading || !!tenantsError || tenants.length === 0);
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-[var(--color-surface)]">
@@ -134,6 +191,11 @@ export default function Login() {
               <div>
                 <p className="text-ink font-bold text-base mb-2">{t.pendingApprovalTitle}</p>
                 <p className="text-ink-mute text-sm leading-relaxed">{t.pendingApprovalMsg}</p>
+                <p className="text-ink-mute text-sm leading-relaxed mt-2">
+                  An administrator at{' '}
+                  <span className="text-ink font-bold">{selectedTenant?.name || 'your institution'}</span>{' '}
+                  must approve your account before you can sign in.
+                </p>
               </div>
               <button
                 onClick={() => switchMode('login')}
@@ -182,6 +244,47 @@ export default function Login() {
                   </div>
                 )}
 
+                {mode === 'register' && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">{t.institution}</label>
+                    {tenantsLoading ? (
+                      <div className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink-mute text-sm">
+                        Loading institutions…
+                      </div>
+                    ) : tenantsError ? (
+                      <div className="space-y-2">
+                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm font-bold">
+                          {tenantsError}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTenantsReload((n) => n + 1)}
+                          className="text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest hover:opacity-80 transition-opacity"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    ) : tenants.length === 0 ? (
+                      <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-lg text-amber-700 dark:text-amber-400 text-sm font-bold">
+                        No institutions are open for registration yet.
+                      </div>
+                    ) : (
+                      <select
+                        value={tenantId}
+                        onChange={(e) => setTenantId(e.target.value)}
+                        className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all cursor-pointer"
+                      >
+                        <option value="" className="bg-raised text-ink">Choose your institution</option>
+                        {tenants.map((tenant) => (
+                          <option key={tenant.id} value={tenant.id} className="bg-raised text-ink">
+                            {tenant.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">{t.emailAddress}</label>
                   <input
@@ -209,7 +312,7 @@ export default function Login() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || registerBlocked}
                   className="w-full py-3 px-4 bg-gradient-to-r from-[var(--color-palm-600)] to-[var(--color-palm-500)] hover:from-[var(--color-palm-500)] hover:to-[var(--color-palm-400)] text-ink rounded-lg font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-palm-500)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)] transition-all disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden"
                 >
                   <span className="relative z-10 flex items-center justify-center uppercase tracking-widest text-xs font-black">

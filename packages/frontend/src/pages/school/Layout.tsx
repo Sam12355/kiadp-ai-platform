@@ -105,7 +105,7 @@ export default function SchoolLayout() {
 
       {/* Sidebar Drawer */}
       <aside className={`
-        fixed inset-y-0 ltr:left-0 rtl:right-0 w-72 bg-raised lg:bg-transparent lg:backdrop-blur-none backdrop-blur-3xl border-line flex flex-col z-[50]
+        fixed inset-y-0 ltr:left-0 rtl:right-0 w-72 bg-raised/80 backdrop-blur-3xl border-line flex flex-col z-[50]
         transition-all duration-500 ease-in-out lg:relative lg:translate-x-0
         ${lang === 'ar' ? 'border-l' : 'border-r'}
         ${isSidebarOpen ? 'translate-x-0' : (lang === 'ar' ? 'translate-x-full' : '-translate-x-full')}
@@ -160,7 +160,7 @@ export default function SchoolLayout() {
           })}
         </nav>
 
-        <div className="p-6 border-t border-line-soft lg:bg-transparent space-y-4">
+        <div className="p-6 border-t border-line-soft bg-raised/80 space-y-4">
           <TrialBanner subject={tenant ? { plan: tenant.plan, trialEndsAt: tenant.trialEndsAt } : undefined} />
           <div className="flex items-center gap-3 px-3 py-3 bg-raised rounded-[1.5rem] border border-line-soft">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 text-white font-black shadow-lg overflow-hidden border border-line">

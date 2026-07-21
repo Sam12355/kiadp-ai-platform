@@ -11,7 +11,30 @@ import { getLogger } from '../utils/logger.js';
 
 const router: Router = Router();
 
-// All tenant routes require admin authentication.
+/**
+ * GET /tenants/public — institutions a student may ask to join. Unauthenticated.
+ *
+ * Returns the minimum a picker needs and nothing else: no counts, no contact details, no
+ * plan or trial state. It does disclose which institutions use the platform, which is a
+ * deliberate trade for letting students self-serve — the alternative is a per-school join
+ * code, which is private but has to be distributed.
+ *
+ * Inactive institutions are omitted, so deactivating a school also closes its intake.
+ */
+router.get('/public', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenants = await getPrisma().tenant.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, logoUrl: true },
+    });
+    res.json({ success: true, data: tenants });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// All tenant routes BELOW require admin authentication.
 //
 // Requiring the ADMIN role alone is NOT sufficient here: an institution admin is also an
 // ADMIN, so without the tenant guards below every school admin could read, rename and
@@ -352,7 +375,9 @@ router.get('/:id/users', async (req: Request, res: Response, next: NextFunction)
     const prisma = getPrisma();
     const users = await prisma.user.findMany({
       where: { tenantId: req.params.id },
-      select: { id: true, email: true, fullName: true, role: true, isActive: true, createdAt: true },
+      // isPendingApproval belongs here: the panel already renders a "Pending" pill from it,
+      // which could never appear while the field was left out of this select.
+      select: { id: true, email: true, fullName: true, role: true, isActive: true, isPendingApproval: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
     res.json({ success: true, data: users });

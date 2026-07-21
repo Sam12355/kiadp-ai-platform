@@ -42,6 +42,18 @@ export async function registerUser(input: RegisterInput): Promise<{ pending: tru
     throw new ConflictError('User with this email already exists');
   }
 
+  // The institution must exist and be open. Validated here rather than trusted from the
+  // form: this endpoint is public, and an unchecked id would let anyone attach a pending
+  // account to any tenant — or to one that does not exist, leaving an orphan nobody can
+  // approve or see.
+  const tenant = await prisma.tenant.findFirst({
+    where: { id: input.tenantId, isActive: true },
+    select: { id: true },
+  });
+  if (!tenant) {
+    throw new NotFoundError('That institution is not accepting registrations');
+  }
+
   const passwordHash = await bcrypt.hash(input.password, 12);
 
   await prisma.user.create({
@@ -50,6 +62,9 @@ export async function registerUser(input: RegisterInput): Promise<{ pending: tru
       fullName: input.fullName,
       passwordHash,
       role: 'STUDENT',
+      // Attached to the institution but not yet usable. The admin's approval is the step
+      // that turns a claim to belong to a school into membership of it.
+      tenantId: tenant.id,
       isActive: false,
       isPendingApproval: true,
     },

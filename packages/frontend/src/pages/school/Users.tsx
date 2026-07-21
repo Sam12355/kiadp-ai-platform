@@ -4,7 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import Portal from '../../components/Portal';
 import {
   Users, Mail, Calendar, Shield, ShieldAlert, Search, AlertCircle,
-  UserPlus, UserMinus, X, User, Lock, Save, RefreshCw,
+  UserPlus, UserMinus, X, User, Lock, Save, RefreshCw, Clock, UserCheck,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -41,10 +41,23 @@ export default function SchoolUsers() {
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('STUDENT');
   const [createError, setCreateError] = useState('');
+  const [approveError, setApproveError] = useState('');
 
   const { data: users, isLoading, error } = useQuery<TenantUser[]>({
     queryKey: ['school-users', user?.tenantId],
     queryFn: async () => (await apiClient.get(`/tenants/${user?.tenantId}/users`)).data.data,
+    enabled: !!user?.tenantId,
+  });
+
+  // Self-registered students come from /admin/users, not /tenants/:id/users — the latter
+  // does not return isPendingApproval. /admin/users is already scoped to the caller's own
+  // institution, so an institution admin only ever sees their own pending sign-ups.
+  const { data: pendingUsers } = useQuery<TenantUser[]>({
+    queryKey: ['school-pending-users', user?.tenantId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/admin/users');
+      return (data.data as TenantUser[]).filter((u) => u.isPendingApproval);
+    },
     enabled: !!user?.tenantId,
   });
 
@@ -70,9 +83,34 @@ export default function SchoolUsers() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['school-users', user?.tenantId] }),
   });
 
+  const approveMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiClient.post(`/admin/users/${userId}/approve`);
+    },
+    onSuccess: () => {
+      setApproveError('');
+      qc.invalidateQueries({ queryKey: ['school-users', user?.tenantId] });
+      qc.invalidateQueries({ queryKey: ['school-pending-users', user?.tenantId] });
+    },
+    onError: (err: any) => {
+      // A lapsed trial returns 402/TRIAL_EXPIRED. Without naming it, an admin sees the
+      // approve button do nothing and has no way to work out why.
+      const apiError = err.response?.data?.error;
+      setApproveError(
+        apiError?.code === 'TRIAL_EXPIRED'
+          ? apiError?.message || 'Your institution’s trial has ended, so new users cannot be approved. Contact us to reactivate your account.'
+          : apiError?.message || 'Failed to approve user.'
+      );
+    },
+  });
+
+  // Pending sign-ups get their own section, so keep them out of the main roster.
+  const pendingIds = new Set(pendingUsers?.map(u => u.id));
   const filtered = users?.filter(u =>
-    u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())
+    !pendingIds.has(u.id) && (
+      u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   ) ?? [];
 
   return (
@@ -154,6 +192,51 @@ export default function SchoolUsers() {
           <UserPlus className="w-4 h-4" /> Add User
         </button>
       </div>
+
+      {/* Pending approvals */}
+      {pendingUsers && pendingUsers.length > 0 && (
+        <div className="glass rounded-[1.5rem] overflow-hidden border border-amber-500/25">
+          <div className="px-6 py-4 bg-amber-500/5 border-b border-amber-500/15 flex items-center gap-3">
+            <Clock className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+            <h2 className="text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
+              Pending Approvals
+            </h2>
+            <span className="ml-auto px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400 text-[10px] font-black">
+              {pendingUsers.length}
+            </span>
+          </div>
+
+          {approveError && (
+            <div className="flex items-center gap-2 px-6 py-3 bg-red-500/10 border-b border-red-500/25 text-red-700 dark:text-red-400 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />{approveError}
+            </div>
+          )}
+
+          <div className="divide-y divide-line-soft">
+            {pendingUsers.map((u) => (
+              <div key={u.id} className="px-6 py-4 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center flex-shrink-0 text-amber-700 dark:text-amber-400 font-black text-sm">
+                  {u.fullName.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-ink truncate">{u.fullName}</p>
+                  <p className="text-xs text-ink-faint flex items-center gap-1.5 mt-0.5">
+                    <Mail className="w-3 h-3" /> {u.email}
+                  </p>
+                </div>
+                <p className="text-[10px] text-ink-faint hidden md:flex items-center gap-1 flex-shrink-0">
+                  <Calendar className="w-3 h-3" />
+                  {new Date(u.createdAt).toLocaleDateString()}
+                </p>
+                <button onClick={() => approveMutation.mutate(u.id)} disabled={approveMutation.isPending}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex-shrink-0">
+                  <UserCheck className="w-3.5 h-3.5" /> Approve
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />

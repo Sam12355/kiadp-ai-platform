@@ -4,6 +4,9 @@ export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters long'),
   fullName: z.string().min(2, 'Full name is required'),
+  // Which institution the student is asking to join. Required: without it the account has
+  // no tenant, and every admin list is tenant-scoped, so nobody would ever see the request.
+  tenantId: z.string().uuid('Choose your institution'),
 });
 
 export const loginSchema = z.object({
