@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { getPrisma } from '../config/database.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { resolveTenantContext, tenantScope } from '../middleware/rbac.js';
+import { resolveTenantContext, tenantScope, requireSuperAdmin } from '../middleware/rbac.js';
 import { UserRole, Prisma } from '@prisma/client';
 import { processTextContent } from '../services/ingestion.service.js';
 import { BadRequestError, NotFoundError } from '../utils/errors.js';
@@ -967,7 +967,7 @@ router.get('/settings/ai-provider', authenticate, requireRole(UserRole.ADMIN as 
  *     summary: Update AI provider setting (Admin only)
  *     tags: [Admin]
  */
-router.put('/settings/ai-provider', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+router.put('/settings/ai-provider', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { provider } = req.body;
     if (!VALID_PROVIDERS.includes(provider)) {
