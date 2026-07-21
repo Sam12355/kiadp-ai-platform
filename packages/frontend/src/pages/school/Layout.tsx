@@ -77,15 +77,20 @@ export default function SchoolLayout() {
 
       {/* Mobile Top Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-raised/80 backdrop-blur-3xl border-b border-line px-6 flex items-center justify-between z-40">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           {tenant?.logoUrl ? (
-            <img src={tenant.logoUrl} alt={tenant.name} className="w-8 h-8 rounded-lg object-cover" />
+            <img src={tenant.logoUrl} alt={tenant.name} className="w-8 h-8 rounded-lg object-cover flex-none" />
           ) : (
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-none">
               <span className="text-white font-black text-sm">{tenant?.name?.charAt(0).toUpperCase() ?? 'S'}</span>
             </div>
           )}
-          <span className="font-black text-sm uppercase tracking-widest text-ink leading-none truncate max-w-[180px]">{tenant?.name ?? 'School Portal'}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="font-bold text-sm text-ink leading-tight truncate" title={tenant?.name}>{tenant?.name ?? 'School Portal'}</span>
+            <span className="app-logo opacity-70" style={{ fontSize: '0.55rem' }}>
+              <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
+            </span>
+          </div>
         </div>
         <button
           onClick={() => setIsSidebarOpen(true)}
@@ -111,8 +116,8 @@ export default function SchoolLayout() {
         ${isSidebarOpen ? 'translate-x-0' : (lang === 'ar' ? 'translate-x-full' : '-translate-x-full')}
       `}>
         <div className="h-24 flex items-center justify-between px-8">
-          <div className="flex items-center gap-4">
-            <div className="relative group">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative group flex-none">
               {tenant?.logoUrl ? (
                 <img src={tenant.logoUrl} alt={tenant.name}
                   className="w-12 h-12 rounded-2xl object-cover shadow-2xl group-hover:scale-105 transition-transform border border-line" />
@@ -123,9 +128,14 @@ export default function SchoolLayout() {
               )}
               <div className="absolute -inset-1 bg-blue-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
+            {/* The institution leads; EduAI is the vendor mark underneath it. Sentence case
+                and no letter-spacing so a name like "Trinity College Kandy" survives the
+                288px sidebar before truncate has to step in. */}
             <div className="flex flex-col min-w-0">
-              <span className="font-black text-sm uppercase tracking-widest text-ink leading-none truncate max-w-[140px]">{tenant?.name ?? 'School'}</span>
-              <span className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-widest mt-1">Portal</span>
+              <span className="font-bold text-[15px] text-ink leading-tight truncate" title={tenant?.name}>{tenant?.name ?? 'School'}</span>
+              <span className="app-logo mt-0.5 opacity-70" style={{ fontSize: '0.6rem' }}>
+                <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
+              </span>
             </div>
           </div>
           <button

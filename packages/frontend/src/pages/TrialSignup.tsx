@@ -4,6 +4,7 @@ import { isAxiosError } from 'axios';
 import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Loader2 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import ThemeToggle from '../components/ThemeToggle';
 import type { LoginResponse } from '@khalifa/shared';
 
 type Field = 'institutionName' | 'fullName' | 'email' | 'password';
@@ -119,38 +120,42 @@ export default function TrialSignup() {
   };
 
   const inputClass = (name: Field) =>
-    `w-full px-4 py-3 bg-raised border rounded-xl text-ink text-sm placeholder:text-ink-faint transition-colors focus:outline-none focus:ring-1 ${
+    `w-full px-4 py-2.5 bg-raised border rounded-xl text-ink text-sm placeholder:text-ink-faint transition-colors focus:outline-none focus:ring-1 ${
       fieldErrors[name]
         ? 'border-red-500/60 focus:border-red-500 focus:ring-red-500'
         : 'border-line focus:border-[var(--color-palm-500)] focus:ring-[var(--color-palm-500)]'
     }`;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12 text-ink">
+    <div className="min-h-screen flex items-center justify-center px-4 py-6 text-ink relative">
+      <div className="absolute top-4 ltr:right-4 rtl:left-4 z-50 bg-raised p-0.5 rounded-xl border border-line-soft">
+        <ThemeToggle />
+      </div>
+
       <div className="w-full max-w-md animate-fade-in">
-        <div className="text-center mb-6">
+        <div className="text-center mb-3">
           <Link to="/" className="inline-flex items-center">
-            <span className="app-logo uppercase" style={{ fontSize: '1.35rem' }}>
+            <span className="app-logo uppercase" style={{ fontSize: '1.2rem' }}>
               <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
             </span>
           </Link>
         </div>
 
-        <div className="glass rounded-2xl p-6 sm:p-8 shadow-[var(--shadow-elevated)]">
-          <div className="text-center mb-7">
-            <h1 className="text-2xl font-bold tracking-tight">Start your free trial</h1>
-            <p className="mt-2 text-sm text-ink-mute">
+        <div className="glass rounded-2xl p-5 sm:p-6 shadow-[var(--shadow-elevated)]">
+          <div className="text-center mb-4">
+            <h1 className="text-xl font-bold tracking-tight">Start your free trial</h1>
+            <p className="mt-1 text-xs text-ink-mute">
               Seven days of full access for your institution.
             </p>
-            <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-select-line bg-select px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-accent">
+            <span className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-select-line bg-select px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-accent">
               <Check className="w-3 h-3" />
               No card required
             </span>
           </div>
 
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
             {formError && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-sm text-red-700 dark:text-red-400 animate-slide-in">
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-700 dark:text-red-400 animate-slide-in">
                 <p className="font-bold">{formError}</p>
                 {emailTaken && (
                   <p className="mt-1 font-normal text-ink-soft">
@@ -164,7 +169,7 @@ export default function TrialSignup() {
             )}
 
             {FIELDS.map(({ name, label, type, placeholder, autoComplete }) => (
-              <div key={name} className="space-y-1.5">
+              <div key={name} className="space-y-1">
                 <label htmlFor={name} className="block text-[10px] font-black uppercase tracking-widest text-ink-mute">
                   {label}
                 </label>
@@ -185,7 +190,7 @@ export default function TrialSignup() {
               </div>
             ))}
 
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <label htmlFor="password" className="block text-[10px] font-black uppercase tracking-widest text-ink-mute">
                 Password
               </label>
@@ -218,7 +223,7 @@ export default function TrialSignup() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[var(--color-palm-700)] hover:bg-[var(--color-palm-600)] text-white text-xs font-black uppercase tracking-widest transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-palm-500)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
+              className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[var(--color-palm-700)] hover:bg-[var(--color-palm-600)] text-white text-xs font-black uppercase tracking-widest transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-palm-500)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
             >
               {loading ? (
                 <>
@@ -231,13 +236,13 @@ export default function TrialSignup() {
               )}
             </button>
 
-            <p className="text-center text-[11px] text-ink-faint leading-relaxed">
+            <p className="text-center text-[10px] text-ink-faint leading-snug">
               We do not ask for card details, and the trial does not renew into anything.
             </p>
           </form>
 
-          <div className="mt-7 pt-5 border-t border-line-soft text-center">
-            <p className="text-sm text-ink-mute">
+          <div className="mt-4 pt-3 border-t border-line-soft text-center">
+            <p className="text-xs text-ink-mute">
               Already have an account?{' '}
               <Link to="/login" className="text-accent font-bold hover:underline">
                 Log in
@@ -246,7 +251,7 @@ export default function TrialSignup() {
           </div>
         </div>
 
-        <div className="mt-6 text-center">
+        <div className="mt-3 text-center">
           <Link
             to="/"
             className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-mute hover:text-ink transition-colors"

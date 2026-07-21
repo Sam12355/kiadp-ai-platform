@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { homeRouteFor } from '../lib/homeRoute';
@@ -6,6 +6,8 @@ import apiClient from '../api/client';
 import type { LoginResponse } from '@khalifa/shared';
 import { useLanguageStore } from '../store/languageStore';
 import { translations } from '../i18n/translations';
+import SearchableSelect from '../components/SearchableSelect';
+import ThemeToggle from '../components/ThemeToggle';
 
 interface PublicTenant {
   id: string;
@@ -23,7 +25,10 @@ export default function Login() {
   const [tenantId, setTenantId] = useState('');
   const [tenants, setTenants] = useState<PublicTenant[]>([]);
   const [tenantsLoading, setTenantsLoading] = useState(false);
-  const [tenantsError, setTenantsError] = useState('');
+  // null means "no failure". An empty string means the request failed without a usable
+  // message, so the translated fallback is chosen at render time rather than baked in here —
+  // this effect does not re-run when the language changes.
+  const [tenantsError, setTenantsError] = useState<string | null>(null);
   const [tenantsReload, setTenantsReload] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -53,7 +58,7 @@ export default function Login() {
 
     let cancelled = false;
     setTenantsLoading(true);
-    setTenantsError('');
+    setTenantsError(null);
 
     apiClient
       .get<{ success: boolean; data: PublicTenant[] }>('/tenants/public')
@@ -62,9 +67,7 @@ export default function Login() {
       })
       .catch((err: any) => {
         if (!cancelled) {
-          setTenantsError(
-            err.response?.data?.error?.message || 'Could not load the list of institutions.'
-          );
+          setTenantsError(err.response?.data?.error?.message || '');
         }
       })
       .finally(() => {
@@ -116,7 +119,7 @@ export default function Login() {
     setError('');
 
     if (!tenantId) {
-      setError('Please choose your institution.');
+      setError(t.selectInstitutionFirst);
       return;
     }
 
@@ -139,67 +142,81 @@ export default function Login() {
 
   const selectedTenant = tenants.find((tenant) => tenant.id === tenantId);
   const registerBlocked =
-    mode === 'register' && (tenantsLoading || !!tenantsError || tenants.length === 0);
+    mode === 'register' && (tenantsLoading || tenantsError !== null || tenants.length === 0);
+
+  const tenantOptions = useMemo(
+    () => tenants.map((tenant) => ({ value: tenant.id, label: tenant.name })),
+    [tenants]
+  );
+
+  const inputClass =
+    'w-full px-4 py-2.5 bg-raised border border-line rounded-lg text-sm text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint';
+  const labelClass =
+    'text-[10px] font-bold text-ink-mute uppercase tracking-wider';
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-[var(--color-surface)]">
-      {/* Language Picker */}
-      <div className="absolute top-8 ltr:right-8 rtl:left-8 z-50 flex items-center bg-raised p-1 rounded-xl border border-line-soft backdrop-blur-xl">
-        <button 
-          onClick={() => setLanguage('en')}
-          className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-lg ${lang === 'en' ? 'text-emerald-400 bg-overlay shadow-lg shadow-emerald-500/10' : 'text-gray-500 hover:text-ink'}`}
-        >
-          EN
-        </button>
-        <button 
-          onClick={() => setLanguage('ar')}
-          className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-lg ${lang === 'ar' ? 'text-emerald-500 bg-overlay shadow-lg shadow-emerald-500/10' : 'text-gray-500 hover:text-ink'}`}
-        >
-          AR
-        </button>
+    <div className="min-h-screen flex items-center justify-center relative bg-[var(--color-surface)] py-6">
+      {/* Language picker + theme toggle */}
+      <div className="absolute top-4 ltr:right-4 rtl:left-4 z-50 flex items-center gap-2">
+        <div className="flex items-center bg-raised p-1 rounded-xl border border-line-soft">
+          <button
+            onClick={() => setLanguage('en')}
+            className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-lg ${lang === 'en' ? 'text-emerald-700 dark:text-emerald-400 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
+          >
+            EN
+          </button>
+          <button
+            onClick={() => setLanguage('ar')}
+            className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-lg ${lang === 'ar' ? 'text-emerald-700 dark:text-emerald-400 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
+          >
+            AR
+          </button>
+        </div>
+        <div className="bg-raised p-0.5 rounded-xl border border-line-soft">
+          <ThemeToggle />
+        </div>
       </div>
 
-      {/* Dynamic Background Elements */}
-      <div className="absolute inset-0 z-0 opacity-40 mix-blend-screen pointer-events-none">
+      {/* Dynamic background elements — clipped here rather than on the page container, so a
+          tall form still scrolls instead of being cut off. */}
+      <div className="absolute inset-0 z-0 overflow-hidden opacity-40 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[var(--color-palm-800)]/30 blur-[120px] animate-pulse-glow" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--color-earth-800)]/20 blur-[150px]" />
       </div>
 
       <div className="w-full max-w-md relative z-10 px-4 animate-fade-in">
-        <div className="glass rounded-2xl p-8 shadow-[var(--shadow-elevated)] border-t border-[rgba(255,255,255,0.1)]">
+        <div className="glass rounded-2xl p-6 shadow-[var(--shadow-elevated)]">
           {/* Logo */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--color-palm-500)] to-[var(--color-palm-700)] shadow-[var(--shadow-glow-green)] mx-auto mb-6 flex items-center justify-center">
-              <svg className="w-8 h-8 text-ink" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="text-center mb-5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[var(--color-palm-500)] to-[var(--color-palm-700)] shadow-[var(--shadow-glow-green)] mx-auto mb-3 flex items-center justify-center">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
               </svg>
             </div>
-            <h1 className="tracking-tight whitespace-nowrap app-logo uppercase mb-2" style={{ fontSize: '2.8rem' }}>
+            <h1 className="tracking-tight whitespace-nowrap app-logo uppercase" style={{ fontSize: '2rem' }}>
               <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
             </h1>
-            <p className="text-[var(--color-text-secondary)] mt-2 text-sm">{t.loginSubtitle}</p>
+            <p className="text-ink-soft mt-1.5 text-xs">{t.loginSubtitle}</p>
           </div>
 
           {/* Pending approval state */}
           {mode === 'pending' ? (
-            <div className="text-center space-y-6">
-              <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/30 mx-auto flex items-center justify-center">
-                <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <div className="text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 mx-auto flex items-center justify-center">
+                <svg className="w-6 h-6 text-emerald-700 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <p className="text-ink font-bold text-base mb-2">{t.pendingApprovalTitle}</p>
+                <p className="text-ink font-bold text-base mb-1.5">{t.pendingApprovalTitle}</p>
                 <p className="text-ink-mute text-sm leading-relaxed">{t.pendingApprovalMsg}</p>
-                <p className="text-ink-mute text-sm leading-relaxed mt-2">
-                  An administrator at{' '}
-                  <span className="text-ink font-bold">{selectedTenant?.name || 'your institution'}</span>{' '}
-                  must approve your account before you can sign in.
-                </p>
+                {selectedTenant && (
+                  <p className="text-ink font-bold text-sm mt-2 truncate">{selectedTenant.name}</p>
+                )}
               </div>
               <button
                 onClick={() => switchMode('login')}
-                className="text-emerald-400 text-xs font-bold uppercase tracking-widest hover:text-emerald-300 transition-colors"
+                className="text-emerald-700 dark:text-emerald-400 text-xs font-bold uppercase tracking-widest hover:opacity-80 transition-opacity"
               >
                 ← {t.backToLogin}
               </button>
@@ -207,38 +224,38 @@ export default function Login() {
           ) : (
             <>
               {/* Tab switcher */}
-              <div className="flex items-center bg-raised rounded-xl p-1 mb-6 border border-line-soft">
+              <div className="flex items-center bg-raised rounded-xl p-1 mb-4 border border-line-soft">
                 <button
                   onClick={() => switchMode('login')}
-                  className={`flex-1 py-2 text-[11px] font-black uppercase tracking-widest rounded-lg transition-all ${mode === 'login' ? 'bg-[var(--color-palm-600)] text-ink shadow' : 'text-ink-mute hover:text-ink-soft'}`}
+                  className={`flex-1 py-2 text-[11px] font-black uppercase tracking-widest rounded-lg transition-all ${mode === 'login' ? 'bg-[var(--color-palm-700)] text-white shadow' : 'text-ink-mute hover:text-ink-soft'}`}
                 >
                   {t.signIn}
                 </button>
                 <button
                   onClick={() => switchMode('register')}
-                  className={`flex-1 py-2 text-[11px] font-black uppercase tracking-widest rounded-lg transition-all ${mode === 'register' ? 'bg-[var(--color-palm-600)] text-ink shadow' : 'text-ink-mute hover:text-ink-soft'}`}
+                  className={`flex-1 py-2 text-[11px] font-black uppercase tracking-widest rounded-lg transition-all ${mode === 'register' ? 'bg-[var(--color-palm-700)] text-white shadow' : 'text-ink-mute hover:text-ink-soft'}`}
                 >
                   {t.register}
                 </button>
               </div>
 
-              <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-5">
+              <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-3.5">
                 {error && (
-                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm animate-slide-in font-bold">
+                  <div className="p-2.5 bg-red-500/10 border border-red-500/25 rounded-lg text-red-700 dark:text-red-400 text-xs animate-slide-in font-bold">
                     {error}
                   </div>
                 )}
 
                 {mode === 'register' && (
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">{t.fullName}</label>
+                    <label className={labelClass}>{t.fullName}</label>
                     <input
                       type="text"
                       required
                       minLength={2}
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
+                      className={inputClass}
                       placeholder={t.enterName}
                     />
                   </div>
@@ -246,66 +263,61 @@ export default function Login() {
 
                 {mode === 'register' && (
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">{t.institution}</label>
+                    <label className={labelClass}>{t.institution}</label>
                     {tenantsLoading ? (
-                      <div className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink-mute text-sm">
-                        Loading institutions…
+                      <div className="w-full px-4 py-2.5 bg-raised border border-line rounded-lg text-ink-mute text-sm">
+                        {t.loadingInstitutions}
                       </div>
-                    ) : tenantsError ? (
+                    ) : tenantsError !== null ? (
                       <div className="space-y-2">
-                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm font-bold">
-                          {tenantsError}
+                        <div className="p-2.5 bg-red-500/10 border border-red-500/25 rounded-lg text-red-700 dark:text-red-400 text-xs font-bold">
+                          {tenantsError || t.institutionLoadFailed}
                         </div>
                         <button
                           type="button"
                           onClick={() => setTenantsReload((n) => n + 1)}
                           className="text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest hover:opacity-80 transition-opacity"
                         >
-                          Try again
+                          {t.tryAgain}
                         </button>
                       </div>
                     ) : tenants.length === 0 ? (
-                      <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-lg text-amber-700 dark:text-amber-400 text-sm font-bold">
-                        No institutions are open for registration yet.
+                      <div className="p-2.5 bg-amber-500/10 border border-amber-500/25 rounded-lg text-amber-700 dark:text-amber-400 text-xs font-bold">
+                        {t.noInstitutionsOpen}
                       </div>
                     ) : (
-                      <select
+                      <SearchableSelect
+                        options={tenantOptions}
                         value={tenantId}
-                        onChange={(e) => setTenantId(e.target.value)}
-                        className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all cursor-pointer"
-                      >
-                        <option value="" className="bg-raised text-ink">Choose your institution</option>
-                        {tenants.map((tenant) => (
-                          <option key={tenant.id} value={tenant.id} className="bg-raised text-ink">
-                            {tenant.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setTenantId}
+                        placeholder={t.chooseInstitution}
+                        searchPlaceholder={t.searchInstitutions}
+                      />
                     )}
                   </div>
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">{t.emailAddress}</label>
+                  <label className={labelClass}>{t.emailAddress}</label>
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
+                    className={inputClass}
                     placeholder={mode === 'login' ? 'admin@school.edu' : 'you@example.com'}
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">{t.password}</label>
+                  <label className={labelClass}>{t.password}</label>
                   <input
                     type="password"
                     required
                     minLength={mode === 'register' ? 8 : 1}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
+                    className={inputClass}
                     placeholder={mode === 'register' ? t.minChars : '••••••••'}
                   />
                 </div>
@@ -313,11 +325,11 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={loading || registerBlocked}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-[var(--color-palm-600)] to-[var(--color-palm-500)] hover:from-[var(--color-palm-500)] hover:to-[var(--color-palm-400)] text-ink rounded-lg font-semibold shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-palm-500)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)] transition-all disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden"
+                  className="w-full py-2.5 px-4 bg-[var(--color-palm-700)] hover:bg-[var(--color-palm-600)] text-white rounded-lg font-semibold shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-palm-500)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="relative z-10 flex items-center justify-center uppercase tracking-widest text-xs font-black">
+                  <span className="flex items-center justify-center uppercase tracking-widest text-xs font-black">
                     {loading ? (
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-ink" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin ltr:mr-2 rtl:ml-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
@@ -332,8 +344,8 @@ export default function Login() {
           )}
 
           {mode !== 'pending' && (
-            <div className="mt-8 pt-6 border-t border-[rgba(255,255,255,0.05)] text-center">
-              <p className="text-[var(--color-text-muted)] text-[10px] font-bold">
+            <div className="mt-5 pt-4 border-t border-line-soft text-center">
+              <p className="text-ink-mute text-[10px] font-bold">
                 {t.loginFooter}
               </p>
             </div>

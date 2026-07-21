@@ -519,25 +519,30 @@ export default function KnowledgeAssistant() {
     <div className="flex h-screen text-ink overflow-hidden" style={{ fontFamily: 'var(--font-body)', background: 'transparent' }}>
       <aside className="sidebar-container h-full flex-none flex flex-col z-20 overflow-hidden" style={{ width: isSidebarOpen ? 280 : 0 }}>
         <div className="px-5 pt-7 pb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col">
-              <span className="whitespace-nowrap flex items-center gap-1.5 uppercase app-logo">
-                {/* .logo-text paints a white→grey gradient into the glyphs, which is invisible
-                    on a light sidebar; re-point it at the ink tokens so it follows the theme. */}
-                <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
-              </span>
-              {(user?.tenantLogoUrl || institutionName) && (
-                <div className="flex items-center gap-2 mt-2">
-                  {user?.tenantLogoUrl && (
-                    <img src={user.tenantLogoUrl} alt={institutionName} className="h-6 w-auto object-contain rounded" />
-                  )}
-                  {institutionName && (
-                    <span className="text-[10px] font-bold text-ink-soft tracking-wide truncate max-w-[140px]">{institutionName}</span>
-                  )}
+          <div className="flex items-center justify-between gap-2">
+            {/* The school the user belongs to leads; the EduAI wordmark sits under it as the
+                quieter product mark. With no institution on the account there is nothing to
+                lead with, so the wordmark takes the top slot at its normal size. */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              {user?.tenantLogoUrl && (
+                <img src={user.tenantLogoUrl} alt={institutionName} className="h-6 w-auto flex-none object-contain rounded" />
+              )}
+              {institutionName ? (
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[15px] font-bold text-ink leading-tight truncate" title={institutionName}>
+                    {institutionName}
+                  </span>
+                  <span className="whitespace-nowrap uppercase app-logo mt-0.5 opacity-70" style={{ fontSize: '0.6rem' }}>
+                    <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
+                  </span>
                 </div>
+              ) : (
+                <span className="whitespace-nowrap uppercase app-logo">
+                  <span className="logo-text">Edu</span><span className="ai-highlight">AI</span>
+                </span>
               )}
             </div>
-            <button onClick={handleNewChat} title={t.newChat} className="p-1.5 rounded-lg text-ink-mute hover:text-ink hover:bg-overlay transition-all">
+            <button onClick={handleNewChat} title={t.newChat} className="p-1.5 flex-none rounded-lg text-ink-mute hover:text-ink hover:bg-overlay transition-all">
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
             </button>
           </div>

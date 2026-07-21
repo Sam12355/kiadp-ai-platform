@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { useLanguageStore } from '../../store/languageStore';
+import { translations } from '../../i18n/translations';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { useImpersonationStore } from '../../store/impersonationStore';
@@ -50,6 +52,8 @@ function StatCard({ icon: Icon, label, value, hint }: {
 }
 
 export default function SchoolAnalytics() {
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
   const { user } = useAuthStore();
   const impersonatedTenantId = useImpersonationStore((s) => s.tenantId);
   // When the platform owner is viewing an institution, their own tenantId is null — the
@@ -83,27 +87,27 @@ export default function SchoolAnalytics() {
       <div>
         <h1 className="text-2xl font-black text-ink flex items-center gap-2">
           <BarChart3 className="w-6 h-6 text-accent" />
-          Analytics
+          {t.analytics}
         </h1>
-        <p className="text-sm text-ink-mute mt-1">How your students are using the knowledge base.</p>
+        <p className="text-sm text-ink-mute mt-1">{t.analyticsSubtitle}</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard icon={TrendingUp} label="Questions (14 days)" value={String(summary.questionsLast14)} />
-        <StatCard icon={Users} label="Active students" value={String(summary.activeAskers)} hint="Asked at least one question in 14 days" />
+        <StatCard icon={TrendingUp} label={t.questionsLast14} value={String(summary.questionsLast14)} />
+        <StatCard icon={Users} label={t.activeStudents} value={String(summary.activeAskers)} hint={t.activeStudentsHint} />
         <StatCard
           icon={ShieldCheck}
-          label="Answered from your documents"
+          label={t.answeredFromDocs}
           value={groundedPct === null ? '—' : `${groundedPct}%`}
           // A rate with no denominator is not 0% — it is "nothing asked yet". Saying 0%
           // would read as a broken knowledge base on a school's first day.
-          hint={groundedPct === null ? 'No questions asked yet' : `${summary.groundedAnswers} of ${summary.totalAnswers} answers`}
+          hint={groundedPct === null ? t.noQuestionsAskedYet : `${summary.groundedAnswers} ${t.ofAnswers} ${summary.totalAnswers}`}
         />
-        <StatCard icon={FileWarning} label="Gaps found" value={String(ungrounded.length)} hint="Recent questions your documents could not answer" />
+        <StatCard icon={FileWarning} label={t.gapsFound} value={String(ungrounded.length)} hint={t.gapsFoundHint} />
       </div>
 
       <div className="glass rounded-2xl p-6">
-        <h2 className="text-sm font-bold text-ink mb-4">Questions per day</h2>
+        <h2 className="text-sm font-bold text-ink mb-4">{t.questionsPerDay}</h2>
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={daily}>
             <defs>
@@ -128,11 +132,11 @@ export default function SchoolAnalytics() {
         <div className="glass rounded-2xl p-6">
           <h2 className="text-sm font-bold text-ink mb-1 flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-ink-mute" />
-            Most-used documents
+            {t.mostUsedDocuments}
           </h2>
-          <p className="text-[11px] text-ink-mute mb-4">How often each document was cited in an answer.</p>
+          <p className="text-[11px] text-ink-mute mb-4">{t.mostUsedDocumentsSub}</p>
           {topDocuments.length === 0 ? (
-            <p className="text-sm text-ink-mute py-8 text-center">No answers have cited a document yet.</p>
+            <p className="text-sm text-ink-mute py-8 text-center">{t.noCitationsYet}</p>
           ) : (
             <ResponsiveContainer width="100%" height={Math.max(160, topDocuments.length * 34)}>
               <BarChart data={topDocuments} layout="vertical" margin={{ left: 8, right: 16 }}>
@@ -144,7 +148,8 @@ export default function SchoolAnalytics() {
                   width={140}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(t: string) => (t.length > 22 ? t.slice(0, 21) + '…' : t)}
+                  {/* Not `t` — that is the translations object in this scope. */}
+                  tickFormatter={(title: string) => (title.length > 22 ? title.slice(0, 21) + '…' : title)}
                 />
                 <Tooltip
                   cursor={{ fill: c.grid, opacity: 0.4 }}
@@ -159,12 +164,12 @@ export default function SchoolAnalytics() {
         <div className="glass rounded-2xl p-6">
           <h2 className="text-sm font-bold text-ink mb-1 flex items-center gap-2">
             <FileWarning className="w-4 h-4 text-ink-mute" />
-            Questions your documents didn't answer
+            {t.unansweredQuestions}
           </h2>
           {/* The actionable half of the page: each line is a topic worth uploading. */}
-          <p className="text-[11px] text-ink-mute mb-4">Consider adding material that covers these.</p>
+          <p className="text-[11px] text-ink-mute mb-4">{t.unansweredSub}</p>
           {ungrounded.length === 0 ? (
-            <p className="text-sm text-ink-mute py-8 text-center">Every question so far was answered from your documents.</p>
+            <p className="text-sm text-ink-mute py-8 text-center">{t.allAnsweredFromDocs}</p>
           ) : (
             <ul className="space-y-2 max-h-[320px] overflow-y-auto">
               {ungrounded.map(q => (
