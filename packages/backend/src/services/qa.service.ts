@@ -588,7 +588,12 @@ async function buildVerbatimAnswer(
 }
 
 function wantsVerbatim(text: string): boolean {
-  return /\b(verbatim|word[- ]for[- ]word|word by word|exact(ly)? as|as it is|as[- ]is|as written|as it appears|as they appear|copy the text|exact text|exact wording|original text|original wording|quote (the|it|that|this)|without (changing|rephrasing|paraphrasing|summari[sz]ing)|don'?t (change|rephrase|paraphrase|summari[sz]e)|do not (change|rephrase|paraphrase|summari[sz]e)|read it out|read the (text|content|passage|paragraph)|full text)\b/i.test(text)
+  // Note "exact"/"exactly" on their own: voice mode's tool call compresses the request to
+  // keywords, and the logged form of "list them down as it is" came through as
+  // "exact five points under module content". Intent survives, but only as that one word,
+  // so the bare adjective has to count. A false positive just returns the passage
+  // unedited, which is the cheaper of the two mistakes.
+  return /\b(verbatim|word[- ]for[- ]word|word by word|exact|exactly|as it is|as[- ]is|as written|as it appears|as they appear|copy the text|original text|original wording|quote (the|it|that|this)|without (changing|rephrasing|paraphrasing|summari[sz]ing)|don'?t (change|rephrase|paraphrase|summari[sz]e)|do not (change|rephrase|paraphrase|summari[sz]e)|read it out|read the (text|content|passage|paragraph)|full text)\b/i.test(text)
     // Sinhala: "as it is" / "exactly" / "word for word"
     || /(තියෙන\s*විදිහට|ඒ\s*විදිහටම|වචනෙන්\s*වචනය|මුල්\s*පෙළ)/.test(text)
     // Tamil: "as it is" / "exactly" / "word for word"
