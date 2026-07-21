@@ -9,6 +9,21 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      // Apply the saved theme before the first paint. The store rehydrates only after
+      // React mounts, which is late enough that a dark-mode user would see a white flash
+      // on every load. Blocking and inline is the point: it must run before any pixel.
+      (function () {
+        try {
+          var s = localStorage.getItem('eduai-theme-storage');
+          if (s && JSON.parse(s).state.theme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (e) {
+          /* Unreadable or absent preference — light is the default, nothing to do. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

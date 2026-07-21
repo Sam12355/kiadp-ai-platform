@@ -1,11 +1,13 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/client';
 import Portal from '../../components/Portal';
+import { useImpersonationStore } from '../../store/impersonationStore';
 import {
   Building2, Plus, Users, FileText, HelpCircle, ChevronRight, X,
   AlertCircle, UserPlus, UserMinus, ToggleLeft, ToggleRight, Search,
-  Lock, Mail, User, Save, Trash2, RefreshCw, Pencil, Upload,
+  Lock, Mail, User, Save, Trash2, RefreshCw, Pencil, Upload, Eye,
 } from 'lucide-react';
 
 interface Tenant {
@@ -35,17 +37,17 @@ interface Doc {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  READY: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
-  PROCESSING: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-  UPLOADED: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  FAILED: 'text-red-400 bg-red-400/10 border-red-400/20',
+  READY: 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25',
+  PROCESSING: 'text-yellow-700 bg-yellow-500/10 border-yellow-500/25',
+  UPLOADED: 'text-blue-700 bg-blue-500/10 border-blue-500/25',
+  FAILED: 'text-red-700 bg-red-500/10 border-red-500/25',
 };
 
 function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
     <Portal>
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />
+        <div className="absolute inset-0 bg-scrim backdrop-blur-md" onClick={onClose} />
         <div className="relative z-10 w-full max-w-lg glass rounded-[2rem] p-8 shadow-2xl animate-fade-in">
           {children}
         </div>
@@ -57,6 +59,8 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
 export default function Institutions() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<Tenant | null>(null);
+  const navigate = useNavigate();
+  const startImpersonation = useImpersonationStore((st) => st.start);
   const [tab, setTab] = useState<'users' | 'documents'>('users');
   const [userSearch, setUserSearch] = useState('');
 
@@ -224,10 +228,10 @@ export default function Institutions() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-          <h1 className="text-4xl font-black text-white tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>
+          <h1 className="text-4xl font-black text-ink tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>
             Institutions
           </h1>
-          <p className="text-white/40 mt-2 font-medium text-sm">
+          <p className="text-ink-mute mt-2 font-medium text-sm">
             Manage schools and institutions using the platform
           </p>
         </div>
@@ -243,35 +247,35 @@ export default function Institutions() {
       {showCreate && (
         <Modal onClose={() => { setShowCreate(false); setCreateError(''); }}>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-black text-white uppercase tracking-widest">New Institution</h2>
-            <button onClick={() => { setShowCreate(false); setCreateError(''); }} className="text-white/30 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+            <h2 className="text-lg font-black text-ink uppercase tracking-widest">New Institution</h2>
+            <button onClick={() => { setShowCreate(false); setCreateError(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {createError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{createError}
             </div>
           )}
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Name</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Name</label>
               <input type="text" value={createName}
                 onChange={(e) => { setCreateName(e.target.value); setCreateSlug(autoSlug(e.target.value)); }}
                 placeholder="e.g. Royal College Colombo"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Slug</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Slug</label>
               <input type="text" value={createSlug} onChange={(e) => setCreateSlug(e.target.value)}
                 placeholder="royal-college-colombo"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm font-mono focus:outline-none focus:border-emerald-500/50 transition-colors"
+                className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm font-mono focus:outline-none focus:border-emerald-500/50 transition-colors"
               />
-              <p className="text-[10px] text-white/20 px-1">Lowercase letters, numbers, hyphens only</p>
+              <p className="text-[10px] text-ink-faint px-1">Lowercase letters, numbers, hyphens only</p>
             </div>
           </div>
           <div className="flex gap-3 mt-6">
             <button onClick={() => { setShowCreate(false); setCreateError(''); }}
-              className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+              className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
               Cancel
             </button>
             <button disabled={!createName.trim() || !createSlug.trim() || createTenantMutation.isPending}
@@ -287,32 +291,32 @@ export default function Institutions() {
       {editing && (
         <Modal onClose={() => { setEditing(null); setEditError(''); }}>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-black text-white uppercase tracking-widest">Edit Institution</h2>
-            <button onClick={() => { setEditing(null); setEditError(''); }} className="text-white/30 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+            <h2 className="text-lg font-black text-ink uppercase tracking-widest">Edit Institution</h2>
+            <button onClick={() => { setEditing(null); setEditError(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {editError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{editError}
             </div>
           )}
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Name</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Name</label>
               <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
                 placeholder="Institution name"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Slug (read-only)</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Slug (read-only)</label>
               <input type="text" value={editing.slug} disabled
-                className="w-full px-4 py-3 bg-white/[0.02] border border-white/5 rounded-2xl text-white/30 text-sm font-mono cursor-not-allowed"
+                className="w-full px-4 py-3 bg-raised border border-line-soft rounded-2xl text-ink-faint text-sm font-mono cursor-not-allowed"
               />
             </div>
           </div>
           <div className="flex gap-3 mt-6">
             <button onClick={() => { setEditing(null); setEditError(''); }}
-              className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+              className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
               Cancel
             </button>
             <button disabled={!editName.trim() || editTenantMutation.isPending}
@@ -329,13 +333,13 @@ export default function Institutions() {
         <Modal onClose={() => { setShowCreateUser(false); setNewUserError(''); }}>
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-lg font-black text-white uppercase tracking-widest">Add User</h2>
-              <p className="text-[10px] text-white/30 mt-0.5">Creates account and assigns to {selected.name}</p>
+              <h2 className="text-lg font-black text-ink uppercase tracking-widest">Add User</h2>
+              <p className="text-[10px] text-ink-faint mt-0.5">Creates account and assigns to {selected.name}</p>
             </div>
-            <button onClick={() => { setShowCreateUser(false); setNewUserError(''); }} className="text-white/30 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+            <button onClick={() => { setShowCreateUser(false); setNewUserError(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {newUserError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{newUserError}
             </div>
           )}
@@ -346,27 +350,27 @@ export default function Institutions() {
               { label: 'Password', value: newUserPassword, set: setNewUserPassword, type: 'password', placeholder: 'Min. 8 characters', icon: Lock },
             ].map(({ label, value, set, type, placeholder, icon: Icon }) => (
               <div key={label} className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/40">{label}</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">{label}</label>
                 <div className="relative">
-                  <Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
                   <input type={type} value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder}
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                    className="w-full pl-11 pr-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
                   />
                 </div>
               </div>
             ))}
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Role</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Role</label>
               <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white text-sm focus:outline-none focus:border-emerald-500/50 transition-colors cursor-pointer">
-                <option value="STUDENT" className="bg-gray-900">Student / Staff</option>
-                <option value="ADMIN" className="bg-gray-900">Admin (institution admin)</option>
+                className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink text-sm focus:outline-none focus:border-emerald-500/50 transition-colors cursor-pointer">
+                <option value="STUDENT" className="bg-raised text-ink">Student / Staff</option>
+                <option value="ADMIN" className="bg-raised text-ink">Admin (institution admin)</option>
               </select>
             </div>
           </div>
           <div className="flex gap-3 mt-6">
             <button onClick={() => { setShowCreateUser(false); setNewUserError(''); }}
-              className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+              className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
               Cancel
             </button>
             <button
@@ -384,31 +388,31 @@ export default function Institutions() {
         <Modal onClose={() => { setShowUploadDoc(false); setUploadError(''); setUploadFile(null); setUploadTitle(''); }}>
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-lg font-black text-white uppercase tracking-widest">Upload Document</h2>
-              <p className="text-[10px] text-white/30 mt-0.5">Upload PDF to {selected.name}</p>
+              <h2 className="text-lg font-black text-ink uppercase tracking-widest">Upload Document</h2>
+              <p className="text-[10px] text-ink-faint mt-0.5">Upload PDF to {selected.name}</p>
             </div>
-            <button onClick={() => { setShowUploadDoc(false); setUploadError(''); setUploadFile(null); setUploadTitle(''); }} className="text-white/30 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+            <button onClick={() => { setShowUploadDoc(false); setUploadError(''); setUploadFile(null); setUploadTitle(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {uploadError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{uploadError}
             </div>
           )}
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Title (optional)</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Title (optional)</label>
               <input type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)}
                 placeholder="Auto-detected from filename"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">PDF File</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">PDF File</label>
               <input ref={fileInputRef} type="file" accept=".pdf" className="hidden"
                 onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
               />
               <button onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-3 py-8 border-2 border-dashed border-white/10 hover:border-emerald-500/40 rounded-2xl text-white/30 hover:text-white/60 transition-all cursor-pointer">
+                className="w-full flex items-center justify-center gap-3 py-8 border-2 border-dashed border-line hover:border-emerald-500/40 rounded-2xl text-ink-faint hover:text-ink-soft transition-all cursor-pointer">
                 <Upload className="w-5 h-5" />
                 <span className="text-sm font-medium">{uploadFile ? uploadFile.name : 'Click to select PDF'}</span>
               </button>
@@ -416,7 +420,7 @@ export default function Institutions() {
           </div>
           <div className="flex gap-3 mt-6">
             <button onClick={() => { setShowUploadDoc(false); setUploadError(''); setUploadFile(null); setUploadTitle(''); }}
-              className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+              className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
               Cancel
             </button>
             <button disabled={!uploadFile || uploadDocMutation.isPending}
@@ -439,25 +443,25 @@ export default function Institutions() {
             </div>
           ) : !tenants?.length ? (
             <div className="glass rounded-[1.5rem] p-12 text-center">
-              <Building2 className="w-12 h-12 text-white/20 mx-auto mb-4" />
-              <p className="text-white/40 font-medium">No institutions yet. Create the first one above.</p>
+              <Building2 className="w-12 h-12 text-ink-faint mx-auto mb-4" />
+              <p className="text-ink-mute font-medium">No institutions yet. Create the first one above.</p>
             </div>
           ) : tenants.map((t) => (
             <div key={t.id}
               onClick={() => { setSelected(selected?.id === t.id ? null : t); setTab('users'); setUserSearch(''); }}
-              className={`glass rounded-[1.5rem] p-6 cursor-pointer transition-all group ${selected?.id === t.id ? 'border border-emerald-500/40 shadow-lg shadow-emerald-500/10' : 'hover:border-white/10'}`}
+              className={`glass rounded-[1.5rem] p-6 cursor-pointer transition-all group ${selected?.id === t.id ? 'border border-emerald-500/40 shadow-lg shadow-emerald-500/10' : 'hover:border-line'}`}
             >
               <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 font-black text-lg shadow-lg ${t.isActive ? 'bg-gradient-to-br from-emerald-500 to-emerald-800 text-white' : 'bg-white/5 text-white/30'}`}>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 font-black text-lg shadow-lg ${t.isActive ? 'bg-gradient-to-br from-emerald-500 to-emerald-800 text-white' : 'bg-raised text-ink-faint'}`}>
                   {t.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-bold text-white">{t.name}</p>
-                    {!t.isActive && <span className="text-[9px] font-black uppercase tracking-widest text-red-400 bg-red-400/10 border border-red-400/20 px-2 py-0.5 rounded-full">Inactive</span>}
+                    <p className="font-bold text-ink">{t.name}</p>
+                    {!t.isActive && <span className="text-[9px] font-black uppercase tracking-widest text-red-700 bg-red-500/10 border border-red-500/25 px-2 py-0.5 rounded-full">Inactive</span>}
                   </div>
-                  <p className="text-xs text-white/30 font-mono mt-0.5">{t.slug}</p>
-                  <div className="flex items-center gap-4 mt-2 text-[10px] text-white/20 uppercase tracking-widest">
+                  <p className="text-xs text-ink-faint font-mono mt-0.5">{t.slug}</p>
+                  <div className="flex items-center gap-4 mt-2 text-[10px] text-ink-faint uppercase tracking-widest">
                     <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {t._count.users}</span>
                     <span className="flex items-center gap-1"><FileText className="w-3 h-3" /> {t._count.documents}</span>
                     <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3" /> {t._count.questions}</span>
@@ -466,16 +470,16 @@ export default function Institutions() {
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => { setEditing(t); setEditName(t.name); }}
                     title="Edit institution"
-                    className="p-2 text-white/30 hover:text-white transition-colors cursor-pointer">
+                    className="p-2 text-ink-faint hover:text-ink transition-colors cursor-pointer">
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button onClick={() => toggleMutation.mutate({ id: t.id, isActive: !t.isActive })}
                     title={t.isActive ? 'Deactivate' : 'Activate'}
-                    className="p-2 text-white/30 hover:text-emerald-400 transition-colors cursor-pointer">
-                    {t.isActive ? <ToggleRight className="w-5 h-5 text-emerald-400" /> : <ToggleLeft className="w-5 h-5" />}
+                    className="p-2 text-ink-faint hover:text-emerald-600 transition-colors cursor-pointer">
+                    {t.isActive ? <ToggleRight className="w-5 h-5 text-emerald-700" /> : <ToggleLeft className="w-5 h-5" />}
                   </button>
                 </div>
-                <ChevronRight className={`w-4 h-4 text-white/20 transition-transform ${selected?.id === t.id ? 'rotate-90' : ''}`} />
+                <ChevronRight className={`w-4 h-4 text-ink-faint transition-transform ${selected?.id === t.id ? 'rotate-90' : ''}`} />
               </div>
             </div>
           ))}
@@ -487,17 +491,27 @@ export default function Institutions() {
             {/* Panel header */}
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-black text-white uppercase tracking-widest">{selected.name}</h2>
-                <p className="text-[10px] text-white/30 uppercase tracking-widest mt-0.5 font-mono">{selected.slug}</p>
+                <h2 className="text-sm font-black text-ink uppercase tracking-widest">{selected.name}</h2>
+                <p className="text-[10px] text-ink-faint uppercase tracking-widest mt-0.5 font-mono">{selected.slug}</p>
               </div>
-              <button onClick={() => setSelected(null)} className="p-2 text-white/30 hover:text-white transition-colors cursor-pointer"><X className="w-4 h-4" /></button>
+              <button onClick={() => setSelected(null)} className="p-2 text-ink-faint hover:text-ink transition-colors cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
 
+            {/* View as this institution — support access, not a shortcut. Sends you into the
+                school panel scoped to their data, with a banner that stays up until you exit. */}
+            <button
+              onClick={() => { startImpersonation(selected.id, selected.name); navigate('/school'); }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-amber-950 text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              View as this institution
+            </button>
+
             {/* Tabs */}
-            <div className="flex bg-white/5 rounded-xl p-1 gap-1">
+            <div className="flex bg-raised rounded-xl p-1 gap-1">
               {(['users', 'documents'] as const).map((t) => (
                 <button key={t} onClick={() => setTab(t)}
-                  className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer ${tab === t ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white'}`}>
+                  className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer ${tab === t ? 'bg-overlay text-ink' : 'text-ink-faint hover:text-ink'}`}>
                   {t}
                 </button>
               ))}
@@ -508,10 +522,10 @@ export default function Institutions() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-faint" />
                     <input type="text" value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
                       placeholder="Search users..."
-                      className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/20 text-xs focus:outline-none focus:border-emerald-500/50 transition-colors"
+                      className="w-full pl-9 pr-3 py-2 bg-raised border border-line rounded-xl text-ink placeholder:text-ink-faint text-xs focus:outline-none focus:border-emerald-500/50 transition-colors"
                     />
                   </div>
                   <button onClick={() => setShowCreateUser(true)}
@@ -521,29 +535,29 @@ export default function Institutions() {
                 </div>
 
                 {/* Assigned users */}
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
                   Assigned ({tenantUsers?.length ?? 0})
                 </p>
                 {tuLoading ? (
                   <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>
                 ) : assignedFiltered.length === 0 ? (
-                  <p className="text-[11px] text-white/20 italic px-1">{userSearch ? 'No assigned users match.' : 'No users assigned yet — create or assign one above.'}</p>
+                  <p className="text-[11px] text-ink-faint italic px-1">{userSearch ? 'No assigned users match.' : 'No users assigned yet — create or assign one above.'}</p>
                 ) : assignedFiltered.map((u) => (
                   <div key={u.id} className="flex items-center gap-3 p-3 bg-emerald-500/5 border border-emerald-500/15 rounded-2xl group">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-300 font-black text-sm flex-shrink-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-700 font-black text-sm flex-shrink-0">
                       {u.fullName.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-white truncate leading-none">{u.fullName}</p>
-                      <p className="text-[10px] text-white/30 truncate mt-0.5">{u.email}</p>
+                      <p className="text-sm font-bold text-ink truncate leading-none">{u.fullName}</p>
+                      <p className="text-[10px] text-ink-faint truncate mt-0.5">{u.email}</p>
                     </div>
-                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${u.isActive ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' : 'text-red-400 bg-red-400/10 border-red-400/20'}`}>
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${u.isActive ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25' : 'text-red-700 bg-red-500/10 border-red-500/25'}`}>
                       {u.isActive ? 'Active' : 'Inactive'}
                     </span>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-white/20">{u.role}</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-ink-faint">{u.role}</span>
                     <button onClick={() => removeMutation.mutate(u.id)} disabled={removeMutation.isPending}
                       title="Remove from institution"
-                      className="p-1.5 text-white/20 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-30 opacity-0 group-hover:opacity-100">
+                      className="p-1.5 text-ink-faint hover:text-red-600 transition-colors cursor-pointer disabled:opacity-30 opacity-0 group-hover:opacity-100">
                       <UserMinus className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -552,20 +566,20 @@ export default function Institutions() {
                 {/* Unassigned users to pick from */}
                 {unassigned.length > 0 && (
                   <>
-                    <div className="border-t border-white/5 pt-2" />
-                    <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Assign Existing User</p>
+                    <div className="border-t border-line-soft pt-2" />
+                    <p className="text-[10px] font-black uppercase tracking-widest text-ink-faint">Assign Existing User</p>
                     {unassigned.map((u) => (
-                      <div key={u.id} className="flex items-center gap-3 p-3 bg-white/[0.03] border border-white/5 rounded-2xl hover:border-white/10 transition-all group">
-                        <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-white/40 font-black text-sm flex-shrink-0">
+                      <div key={u.id} className="flex items-center gap-3 p-3 bg-raised border border-line-soft rounded-2xl hover:border-line transition-all group">
+                        <div className="w-8 h-8 rounded-xl bg-raised flex items-center justify-center text-ink-mute font-black text-sm flex-shrink-0">
                           {u.fullName.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-white/70 truncate leading-none">{u.fullName}</p>
-                          <p className="text-[10px] text-white/20 truncate mt-0.5">{u.email}</p>
+                          <p className="text-sm font-bold text-ink-soft truncate leading-none">{u.fullName}</p>
+                          <p className="text-[10px] text-ink-faint truncate mt-0.5">{u.email}</p>
                         </div>
                         <button onClick={() => assignMutation.mutate(u.id)} disabled={assignMutation.isPending}
                           title="Assign to institution"
-                          className="p-1.5 text-white/20 hover:text-emerald-400 transition-colors cursor-pointer disabled:opacity-30 opacity-0 group-hover:opacity-100">
+                          className="p-1.5 text-ink-faint hover:text-emerald-600 transition-colors cursor-pointer disabled:opacity-30 opacity-0 group-hover:opacity-100">
                           <UserPlus className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -588,24 +602,24 @@ export default function Institutions() {
                   <div className="flex justify-center py-6"><div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>
                 ) : !tenantDocs?.length ? (
                   <div className="text-center py-8">
-                    <FileText className="w-10 h-10 text-white/10 mx-auto mb-3" />
-                    <p className="text-[11px] text-white/20 italic">No documents yet — upload one above.</p>
+                    <FileText className="w-10 h-10 text-ink-faint mx-auto mb-3" />
+                    <p className="text-[11px] text-ink-faint italic">No documents yet — upload one above.</p>
                   </div>
                 ) : tenantDocs.map((doc) => (
-                  <div key={doc.id} className="flex items-center gap-3 p-3 bg-white/[0.03] border border-white/5 rounded-2xl group hover:border-white/10 transition-all">
+                  <div key={doc.id} className="flex items-center gap-3 p-3 bg-raised border border-line-soft rounded-2xl group hover:border-line transition-all">
                     <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 text-emerald-400" />
+                      <FileText className="w-4 h-4 text-emerald-700" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-white truncate leading-none">{doc.title}</p>
-                      <p className="text-[10px] text-white/20 mt-0.5 truncate">{doc.originalFilename}</p>
+                      <p className="text-sm font-bold text-ink truncate leading-none">{doc.title}</p>
+                      <p className="text-[10px] text-ink-faint mt-0.5 truncate">{doc.originalFilename}</p>
                     </div>
-                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${STATUS_COLORS[doc.status] ?? 'text-white/20 border-white/10 bg-white/5'}`}>
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${STATUS_COLORS[doc.status] ?? 'text-ink-faint border-line bg-raised'}`}>
                       {doc.status}
                     </span>
                     <button onClick={() => deleteDocMutation.mutate(doc.id)} disabled={deleteDocMutation.isPending}
                       title="Delete document"
-                      className="p-1.5 text-white/20 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-30 opacity-0 group-hover:opacity-100">
+                      className="p-1.5 text-ink-faint hover:text-red-600 transition-colors cursor-pointer disabled:opacity-30 opacity-0 group-hover:opacity-100">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>

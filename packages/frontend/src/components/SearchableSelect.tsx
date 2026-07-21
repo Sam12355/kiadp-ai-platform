@@ -46,17 +46,17 @@ export default function SearchableSelect({ options, value, onChange, placeholder
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-5 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:border-emerald-500/50 focus:outline-none text-white transition-all text-sm font-medium flex items-center justify-between shadow-inner"
+        className="w-full px-5 py-4 bg-raised border border-line rounded-2xl focus:border-emerald-500/50 focus:outline-none text-ink transition-all text-sm font-medium flex items-center justify-between shadow-inner"
       >
-        <span className={selectedOption ? 'text-white' : 'text-gray-500'}>
+        <span className={selectedOption ? 'text-ink' : 'text-gray-500'}>
           {selectedOption ? selectedOption.label : finalPlaceholder}
         </span>
         <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute z-[1000] mt-2 w-full glass rounded-2xl border border-white/10 shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200" style={{ background: 'rgba(20, 22, 25, 0.95)', backdropFilter: 'blur(30px)' }}>
-          <div className="p-3 border-b border-white/5">
+        <div className="absolute z-[1000] mt-2 w-full glass rounded-2xl border border-line shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200" style={{ background: 'rgba(20, 22, 25, 0.95)', backdropFilter: 'blur(30px)' }}>
+          <div className="p-3 border-b border-line-soft">
             <div className="relative">
               <Search className="absolute ltr:left-3 rtl:right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
               <input
@@ -65,7 +65,7 @@ export default function SearchableSelect({ options, value, onChange, placeholder
                 placeholder={t.searchLibrary}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white/5 border border-white/5 rounded-xl py-2 ltr:pl-9 rtl:pr-9 ltr:pr-3 rtl:pl-3 text-xs focus:border-emerald-500/30 focus:outline-none text-white transition-all"
+                className="w-full bg-raised border border-line-soft rounded-xl py-2 ltr:pl-9 rtl:pr-9 ltr:pr-3 rtl:pl-3 text-xs focus:border-emerald-500/30 focus:outline-none text-ink transition-all"
               />
             </div>
           </div>
@@ -86,7 +86,7 @@ export default function SearchableSelect({ options, value, onChange, placeholder
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm transition-all mb-1 ${
                     opt.value === value 
                       ? 'bg-emerald-500/10 text-emerald-400 font-bold' 
-                      : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                      : 'text-gray-400 hover:bg-raised hover:text-white'
                   }`}
                 >
                   {opt.label}

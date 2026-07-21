@@ -4,6 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 import apiClient from '../../api/client';
+import ThemeToggle from '../../components/ThemeToggle';
 import {
   User, Mail, Save, AlertCircle, CheckCircle, Shield, Camera, Upload,
   Lock, Eye, EyeOff, Globe, LogOut, MessageSquare, Settings, KeyRound,
@@ -134,17 +135,17 @@ export default function ClientSettings() {
     label, value, onChange, show, onToggle, placeholder,
   }: { label: string; value: string; onChange: (v: string) => void; show: boolean; onToggle: () => void; placeholder: string }) => (
     <div className="space-y-2">
-      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">{label}</label>
+      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-ink-mute">{label}</label>
       <div className="relative">
-        <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+        <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
         <input
           type={show ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-14 pr-12 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-white/20 font-medium text-white"
+          className="w-full bg-raised border border-line rounded-2xl py-4 pl-14 pr-12 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-ink-faint font-medium text-ink"
         />
-        <button type="button" onClick={onToggle} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/60 transition-colors">
+        <button type="button" onClick={onToggle} className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink-soft transition-colors">
           {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
         </button>
       </div>
@@ -152,7 +153,7 @@ export default function ClientSettings() {
   );
 
   return (
-    <div className="flex h-screen text-white overflow-hidden" style={{ fontFamily: 'var(--font-body)', background: 'transparent' }}>
+    <div className="flex h-screen text-ink overflow-hidden" style={{ fontFamily: 'var(--font-body)', background: 'transparent' }}>
 
       {/* ════════ SIDEBAR ════════ */}
       <aside
@@ -163,7 +164,9 @@ export default function ClientSettings() {
         <div className="px-5 pt-7 pb-4">
           <button onClick={() => navigate('/knowledge')} className="flex items-center">
             <span className="whitespace-nowrap flex items-center gap-1.5 uppercase app-logo">
-              <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
+              {/* .kiadp-text clips a white→grey gradient into the glyphs — invisible on a light
+                  sidebar — so re-point it at the ink tokens. */}
+              <span className="kiadp-text" style={{ backgroundImage: 'linear-gradient(to bottom, var(--t-ink), var(--t-ink-soft))' }}>Edu</span><span className="ai-highlight">AI</span>
             </span>
           </button>
         </div>
@@ -171,14 +174,14 @@ export default function ClientSettings() {
         {/* Nav links */}
         <div className="px-3 pb-3 space-y-1">
           <button onClick={() => navigate('/knowledge')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium text-white/50 hover:text-white hover:bg-white/5 transition-all text-left">
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium text-ink-mute hover:text-ink hover:bg-overlay transition-all text-left">
             <MessageSquare className="w-4 h-4 flex-shrink-0" /> Back to Chat
           </button>
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === tab.id ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'text-white/50 hover:text-white hover:bg-white/5'}`}>
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === tab.id ? 'bg-emerald-500/10 text-accent border border-emerald-500/20' : 'text-ink-mute hover:text-ink hover:bg-overlay'}`}>
                 <Icon className="w-4 h-4 flex-shrink-0" /> {tab.label}
               </button>
             );
@@ -189,7 +192,7 @@ export default function ClientSettings() {
         <div className="flex-1 overflow-y-auto px-3 pb-4">
           <div className="sidebar-section-label mt-2">{t.recent}</div>
           {sessions.length === 0 && (
-            <p className="text-[11px] text-white/20 px-3 italic">No recent chats</p>
+            <p className="text-[11px] text-ink-faint px-3 italic">No recent chats</p>
           )}
           {sessions.map((s) => (
             <div key={s.id} onClick={() => navigate('/knowledge')}
@@ -205,7 +208,7 @@ export default function ClientSettings() {
 
         {/* User card */}
         <div className="p-4" style={{ borderTop: '1px solid var(--color-border-default)' }}>
-          <div className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03] border border-white/5">
+          <div className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-raised border border-line-soft">
             <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 overflow-hidden"
               style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff' }}>
               {avatarPreview
@@ -213,12 +216,12 @@ export default function ClientSettings() {
                 : user?.fullName?.charAt(0) || '?'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold truncate text-white">{user?.fullName}</p>
-              <p className="text-[11px] truncate text-white/30">{user?.email}</p>
+              <p className="text-[13px] font-semibold truncate text-ink">{user?.fullName}</p>
+              <p className="text-[11px] truncate text-ink-faint">{user?.email}</p>
             </div>
           </div>
           <button onClick={() => { logout(); navigate('/login'); }}
-            className="w-full mt-2 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest text-white/30 hover:text-red-400 transition-colors">
+            className="w-full mt-2 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest text-ink-faint hover:text-red-600 transition-colors">
             <LogOut className="w-3.5 h-3.5" /> Sign Out
           </button>
         </div>
@@ -230,14 +233,16 @@ export default function ClientSettings() {
         {/* Top bar */}
         <header className="h-14 flex items-center px-4 flex-none z-30 gap-3" style={{ borderBottom: '1px solid var(--color-border-default)' }}>
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 rounded-lg transition-colors text-white/30 hover:text-white hover:bg-white/5">
+            className="p-2 rounded-lg transition-colors text-ink-faint hover:text-ink hover:bg-overlay">
             <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               {isSidebarOpen
                 ? <><path d="M3 3h7v18H3z" /><path d="M14 6h7M14 12h7M14 18h7" /></>
                 : <><path d="M4 6h16M4 12h16M4 18h16" /></>}
             </svg>
           </button>
-          <span className="text-sm font-bold text-white/60 capitalize">{activeTab}</span>
+          <span className="text-sm font-bold text-ink-soft capitalize">{activeTab}</span>
+          <div className="flex-1" />
+          <ThemeToggle />
         </header>
 
         {/* Content */}
@@ -248,28 +253,29 @@ export default function ClientSettings() {
             {activeTab === 'profile' && (
               <>
                 <div>
-                  <h1 className="text-3xl font-black text-white tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>Profile</h1>
-                  <p className="text-white/40 mt-1 text-sm">Update your display name, email, and photo.</p>
+                  <h1 className="text-3xl font-black text-ink tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>Profile</h1>
+                  <p className="text-ink-mute mt-1 text-sm">Update your display name, email, and photo.</p>
                 </div>
 
                 <form onSubmit={handleProfileSave} className="space-y-6">
                   {/* Avatar */}
-                  <div className="flex items-center gap-6 p-6 glass rounded-[1.5rem] border border-white/5">
+                  <div className="flex items-center gap-6 p-6 glass rounded-[1.5rem] border border-line-soft">
                     <div className="relative group flex-shrink-0 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                      <div className="w-20 h-20 rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-500 to-emerald-800 flex items-center justify-center border-2 border-white/10">
+                      <div className="w-20 h-20 rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-500 to-emerald-800 flex items-center justify-center border-2 border-line">
                         {avatarPreview
                           ? <img src={avatarPreview} alt="avatar" className="w-full h-full object-cover" />
+                          /* Initial and camera both sit on solid emerald / the scrim, so white holds in both themes. */
                           : <span className="text-3xl font-black text-white">{user?.fullName?.charAt(0).toUpperCase()}</span>}
                       </div>
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 rounded-2xl transition-opacity flex items-center justify-center">
+                      <div className="absolute inset-0 bg-scrim opacity-0 group-hover:opacity-100 rounded-2xl transition-opacity flex items-center justify-center">
                         <Camera className="w-6 h-6 text-white" />
                       </div>
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-white">{user?.fullName}</p>
-                      <p className="text-xs text-white/30 mt-0.5">{user?.email}</p>
+                      <p className="text-sm font-bold text-ink">{user?.fullName}</p>
+                      <p className="text-xs text-ink-faint mt-0.5">{user?.email}</p>
                       <button type="button" onClick={() => fileInputRef.current?.click()}
-                        className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-white/50 hover:text-white transition-all cursor-pointer">
+                        className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-raised hover:bg-overlay border border-line rounded-xl text-[10px] font-black uppercase tracking-widest text-ink-mute hover:text-ink transition-all cursor-pointer">
                         <Upload className="w-3 h-3" /> Change Photo
                       </button>
                     </div>
@@ -277,46 +283,46 @@ export default function ClientSettings() {
                   </div>
 
                   {profileError && (
-                    <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm">
+                    <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-600 text-sm">
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />{profileError}
                     </div>
                   )}
                   {profileSuccess && (
-                    <div className="flex items-center gap-2 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 text-sm">
+                    <div className="flex items-center gap-2 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-accent text-sm">
                       <CheckCircle className="w-4 h-4 flex-shrink-0" />{profileSuccess}
                     </div>
                   )}
 
-                  <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-5">
+                  <div className="glass rounded-[1.5rem] p-6 border border-line-soft space-y-5">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Full Name</label>
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-ink-mute">Full Name</label>
                       <div className="relative">
-                        <User className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <User className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
                         <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
                           placeholder="Your full name"
-                          className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-14 pr-5 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-white/20 font-medium text-white" />
+                          className="w-full bg-raised border border-line rounded-2xl py-4 pl-14 pr-5 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-ink-faint font-medium text-ink" />
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Email Address</label>
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-ink-mute">Email Address</label>
                       <div className="relative">
-                        <Mail className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                        <Mail className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
                         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                           placeholder="your@email.com"
-                          className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-14 pr-5 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-white/20 font-medium text-white" />
+                          className="w-full bg-raised border border-line rounded-2xl py-4 pl-14 pr-5 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-ink-faint font-medium text-ink" />
                       </div>
                     </div>
                     <div className="flex items-center gap-3 pt-2">
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl">
-                        <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">{user?.role}</span>
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-raised border border-line rounded-xl">
+                        <Shield className="w-3.5 h-3.5 text-accent" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-accent">{user?.role}</span>
                       </div>
                     </div>
                   </div>
 
                   <button type="submit" disabled={profileLoading}
                     className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-400 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl hover:shadow-emerald-500/30 disabled:opacity-50 transition-all active:scale-95 cursor-pointer">
-                    {profileLoading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
+                    {profileLoading ? <div className="w-4 h-4 border-2 border-line-strong border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
                     {profileLoading ? 'Saving...' : 'Save Changes'}
                   </button>
                 </form>
@@ -327,25 +333,25 @@ export default function ClientSettings() {
             {activeTab === 'security' && (
               <>
                 <div>
-                  <h1 className="text-3xl font-black text-white tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>Security</h1>
-                  <p className="text-white/40 mt-1 text-sm">Change your password to keep your account safe.</p>
+                  <h1 className="text-3xl font-black text-ink tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>Security</h1>
+                  <p className="text-ink-mute mt-1 text-sm">Change your password to keep your account safe.</p>
                 </div>
 
-                <form onSubmit={handlePasswordChange} className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-5">
+                <form onSubmit={handlePasswordChange} className="glass rounded-[1.5rem] p-6 border border-line-soft space-y-5">
                   {securityError && (
-                    <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm">
+                    <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-600 text-sm">
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />{securityError}
                     </div>
                   )}
                   {securitySuccess && (
-                    <div className="flex items-center gap-2 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 text-sm">
+                    <div className="flex items-center gap-2 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-accent text-sm">
                       <CheckCircle className="w-4 h-4 flex-shrink-0" />{securitySuccess}
                     </div>
                   )}
 
                   <PasswordInput label="Current Password" value={currentPassword} onChange={setCurrentPassword}
                     show={showCurrent} onToggle={() => setShowCurrent(s => !s)} placeholder="Enter your current password" />
-                  <div className="border-t border-white/5" />
+                  <div className="border-t border-line-soft" />
                   <PasswordInput label="New Password" value={newPassword} onChange={setNewPassword}
                     show={showNew} onToggle={() => setShowNew(s => !s)} placeholder="Min. 8 characters" />
                   <PasswordInput label="Confirm New Password" value={confirmPassword} onChange={setConfirmPassword}
@@ -357,8 +363,8 @@ export default function ClientSettings() {
                         { label: 'At least 8 characters', ok: newPassword.length >= 8 },
                         { label: 'Passwords match', ok: newPassword === confirmPassword && confirmPassword.length > 0 },
                       ].map(({ label, ok }) => (
-                        <div key={label} className={`flex items-center gap-2 text-xs ${ok ? 'text-emerald-400' : 'text-white/30'}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                        <div key={label} className={`flex items-center gap-2 text-xs ${ok ? 'text-accent' : 'text-ink-faint'}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-accent' : 'bg-line-strong'}`} />
                           {label}
                         </div>
                       ))}
@@ -367,7 +373,7 @@ export default function ClientSettings() {
 
                   <button type="submit" disabled={securityLoading || !currentPassword || !newPassword || !confirmPassword}
                     className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-emerald-600 to-emerald-400 text-white font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl hover:shadow-emerald-500/30 disabled:opacity-40 transition-all active:scale-95 cursor-pointer">
-                    {securityLoading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                    {securityLoading ? <div className="w-4 h-4 border-2 border-line-strong border-t-white rounded-full animate-spin" /> : <KeyRound className="w-4 h-4" />}
                     {securityLoading ? 'Updating...' : 'Change Password'}
                   </button>
                 </form>
@@ -378,21 +384,21 @@ export default function ClientSettings() {
             {activeTab === 'preferences' && (
               <>
                 <div>
-                  <h1 className="text-3xl font-black text-white tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>Preferences</h1>
-                  <p className="text-white/40 mt-1 text-sm">Customize your experience.</p>
+                  <h1 className="text-3xl font-black text-ink tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>Preferences</h1>
+                  <p className="text-ink-mute mt-1 text-sm">Customize your experience.</p>
                 </div>
 
-                <div className="glass rounded-[1.5rem] p-6 border border-white/5 space-y-6">
+                <div className="glass rounded-[1.5rem] p-6 border border-line-soft space-y-6">
                   {/* Language */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-emerald-400" />
-                      <span className="text-sm font-bold text-white">Language</span>
+                      <Globe className="w-4 h-4 text-accent" />
+                      <span className="text-sm font-bold text-ink">Language</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       {[{ code: 'en', label: 'English', native: 'English' }, { code: 'ar', label: 'Arabic', native: 'العربية' }].map((lng) => (
                         <button key={lng.code} onClick={() => setLanguage(lng.code as any)}
-                          className={`flex items-center justify-between px-4 py-3.5 rounded-2xl border text-sm font-medium transition-all cursor-pointer ${lang === lng.code ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' : 'bg-white/5 border-white/10 text-white/50 hover:text-white hover:border-white/20'}`}>
+                          className={`flex items-center justify-between px-4 py-3.5 rounded-2xl border text-sm font-medium transition-all cursor-pointer ${lang === lng.code ? 'bg-emerald-500/10 border-emerald-500/40 text-accent' : 'bg-raised border-line text-ink-mute hover:text-ink hover:border-line-strong'}`}>
                           <span>{lng.label}</span>
                           <span className="text-xs opacity-60">{lng.native}</span>
                         </button>
@@ -400,11 +406,11 @@ export default function ClientSettings() {
                     </div>
                   </div>
 
-                  <div className="border-t border-white/5" />
+                  <div className="border-t border-line-soft" />
 
                   {/* Account info */}
                   <div className="space-y-3">
-                    <span className="text-sm font-bold text-white">Account Info</span>
+                    <span className="text-sm font-bold text-ink">Account Info</span>
                     <div className="space-y-2 text-sm">
                       {[
                         { label: 'Name', value: user?.fullName },
@@ -412,19 +418,19 @@ export default function ClientSettings() {
                         { label: 'Role', value: user?.role },
                         { label: 'Account Status', value: user?.isActive ? 'Active' : 'Inactive' },
                       ].map(({ label, value }) => (
-                        <div key={label} className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
-                          <span className="text-white/40 text-xs uppercase tracking-widest font-bold">{label}</span>
-                          <span className="text-white font-medium">{value ?? '—'}</span>
+                        <div key={label} className="flex justify-between items-center py-2 border-b border-line-soft last:border-0">
+                          <span className="text-ink-mute text-xs uppercase tracking-widest font-bold">{label}</span>
+                          <span className="text-ink font-medium">{value ?? '—'}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="border-t border-white/5" />
+                  <div className="border-t border-line-soft" />
 
                   {/* Sign out */}
                   <button onClick={() => { logout(); navigate('/login'); }}
-                    className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+                    className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
                     <LogOut className="w-3.5 h-3.5" /> Sign Out
                   </button>
                 </div>

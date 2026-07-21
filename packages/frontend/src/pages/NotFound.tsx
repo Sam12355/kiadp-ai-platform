@@ -14,7 +14,7 @@ export default function NotFound() {
         </p>
         <Link
           to="/"
-          className="inline-block px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all duration-200"
+          className="inline-block px-6 py-2.5 rounded-lg text-sm font-semibold text-ink transition-all duration-200"
           style={{
             background: 'linear-gradient(135deg, var(--color-palm-700), var(--color-palm-500))',
           }}

@@ -6,10 +6,10 @@ import type { DocumentSummary } from '@khalifa/shared';
 import { FileText, Trash2, Plus, Search, RefreshCw, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {
-  READY: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
-  PROCESSING: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-  UPLOADED: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  FAILED: 'text-red-400 bg-red-400/10 border-red-400/20',
+  READY: 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25',
+  PROCESSING: 'text-yellow-700 bg-yellow-500/10 border-yellow-500/25',
+  UPLOADED: 'text-blue-700 bg-blue-500/10 border-blue-500/25',
+  FAILED: 'text-red-700 bg-red-500/10 border-red-500/25',
 };
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
@@ -65,10 +65,10 @@ export default function SchoolDocuments() {
     <div className="animate-fade-in max-w-5xl mx-auto space-y-8">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-4xl font-black text-white tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>
+          <h1 className="text-4xl font-black text-ink tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>
             Documents
           </h1>
-          <p className="text-white/40 mt-2 text-sm font-medium">
+          <p className="text-ink-mute mt-2 text-sm font-medium">
             Knowledge documents uploaded for your institution
           </p>
         </div>
@@ -82,13 +82,13 @@ export default function SchoolDocuments() {
       </div>
 
       <div className="relative">
-        <Search className="absolute ltr:left-4 rtl:right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+        <Search className="absolute ltr:left-4 rtl:right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
         <input
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search documents..."
-          className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm font-medium focus:outline-none focus:border-blue-500/50 transition-colors"
+          className="w-full pl-11 pr-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm font-medium focus:outline-none focus:border-blue-500/50 transition-colors"
         />
       </div>
 
@@ -98,33 +98,33 @@ export default function SchoolDocuments() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="glass rounded-[1.5rem] p-12 text-center space-y-4">
-          <FileText className="w-12 h-12 text-white/20 mx-auto" />
-          <p className="text-white/40 font-medium">
+          <FileText className="w-12 h-12 text-ink-faint mx-auto" />
+          <p className="text-ink-mute font-medium">
             {searchTerm ? 'No documents match your search.' : 'No documents uploaded yet. Upload your first PDF.'}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map((doc) => (
-            <div key={doc.id} className="glass rounded-[1.5rem] p-6 flex items-center gap-4 group hover:border-white/10 transition-all">
+            <div key={doc.id} className="glass rounded-[1.5rem] p-6 flex items-center gap-4 group hover:border-line transition-all">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5 text-blue-400" />
+                <FileText className="w-5 h-5 text-blue-700" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-white truncate">{doc.title}</p>
-                <p className="text-xs text-white/30 mt-0.5">
+                <p className="text-sm font-bold text-ink truncate">{doc.title}</p>
+                <p className="text-xs text-ink-faint mt-0.5">
                   {doc.originalFilename}
                   {doc.pageCount ? ` · ${doc.pageCount} pages` : ''}
                   {doc.fileSizeBytes ? ` · ${(doc.fileSizeBytes / 1024 / 1024).toFixed(1)} MB` : ''}
                 </p>
               </div>
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${STATUS_COLORS[doc.status] || 'text-white/30 bg-white/5 border-white/10'}`}>
+              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${STATUS_COLORS[doc.status] || 'text-ink-faint bg-raised border-line'}`}>
                 {STATUS_ICONS[doc.status]}
                 {doc.status}
               </div>
               <button
                 onClick={() => setDeletingId(doc.id)}
-                className="p-2 text-white/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                className="p-2 text-ink-faint hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
               </button>

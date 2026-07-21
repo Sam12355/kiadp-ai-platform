@@ -27,23 +27,23 @@ export default function QuestionSummaryCards() {
 
   const cards = [
     {
-      icon: MessageSquare, color: 'bg-purple-500/20 border-purple-500/20', iconColor: 'text-purple-400',
+      icon: MessageSquare, color: 'bg-purple-500/20 border-purple-500/20', iconColor: 'text-purple-700',
       label: t.totalQuestions, value: data?.totalQuestions.toLocaleString() ?? '—',
     },
     {
-      icon: TrendingUp, color: 'bg-emerald-500/20 border-emerald-500/20', iconColor: 'text-emerald-400',
+      icon: TrendingUp, color: 'bg-emerald-500/20 border-emerald-500/20', iconColor: 'text-emerald-700',
       label: t.answeredByAi, value: data?.totalAnswered.toLocaleString() ?? '—',
     },
     {
-      icon: AlertTriangle, color: 'bg-amber-500/20 border-amber-500/20', iconColor: 'text-amber-400',
+      icon: AlertTriangle, color: 'bg-amber-500/20 border-amber-500/20', iconColor: 'text-amber-700',
       label: t.knowledgeGaps, value: data?.knowledgeGaps.toLocaleString() ?? '—',
     },
     {
-      icon: Users, color: 'bg-sky-500/20 border-sky-500/20', iconColor: 'text-sky-400',
+      icon: Users, color: 'bg-sky-500/20 border-sky-500/20', iconColor: 'text-sky-700',
       label: t.gapRate,
       value: data ? `${data.gapPercent}%` : '—',
       sub: data ? (data.gapPercent >= 20 ? t.gapHigh : t.gapHealthy) : undefined,
-      subColor: data ? (data.gapPercent >= 20 ? 'text-amber-400' : 'text-emerald-400') : undefined,
+      subColor: data ? (data.gapPercent >= 20 ? 'text-amber-700' : 'text-emerald-700') : undefined,
     },
   ];
 
@@ -51,13 +51,13 @@ export default function QuestionSummaryCards() {
     <div>
       {/* Section header with link */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-[10px] font-black uppercase tracking-widest text-[var(--color-secondary)] flex items-center gap-2">
+        <h2 className="text-[10px] font-black uppercase tracking-widest text-ink-mute flex items-center gap-2">
           <MessageSquare className="w-3.5 h-3.5" />
           {t.questionAnalytics}
         </h2>
         <Link
           to="/admin/questions"
-          className="flex items-center gap-1.5 text-[10px] font-bold text-purple-400 hover:text-purple-300 transition-colors"
+          className="flex items-center gap-1.5 text-[10px] font-bold text-purple-700 hover:text-purple-800 transition-colors"
         >
           {t.viewFullAnalytics} <ArrowRight className="w-3 h-3" />
         </Link>
@@ -66,7 +66,7 @@ export default function QuestionSummaryCards() {
       {isLoading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="glass rounded-[1.5rem] p-6 border border-white/5 animate-pulse h-28" />
+            <div key={i} className="glass rounded-[1.5rem] p-6 border border-line-soft animate-pulse h-28" />
           ))}
         </div>
       ) : (
@@ -77,7 +77,7 @@ export default function QuestionSummaryCards() {
               return (
                 <div
                   key={card.label}
-                  className="glass rounded-[1.5rem] p-6 relative overflow-hidden border border-white/5 group-hover:border-white/10 transition-all duration-300"
+                  className="glass rounded-[1.5rem] p-6 relative overflow-hidden border border-line-soft group-hover:border-line transition-all duration-300"
                 >
                   <div className="absolute top-0 ltr:right-0 rtl:left-0 p-5 opacity-10 group-hover:opacity-20 transition-opacity">
                     <Icon className={`w-12 h-12 ${card.iconColor}`} />
@@ -85,10 +85,10 @@ export default function QuestionSummaryCards() {
                   <div className={`w-8 h-8 rounded-lg ${card.color} flex items-center justify-center border mb-3`}>
                     <Icon className={`w-4 h-4 ${card.iconColor}`} />
                   </div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-[var(--color-secondary)] mb-1">{card.label}</p>
-                  <p className="text-3xl font-black text-white tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>{card.value}</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-ink-mute mb-1">{card.label}</p>
+                  <p className="text-3xl font-black text-ink tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>{card.value}</p>
                   {card.sub && (
-                    <p className={`text-[10px] font-bold mt-1 ${card.subColor ?? 'text-[var(--color-secondary)]'}`}>{card.sub}</p>
+                    <p className={`text-[10px] font-bold mt-1 ${card.subColor ?? 'text-ink-mute'}`}>{card.sub}</p>
                   )}
                 </div>
               );

@@ -1,17 +1,42 @@
-:root {
-  --color-bg1: rgb(6, 8, 12);
-  --color-bg2: rgb(0, 5, 12);
+/* Blob palette — scoped to the component rather than :root, because these names are generic
+   enough to collide with the design tokens and because each theme needs its own set.
+   Light is the default block; the dark overrides follow it. */
+.gradient-bg {
+  /* Light — saturated pastels at low opacity. Pale colours at high opacity read as dirt on
+     a white page; saturated ones at low opacity read as a tint. */
+  --color1: 134, 239, 172;  /* Palm */
+  --color2: 187, 247, 208;  /* Palm, softer */
+  --color3: 190, 242, 220;  /* Mint */
+  --color4: 253, 230, 138;  /* Sand */
+  --color5: 226, 232, 240;  /* Slate haze */
+  --color-interactive: 134, 239, 172;
+  --circle-size: 80%;
+  /* No blend mode in light: the base is transparent, so screen/overlay against nothing
+     would simply return the source colour anyway. */
+  --blending: normal;
+  --bubbles-opacity: 0.35;
+  /* Transparent so the themed page colour from body shows through. A painted base here
+     covers the entire viewport — that is what made this a black sheet under light. */
+  --bubbles-base: transparent;
+}
+
+.gradient-bg.white-variant {
+  --bubbles-opacity: 0.22; /* Student surface — quieter still */
+}
+
+:root[data-theme='dark'] .gradient-bg {
   --color1: 15, 85, 45;   /* Deep Palm */
   --color2: 12, 65, 35;   /* Moss */
   --color3: 10, 50, 30;   /* Forest Floor */
   --color4: 60, 20, 20;   /* Dark Earth Shadow */
   --color5: 65, 65, 20;   /* Deep Olives */
   --color-interactive: 20, 90, 50;
-  --circle-size: 80%;
   --blending: screen;
+  --bubbles-opacity: 1;
+  --bubbles-base: linear-gradient(40deg, rgb(6, 8, 12), rgb(0, 5, 12));
 }
 
-.gradient-bg.white-variant {
+:root[data-theme='dark'] .gradient-bg.white-variant {
   --color1: 255, 255, 255;
   --color2: 240, 240, 240;
   --color3: 230, 230, 230;
@@ -19,7 +44,7 @@
   --color5: 200, 200, 200;
   --color-interactive: 255, 255, 255;
   --blending: overlay; /* Better for white on dark */
-  opacity: 0.15; /* Keep it subtle */
+  --bubbles-opacity: 0.15; /* Keep it subtle */
 }
 
 .gradient-bg {
@@ -27,7 +52,8 @@
   height: 100vh;
   position: fixed; /* Fixed as background */
   overflow: hidden;
-  background: linear-gradient(40deg, var(--color-bg1), var(--color-bg2));
+  background: var(--bubbles-base);
+  opacity: var(--bubbles-opacity);
   top: 0;
   left: 0;
   z-index: -1; /* Behind everything */

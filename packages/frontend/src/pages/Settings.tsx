@@ -97,30 +97,30 @@ export default function Settings() {
           {t.backToChat || 'Back to Chat'}
         </button>
       )}
-      <div className="border-b border-white/5 pb-6">
-        <h1 className="text-4xl font-black text-white tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>{t.profileSettings}</h1>
+      <div className="border-b border-line-soft pb-6">
+        <h1 className="text-4xl font-black text-ink tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>{t.profileSettings}</h1>
         <p className="text-[var(--color-secondary)] mt-2 font-medium">{t.manageSecurity}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         {/* Profile Card & Avatar */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="glass rounded-[2.5rem] p-8 border border-white/5 text-center bg-white/[0.02] shadow-2xl relative overflow-hidden group">
+          <div className="glass rounded-[2.5rem] p-8 border border-line-soft text-center bg-raised shadow-2xl relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-transparent opacity-50" />
             
             <div className="relative inline-block mb-6">
               <div 
-                className="w-32 h-32 rounded-[2.5rem] bg-gradient-to-br from-emerald-500 to-emerald-800 flex items-center justify-center mx-auto shadow-2xl border-4 border-white/10 overflow-hidden relative"
+                className="w-32 h-32 rounded-[2.5rem] bg-gradient-to-br from-emerald-500 to-emerald-800 flex items-center justify-center mx-auto shadow-2xl border-4 border-line overflow-hidden relative"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {avatarPreview ? (
                   <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover transition-transform group-hover:scale-110 duration-500" />
                 ) : (
-                  <span className="text-4xl font-black text-white">{user?.fullName?.charAt(0).toUpperCase()}</span>
+                  <span className="text-4xl font-black text-ink">{user?.fullName?.charAt(0).toUpperCase()}</span>
                 )}
                 
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
-                  <Camera className="w-8 h-8 text-white scale-90 group-hover:scale-100 transition-transform" />
+                <div className="absolute inset-0 bg-scrim opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                  <Camera className="w-8 h-8 text-ink scale-90 group-hover:scale-100 transition-transform" />
                 </div>
               </div>
               
@@ -151,12 +151,12 @@ export default function Settings() {
 
         {/* Edit Form */}
         <div className="lg:col-span-2">
-          <div className="glass rounded-[2.5rem] p-10 border border-white/5 shadow-2xl relative overflow-hidden backdrop-blur-3xl bg-white/[0.01]">
+          <div className="glass rounded-[2.5rem] p-10 border border-line-soft shadow-2xl relative overflow-hidden backdrop-blur-3xl bg-raised">
             <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2" />
             
             <form onSubmit={handleSubmit} className="space-y-8 relative z-10">
               <div className="space-y-2">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-6">
+                <h3 className="text-lg font-bold text-ink flex items-center gap-2 mb-6">
                   <User className="w-5 h-5 text-emerald-400" />
                   {t.personalIdentity}
                 </h3>
@@ -182,7 +182,7 @@ export default function Settings() {
                     <User className="absolute ltr:left-5 rtl:right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-emerald-400 transition-colors" />
                     <input
                       type="text"
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-gray-700 font-medium text-white shadow-inner"
+                      className="w-full bg-scrim border border-line rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-gray-700 font-medium text-ink shadow-inner"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder={t.enterName}
@@ -196,7 +196,7 @@ export default function Settings() {
                     <Mail className="absolute ltr:left-5 rtl:right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-emerald-400 transition-colors" />
                     <input
                       type="email"
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-gray-700 font-medium text-white shadow-inner"
+                      className="w-full bg-scrim border border-line rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-gray-700 font-medium text-ink shadow-inner"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="your@email.com"
@@ -205,14 +205,14 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="pt-8 border-t border-line-soft flex flex-col md:flex-row items-center justify-between gap-6">
                 <button
                   type="submit"
                   disabled={loading}
                   className="w-full md:w-auto px-12 py-5 bg-gradient-to-r from-emerald-600 to-emerald-400 text-white font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-2xl hover:shadow-emerald-500/30 disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-3 group"
                 >
                   {loading ? (
-                    <div className="w-5 h-5 border-3 border-white/20 border-t-white rounded-full animate-spin" />
+                    <div className="w-5 h-5 border-3 border-line-strong border-t-white rounded-full animate-spin" />
                   ) : (
                     <Save className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   )}

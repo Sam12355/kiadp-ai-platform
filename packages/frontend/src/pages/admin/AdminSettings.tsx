@@ -19,28 +19,28 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     label: 'Auto (Recommended)',
     description: 'GPT-4o primary with Gemini and Groq fallbacks. Best reliability.',
     icon: Layers,
-    color: 'text-emerald-400',
+    color: 'text-emerald-700',
   },
   {
     id: 'openai',
     label: 'OpenAI Only',
     description: 'Force GPT-4o for all responses. No fallback to other providers.',
     icon: Brain,
-    color: 'text-blue-400',
+    color: 'text-blue-700',
   },
   {
     id: 'gemini',
     label: 'Gemini Only',
     description: 'Use Google Gemini exclusively (gemini-2.5-flash cascade). Skips OpenAI.',
     icon: Zap,
-    color: 'text-yellow-400',
+    color: 'text-yellow-700',
   },
   {
     id: 'groq',
     label: 'Groq Only',
     description: 'Use Groq exclusively (Llama models). Fastest inference, lowest cost.',
     icon: Cpu,
-    color: 'text-purple-400',
+    color: 'text-purple-700',
   },
 ];
 
@@ -84,14 +84,14 @@ export default function AdminSettings() {
 
   return (
     <div className="p-6 md:p-10 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-black uppercase tracking-widest text-white mb-1">Settings</h1>
-      <p className="text-white/40 text-sm mb-8">Configure system-wide AI behaviour</p>
+      <h1 className="text-2xl font-black uppercase tracking-widest text-ink mb-1">Settings</h1>
+      <p className="text-ink-mute text-sm mb-8">Configure system-wide AI behaviour</p>
 
-      <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6">
-        <h2 className="text-xs font-black uppercase tracking-widest text-white/60 mb-4">AI Provider</h2>
+      <div className="bg-raised border border-line rounded-2xl p-6">
+        <h2 className="text-xs font-black uppercase tracking-widest text-ink-soft mb-4">AI Provider</h2>
 
         {loading ? (
-          <div className="flex items-center gap-2 text-white/40 text-sm py-4">
+          <div className="flex items-center gap-2 text-ink-mute text-sm py-4">
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading…
           </div>
@@ -107,7 +107,7 @@ export default function AdminSettings() {
                   className={`flex items-start gap-4 p-4 rounded-xl border text-left transition-all cursor-pointer ${
                     isActive
                       ? 'border-emerald-500/50 bg-emerald-500/10'
-                      : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20'
+                      : 'border-line bg-raised hover:bg-raised hover:border-line-strong'
                   }`}
                 >
                   <div className={`mt-0.5 shrink-0 ${opt.color}`}>
@@ -115,17 +115,17 @@ export default function AdminSettings() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white">{opt.label}</span>
+                      <span className="text-sm font-bold text-ink">{opt.label}</span>
                       {saved === opt.id && (
-                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-full">
                           Active
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-white/50 mt-0.5">{opt.description}</p>
+                    <p className="text-xs text-ink-mute mt-0.5">{opt.description}</p>
                   </div>
-                  <div className={`mt-0.5 shrink-0 ${isActive ? 'text-emerald-400' : 'text-white/20'}`}>
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${isActive ? 'border-emerald-400' : 'border-white/20'}`}>
+                  <div className={`mt-0.5 shrink-0 ${isActive ? 'text-emerald-700' : 'text-ink-faint'}`}>
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${isActive ? 'border-emerald-400' : 'border-line-strong'}`}>
                       {isActive && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
                     </div>
                   </div>
@@ -136,14 +136,14 @@ export default function AdminSettings() {
         )}
 
         {error && (
-          <div className="mt-4 flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+          <div className="mt-4 flex items-center gap-2 text-red-700 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mt-4 flex items-center gap-2 text-emerald-400 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+          <div className="mt-4 flex items-center gap-2 text-emerald-700 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             {success}
           </div>

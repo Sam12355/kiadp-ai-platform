@@ -17,6 +17,8 @@ import SchoolDocuments from './pages/school/Documents';
 import SchoolUsers from './pages/school/Users';
 import SchoolApiKeys from './pages/school/ApiKeys';
 import SchoolProfile from './pages/school/Profile';
+import SchoolAnalytics from './pages/school/Analytics';
+import ImpersonationBanner from './components/ImpersonationBanner';
 
 import ClientLayout from './pages/client/Layout';
 import ClientKnowledge from './pages/client/KnowledgeAssistant';
@@ -25,6 +27,10 @@ import Settings from './pages/Settings';
 
 export default function App() {
   return (
+    <>
+      {/* Outside <Routes> on purpose: while the platform owner is viewing an institution,
+          that fact has to stay visible on every page, not just the one they entered from. */}
+      <ImpersonationBanner />
     <Routes>
       <Route path="/login" element={<Login />} />
 
@@ -44,6 +50,7 @@ export default function App() {
         <Route index element={<SchoolDashboard />} />
         <Route path="documents" element={<SchoolDocuments />} />
         <Route path="users" element={<SchoolUsers />} />
+        <Route path="analytics" element={<SchoolAnalytics />} />
         <Route path="api-keys" element={<SchoolApiKeys />} />
         <Route path="profile" element={<SchoolProfile />} />
       </Route>
@@ -61,5 +68,6 @@ export default function App() {
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </>
   );
 }

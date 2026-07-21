@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
+import { useImpersonationStore } from '../store/impersonationStore';
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api/v1',
@@ -13,6 +14,15 @@ apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('accessToken');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // "View as institution": a scope request, not a credential. The JWT above still says who
+  // the caller really is, and the server re-checks on every request that they are a super
+  // admin before honouring this — so sending it as a non-super-admin gets a 403, not
+  // access. Read from the store directly rather than via a hook: interceptors run outside
+  // React, and a stale closure here would keep sending an institution the user has left.
+  const { tenantId } = useImpersonationStore.getState();
+  if (tenantId) {
+    config.headers['X-Impersonate-Tenant'] = tenantId;
   }
   return config;
 });

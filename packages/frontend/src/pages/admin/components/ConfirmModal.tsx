@@ -31,19 +31,19 @@ export default function ConfirmModal({
       >
         {/* Backdrop - 20px BLUR GLASS OVERLAY */}
         <div 
-          className="absolute inset-0 bg-transparent backdrop-blur-[20px] cursor-pointer transition-all duration-1000" 
+          className="absolute inset-0 bg-scrim backdrop-blur-[20px] cursor-pointer transition-all duration-1000" 
           onClick={onClose}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         />
 
         {/* Modal Content - CRYSTAL PANEL */}
         <div 
-          className="w-full max-w-md rounded-[2.5rem] p-12 shadow-2xl border border-white/10 text-center relative z-10 animate-fade-in overflow-hidden" 
-          style={{ background: 'rgba(255, 255, 255, 0.001)', backdropFilter: 'blur(20px)', position: 'relative', zIndex: 10 }}
+          className="w-full max-w-md rounded-[2.5rem] p-12 shadow-2xl border border-line text-center relative z-10 animate-fade-in overflow-hidden" 
+          style={{ background: 'var(--t-glass)', backdropFilter: 'blur(20px)', position: 'relative', zIndex: 10 }}
         >
           <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-red-600 via-red-400 to-red-600 animate-pulse" />
           
-          <button onClick={onClose} className="absolute top-8 right-8 p-3 rounded-2xl hover:bg-white/10 transition-colors text-gray-400">
+          <button onClick={onClose} className="absolute top-8 right-8 p-3 rounded-2xl hover:bg-overlay transition-colors text-ink-mute">
             <X className="w-6 h-6" />
           </button>
 
@@ -52,8 +52,8 @@ export default function ConfirmModal({
             <div className="absolute inset-0 rounded-[2rem] bg-red-500/5 blur-xl group-hover:blur-2xl transition-all" />
           </div>
 
-          <h3 className="text-3xl font-bold text-white mb-4 tracking-tight" style={{ fontFamily: 'var(--font-heading)' }}>{title}</h3>
-          <p className="text-[var(--color-secondary)] text-sm leading-relaxed mb-10 font-medium px-2">
+          <h3 className="text-3xl font-bold text-ink mb-4 tracking-tight" style={{ fontFamily: 'var(--font-heading)' }}>{title}</h3>
+          <p className="text-ink-mute text-sm leading-relaxed mb-10 font-medium px-2">
             {message}
           </p>
 
@@ -61,10 +61,10 @@ export default function ConfirmModal({
             <button 
               onClick={onConfirm} 
               disabled={loading}
-              className="w-full py-4 px-8 rounded-2xl text-sm font-bold text-white bg-red-600 hover:bg-red-500 transition-all shadow-xl hover:shadow-red-600/20 disabled:opacity-50 flex items-center justify-center gap-3 active:scale-[0.98]"
+              className="w-full py-4 px-8 rounded-2xl text-sm font-bold text-ink bg-red-600 hover:bg-red-500 transition-all shadow-xl hover:shadow-red-600/20 disabled:opacity-50 flex items-center justify-center gap-3 active:scale-[0.98]"
             >
               {loading ? (
-                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-line-strong border-t-white rounded-full animate-spin" />
               ) : (
                 <Trash2 className="w-4 h-4" />
               )}
@@ -73,7 +73,7 @@ export default function ConfirmModal({
             
             <button 
               onClick={onClose} 
-              className="w-full py-4 px-8 rounded-2xl text-sm font-bold text-white/50 hover:text-white/80 transition-all text-center flex items-center justify-center gap-2 group"
+              className="w-full py-4 px-8 rounded-2xl text-sm font-bold text-ink-mute hover:text-ink-soft transition-all text-center flex items-center justify-center gap-2 group"
             >
               {t.cancelAction}
             </button>

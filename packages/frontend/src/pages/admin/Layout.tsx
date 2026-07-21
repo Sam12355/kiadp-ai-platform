@@ -5,6 +5,7 @@ import BubblesBackground from '../../components/BubblesBackground';
 import { LayoutDashboard, FileText, Users, Settings as SettingsIcon, LogOut, Menu, X, BarChart2, BookOpen, Building2 } from 'lucide-react';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
+import ThemeToggle from '../../components/ThemeToggle';
 
 export default function AdminLayout() {
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -45,20 +46,20 @@ export default function AdminLayout() {
   ];
 
   return (
-    <div className="flex h-screen bg-transparent text-white relative overflow-hidden font-body">
+    <div className="flex h-screen bg-transparent text-ink relative overflow-hidden font-body">
       <BubblesBackground />
 
       {/* Mobile Top Bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-black/40 backdrop-blur-3xl border-b border-white/5 px-6 flex items-center justify-between z-40">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-raised/80 backdrop-blur-3xl border-b border-line-soft px-6 flex items-center justify-between z-40">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
             <span className="text-white font-black text-sm">K</span>
           </div>
-          <span className="font-black text-sm uppercase tracking-widest text-white leading-none">{t.adminPanel}</span>
+          <span className="font-black text-sm uppercase tracking-widest text-ink leading-none">{t.adminPanel}</span>
         </div>
         <button 
           onClick={() => setIsSidebarOpen(true)}
-          className="p-2 rounded-xl bg-white/5 border border-white/10 text-emerald-400 cursor-pointer active:scale-95 transition-transform"
+          className="p-2 rounded-xl bg-raised border border-line text-emerald-700 cursor-pointer active:scale-95 transition-transform"
         >
           <Menu className="w-6 h-6" />
         </button>
@@ -67,14 +68,14 @@ export default function AdminLayout() {
       {/* Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
-          className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-md z-[45] cursor-pointer animate-fade-in"
+          className="lg:hidden fixed inset-0 bg-scrim backdrop-blur-md z-[45] cursor-pointer animate-fade-in"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar Drawer */}
       <aside className={`
-        fixed inset-y-0 ltr:left-0 rtl:right-0 w-72 bg-black/40 backdrop-blur-3xl border-white/5 flex flex-col z-[50]
+        fixed inset-y-0 ltr:left-0 rtl:right-0 w-72 bg-raised/80 backdrop-blur-3xl border-line-soft flex flex-col z-[50]
         transition-all duration-500 ease-in-out lg:relative lg:translate-x-0
         ${lang === 'ar' ? 'border-l' : 'border-r'}
         ${isSidebarOpen ? 'translate-x-0' : (lang === 'ar' ? 'translate-x-full' : '-translate-x-full')}
@@ -91,12 +92,12 @@ export default function AdminLayout() {
               <span className="tracking-tight uppercase leading-none whitespace-nowrap app-logo">
                 <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
               </span>
-              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mt-1">{t.adminPanel}</span>
+              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mt-1">{t.adminPanel}</span>
             </div>
           </div>
           <button 
             onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden p-2 text-gray-500 hover:text-white cursor-pointer active:scale-90 transition-transform"
+            className="lg:hidden p-2 text-ink-mute hover:text-ink cursor-pointer active:scale-90 transition-transform"
           >
             <X className="w-6 h-6" />
           </button>
@@ -112,20 +113,20 @@ export default function AdminLayout() {
                 to={item.href}
                 className={`group flex items-center px-4 py-3.5 text-sm font-bold rounded-2xl transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-white/10 text-white shadow-lg shadow-white/5 border border-white/10'
-                    : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                    ? 'bg-overlay text-ink shadow-lg shadow-ink/5 border border-line'
+                    : 'text-ink-mute hover:bg-raised hover:text-ink'
                 }`}
               >
-                <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-emerald-400' : 'group-hover:scale-110'}`} />
+                <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-emerald-700' : 'group-hover:scale-110'}`} />
                 {item.name}
               </Link>
             );
           })}
         </nav>
 
-        <div className="p-6 border-t border-white/5 bg-black/20 space-y-6">
-          <div className="flex items-center gap-3 px-3 py-3 bg-white/[0.03] rounded-[1.5rem] border border-white/5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center flex-shrink-0 text-white font-black shadow-lg overflow-hidden border border-white/10">
+        <div className="p-6 border-t border-line-soft bg-raised/80 space-y-6">
+          <div className="flex items-center gap-3 px-3 py-3 bg-raised rounded-[1.5rem] border border-line-soft">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center flex-shrink-0 text-white font-black shadow-lg overflow-hidden border border-line">
               {user?.avatarUrl ? (
                 <img 
                   src={user.avatarUrl.startsWith('http') ? user.avatarUrl : `${user.avatarUrl}`} 
@@ -137,25 +138,29 @@ export default function AdminLayout() {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate leading-none mb-1">{user?.fullName}</p>
-              <p className="text-[9px] text-emerald-500/60 font-black uppercase tracking-widest truncate">{t.systemRoot}</p>
+              <p className="text-sm font-bold text-ink truncate leading-none mb-1">{user?.fullName}</p>
+              <p className="text-[9px] text-emerald-700/70 font-black uppercase tracking-widest truncate">{t.systemRoot}</p>
             </div>
           </div>
 
           {/* Language Selector */}
-          <div className="flex items-center justify-between px-2 bg-white/5 py-2 rounded-2xl border border-white/5">
+          <div className="flex items-center justify-between px-2 bg-raised py-2 rounded-2xl border border-line-soft">
             <button 
               onClick={() => setLanguage('en')}
-              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'en' ? 'text-emerald-400 bg-white/10' : 'text-gray-500 hover:text-white'}`}
+              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'en' ? 'text-emerald-700 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
             >
               English
             </button>
             <button 
               onClick={() => setLanguage('ar')}
-              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'ar' ? 'text-emerald-400 bg-white/10' : 'text-gray-500 hover:text-white'}`}
+              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'ar' ? 'text-emerald-700 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
             >
               العربية
             </button>
+          </div>
+
+          <div className="flex items-center justify-center">
+            <ThemeToggle />
           </div>
 
           <button
@@ -163,7 +168,7 @@ export default function AdminLayout() {
               logout();
               navigate('/login');
             }}
-            className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-red-400 transition-all group cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-widest text-ink-mute hover:text-red-600 transition-all group cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5 ltr:group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform" />
             {t.signOut}

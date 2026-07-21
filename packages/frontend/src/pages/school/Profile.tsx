@@ -115,10 +115,10 @@ export default function SchoolProfile() {
   return (
     <div className="animate-fade-in max-w-2xl mx-auto space-y-8">
       <div>
-        <h1 className="text-4xl font-black text-white tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>
+        <h1 className="text-4xl font-black text-ink tracking-tight uppercase" style={{ fontFamily: 'var(--font-heading)' }}>
           Profile & Settings
         </h1>
-        <p className="text-white/40 mt-2 text-sm font-medium">
+        <p className="text-ink-mute mt-2 text-sm font-medium">
           Manage your institution details and personal account
         </p>
       </div>
@@ -127,25 +127,25 @@ export default function SchoolProfile() {
       <div className="glass rounded-[1.5rem] p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-blue-400" />
+            <Building2 className="w-5 h-5 text-blue-700" />
           </div>
           <div>
-            <h2 className="text-sm font-black text-white uppercase tracking-widest">Institution Profile</h2>
-            <p className="text-[10px] text-white/30 mt-0.5">Update your institution's display name</p>
+            <h2 className="text-sm font-black text-ink uppercase tracking-widest">Institution Profile</h2>
+            <p className="text-[10px] text-ink-faint mt-0.5">Update your institution's display name</p>
           </div>
         </div>
 
         {/* Logo upload */}
         <div className="space-y-3">
-          <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Institution Logo</label>
+          <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Institution Logo</label>
           <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-2xl overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center flex-shrink-0">
+            <div className="w-20 h-20 rounded-2xl overflow-hidden border border-line bg-raised flex items-center justify-center flex-shrink-0">
               {logoPreview ? (
                 <img src={logoPreview} alt="Preview" className="w-full h-full object-cover" />
               ) : tenant?.logoUrl ? (
                 <img src={tenant.logoUrl} alt={tenant.name} className="w-full h-full object-cover" />
               ) : (
-                <ImageIcon className="w-8 h-8 text-white/20" />
+                <ImageIcon className="w-8 h-8 text-ink-faint" />
               )}
             </div>
             <div className="space-y-2">
@@ -156,7 +156,7 @@ export default function SchoolProfile() {
                 }}
               />
               <button onClick={() => logoInputRef.current?.click()}
-                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+                className="flex items-center gap-2 px-4 py-2 bg-raised hover:bg-overlay border border-line text-ink-soft hover:text-ink rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
                 <Upload className="w-3 h-3" /> Choose Image
               </button>
               {logoFile && (
@@ -171,42 +171,42 @@ export default function SchoolProfile() {
             </div>
           </div>
           {logoError && (
-            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{logoError}
             </div>
           )}
           {logoSaved && (
-            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-sm">
+            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 text-sm">
               <CheckCircle2 className="w-4 h-4 flex-shrink-0" />Logo updated successfully.
             </div>
           )}
         </div>
 
-        <div className="border-t border-white/5" />
+        <div className="border-t border-line-soft" />
 
         {instError && (
-          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{instError}
           </div>
         )}
         {instSaved && (
-          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 text-sm">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />Institution updated successfully.
           </div>
         )}
 
         <div className="space-y-4">
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Institution Name</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Institution Name</label>
             <input type="text" value={instName} onChange={(e) => setInstName(e.target.value)}
               placeholder={tenant?.name}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
+              className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Slug (read-only)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Slug (read-only)</label>
             <input type="text" value={tenant?.slug ?? ''} disabled
-              className="w-full px-4 py-3 bg-white/[0.02] border border-white/5 rounded-2xl text-white/30 text-sm font-mono cursor-not-allowed"
+              className="w-full px-4 py-3 bg-raised border border-line-soft rounded-2xl text-ink-faint text-sm font-mono cursor-not-allowed"
             />
           </div>
         </div>
@@ -225,56 +225,56 @@ export default function SchoolProfile() {
       <div className="glass rounded-[1.5rem] p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-            <User className="w-5 h-5 text-blue-400" />
+            <User className="w-5 h-5 text-blue-700" />
           </div>
           <div>
-            <h2 className="text-sm font-black text-white uppercase tracking-widest">My Account</h2>
-            <p className="text-[10px] text-white/30 mt-0.5">Update your name and password</p>
+            <h2 className="text-sm font-black text-ink uppercase tracking-widest">My Account</h2>
+            <p className="text-[10px] text-ink-faint mt-0.5">Update your name and password</p>
           </div>
         </div>
 
         {profileError && (
-          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{profileError}
           </div>
         )}
         {profileSaved && (
-          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 text-sm">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />Profile updated successfully.
           </div>
         )}
 
         <div className="space-y-4">
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Full Name</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Full Name</label>
             <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
               <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
+                className="w-full pl-11 pr-4 py-3 bg-raised border border-line rounded-2xl text-ink text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
               />
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Email (read-only)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Email (read-only)</label>
             <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
               <input type="email" value={user?.email ?? ''} disabled
-                className="w-full pl-11 pr-4 py-3 bg-white/[0.02] border border-white/5 rounded-2xl text-white/30 text-sm cursor-not-allowed"
+                className="w-full pl-11 pr-4 py-3 bg-raised border border-line-soft rounded-2xl text-ink-faint text-sm cursor-not-allowed"
               />
             </div>
           </div>
-          <div className="border-t border-white/5 pt-4 space-y-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Change Password (optional)</p>
+          <div className="border-t border-line-soft pt-4 space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-ink-faint">Change Password (optional)</p>
             {[
               { label: 'New Password', value: newPassword, set: setNewPassword, placeholder: 'Leave blank to keep current' },
               { label: 'Confirm Password', value: confirmPassword, set: setConfirmPassword, placeholder: 'Repeat new password' },
             ].map(({ label, value, set, placeholder }) => (
               <div key={label} className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/30">{label}</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-ink-faint">{label}</label>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
                   <input type="password" value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder}
-                    className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
+                    className="w-full pl-11 pr-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
                   />
                 </div>
               </div>

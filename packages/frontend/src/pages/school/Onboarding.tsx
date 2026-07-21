@@ -108,16 +108,16 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
   return (
     <Portal>
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+        <div className="absolute inset-0 bg-scrim backdrop-blur-md" />
         <div className="relative z-10 w-full max-w-lg glass rounded-[2rem] p-8 shadow-2xl animate-fade-in">
 
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h2 className="text-xl font-black text-white uppercase tracking-widest">Welcome to EduAI</h2>
-              <p className="text-[11px] text-white/40 mt-1">Let's set up <span className="text-white/60 font-bold">{tenantName}</span> in a few steps</p>
+              <h2 className="text-xl font-black text-ink uppercase tracking-widest">Welcome to EduAI</h2>
+              <p className="text-[11px] text-ink-mute mt-1">Let's set up <span className="text-ink-soft font-bold">{tenantName}</span> in a few steps</p>
             </div>
-            <button onClick={onDismiss} className="text-white/20 hover:text-white transition-colors cursor-pointer p-1">
+            <button onClick={onDismiss} className="text-ink-faint hover:text-ink transition-colors cursor-pointer p-1">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -134,13 +134,13 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
                       done ? 'bg-emerald-500/20 border border-emerald-500/40' :
                       active ? 'bg-blue-500/20 border border-blue-500/40' :
-                      'bg-white/5 border border-white/10'
+                      'bg-raised border border-line'
                     }`}>
-                      {done ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Icon className={`w-4 h-4 ${active ? 'text-blue-400' : 'text-white/20'}`} />}
+                      {done ? <CheckCircle2 className="w-4 h-4 text-emerald-700" /> : <Icon className={`w-4 h-4 ${active ? 'text-blue-700' : 'text-ink-faint'}`} />}
                     </div>
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${active ? 'text-white' : done ? 'text-emerald-400' : 'text-white/20'}`}>{s.label}</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${active ? 'text-ink' : done ? 'text-emerald-700' : 'text-ink-faint'}`}>{s.label}</span>
                   </div>
-                  {i < steps.length - 1 && <div className={`h-px flex-1 mx-2 ${done ? 'bg-emerald-500/30' : 'bg-white/10'}`} />}
+                  {i < steps.length - 1 && <div className={`h-px flex-1 mx-2 ${done ? 'bg-emerald-500/30' : 'bg-overlay'}`} />}
                 </div>
               );
             })}
@@ -149,24 +149,24 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
           {/* Step: Logo */}
           {step === 'logo' && (
             <div className="space-y-5">
-              <p className="text-sm text-white/60">Upload your institution's logo. It will appear in the sidebar and top bar.</p>
+              <p className="text-sm text-ink-soft">Upload your institution's logo. It will appear in the sidebar and top bar.</p>
               <div className="flex items-center gap-5">
-                <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-white/20 flex items-center justify-center overflow-hidden bg-white/5 flex-shrink-0">
-                  {logoPreview ? <img src={logoPreview} className="w-full h-full object-cover" alt="preview" /> : <ImageIcon className="w-8 h-8 text-white/20" />}
+                <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-line-strong flex items-center justify-center overflow-hidden bg-raised flex-shrink-0">
+                  {logoPreview ? <img src={logoPreview} className="w-full h-full object-cover" alt="preview" /> : <ImageIcon className="w-8 h-8 text-ink-faint" />}
                 </div>
                 <div className="space-y-2">
                   <input ref={logoRef} type="file" accept="image/*" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) { setLogoFile(f); setLogoPreview(URL.createObjectURL(f)); } }} />
                   <button onClick={() => logoRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+                    className="flex items-center gap-2 px-4 py-2.5 bg-raised hover:bg-overlay border border-line text-ink-soft hover:text-ink rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
                     <Upload className="w-3.5 h-3.5" /> Choose Image
                   </button>
-                  <p className="text-[10px] text-white/20">PNG, JPG, SVG · max 5MB</p>
+                  <p className="text-[10px] text-ink-faint">PNG, JPG, SVG · max 5MB</p>
                 </div>
               </div>
-              {logoError && <p className="text-red-400 text-sm">{logoError}</p>}
+              {logoError && <p className="text-red-700 text-sm">{logoError}</p>}
               <div className="flex gap-3 pt-2">
-                <button onClick={skip} className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
+                <button onClick={skip} className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink-mute rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
                 <button disabled={!logoFile || logoMutation.isPending} onClick={() => logoMutation.mutate()}
                   className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
                   {logoMutation.isPending ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Uploading...</> : <>Upload <ArrowRight className="w-3.5 h-3.5" /></>}
@@ -178,7 +178,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
           {/* Step: First user */}
           {step === 'user' && (
             <div className="space-y-4">
-              <p className="text-sm text-white/60">Add the first user (student or staff) to your institution.</p>
+              <p className="text-sm text-ink-soft">Add the first user (student or staff) to your institution.</p>
               <div className="space-y-3">
                 {[
                   { label: 'Full Name', value: userName, set: setUserName, type: 'text', placeholder: 'e.g. John Doe', Icon: UserIcon },
@@ -186,27 +186,27 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
                   { label: 'Password', value: userPassword, set: setUserPassword, type: 'password', placeholder: 'Min. 8 characters', Icon: Lock },
                 ].map(({ label, value, set, type, placeholder, Icon }) => (
                   <div key={label} className="space-y-1">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30">{label}</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-ink-faint">{label}</label>
                     <div className="relative">
-                      <Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                      <Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
                       <input type={type} value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder}
-                        className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
+                        className="w-full pl-11 pr-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
                       />
                     </div>
                   </div>
                 ))}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Role</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-ink-faint">Role</label>
                   <select value={userRole} onChange={(e) => setUserRole(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white text-sm focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer">
-                    <option value="STUDENT" className="bg-gray-900">Student / Staff</option>
-                    <option value="ADMIN" className="bg-gray-900">Admin (institution admin)</option>
+                    className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink text-sm focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer">
+                    <option value="STUDENT" className="bg-raised text-ink">Student / Staff</option>
+                    <option value="ADMIN" className="bg-raised text-ink">Admin (institution admin)</option>
                   </select>
                 </div>
               </div>
-              {userError && <p className="text-red-400 text-sm">{userError}</p>}
+              {userError && <p className="text-red-700 text-sm">{userError}</p>}
               <div className="flex gap-3 pt-1">
-                <button onClick={skip} className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
+                <button onClick={skip} className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink-mute rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
                 <button disabled={!userName || !userEmail || !userPassword || userMutation.isPending} onClick={() => userMutation.mutate()}
                   className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
                   {userMutation.isPending ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating...</> : <>Create & Continue <ArrowRight className="w-3.5 h-3.5" /></>}
@@ -218,25 +218,25 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
           {/* Step: First document */}
           {step === 'document' && (
             <div className="space-y-4">
-              <p className="text-sm text-white/60">Upload your first knowledge document. Students will be able to ask questions about it.</p>
+              <p className="text-sm text-ink-soft">Upload your first knowledge document. Students will be able to ask questions about it.</p>
               <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Title (optional)</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-ink-faint">Title (optional)</label>
                 <input type="text" value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
                   placeholder="Auto-detected from filename"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/20 text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
+                  className="w-full px-4 py-3 bg-raised border border-line rounded-2xl text-ink placeholder:text-ink-faint text-sm focus:outline-none focus:border-blue-500/50 transition-colors"
                 />
               </div>
               <div>
                 <input ref={docRef} type="file" accept=".pdf" className="hidden" onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} />
                 <button onClick={() => docRef.current?.click()}
-                  className="w-full flex flex-col items-center justify-center gap-3 py-10 border-2 border-dashed border-white/10 hover:border-blue-500/40 rounded-2xl text-white/30 hover:text-white/60 transition-all cursor-pointer">
+                  className="w-full flex flex-col items-center justify-center gap-3 py-10 border-2 border-dashed border-line hover:border-blue-500/40 rounded-2xl text-ink-faint hover:text-ink-soft transition-all cursor-pointer">
                   <Upload className="w-6 h-6" />
                   <span className="text-sm font-medium">{docFile ? docFile.name : 'Click to select a PDF'}</span>
                 </button>
               </div>
-              {docError && <p className="text-red-400 text-sm">{docError}</p>}
+              {docError && <p className="text-red-700 text-sm">{docError}</p>}
               <div className="flex gap-3">
-                <button onClick={skip} className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
+                <button onClick={skip} className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink-mute rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
                 <button disabled={!docFile || docMutation.isPending} onClick={() => docMutation.mutate()}
                   className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
                   {docMutation.isPending ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Uploading...</> : <>Upload <ArrowRight className="w-3.5 h-3.5" /></>}
@@ -249,11 +249,11 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
           {step === 'done' && (
             <div className="space-y-6 text-center py-4">
               <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                <CheckCircle2 className="w-8 h-8 text-emerald-700" />
               </div>
               <div>
-                <h3 className="text-xl font-black text-white uppercase tracking-widest">You're all set!</h3>
-                <p className="text-white/40 mt-2 text-sm">
+                <h3 className="text-xl font-black text-ink uppercase tracking-widest">You're all set!</h3>
+                <p className="text-ink-mute mt-2 text-sm">
                   {skipped.size === 0
                     ? 'Your institution is configured and ready to go.'
                     : `You skipped ${skipped.size} step${skipped.size > 1 ? 's' : ''} — you can complete them anytime from Profile & Settings.`}
@@ -265,7 +265,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
                   <FileText className="w-3.5 h-3.5" /> Go to Documents
                 </button>
                 <button onClick={onDismiss}
-                  className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+                  className="w-full py-3 bg-raised hover:bg-overlay border border-line text-ink-mute rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
                   Go to Dashboard
                 </button>
               </div>

@@ -27,7 +27,7 @@ export default function ClientLayout() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-transparent text-white flex flex-col relative overflow-hidden">
+    <div className="min-h-screen bg-transparent text-ink flex flex-col relative overflow-hidden">
       <BubblesBackground variant="white" />
 
       <main className="flex-1 overflow-y-auto z-10">
