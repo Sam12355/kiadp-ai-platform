@@ -66,6 +66,8 @@ const voiceAskSchema = z.object({
   // The caller's untouched words. Voice mode's tool call rewrites the request into
   // keywords, which loses phrasing like "read it as it is"; this preserves that intent.
   userRequest: z.string().optional(),
+  /** Set by the voice tool call when the user asked for the source text itself. */
+  verbatim: z.boolean().optional(),
 });
 
 export async function voiceAskHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -74,9 +76,9 @@ export async function voiceAskHandler(req: Request, res: Response, next: NextFun
     if (!parseResult.success) {
       throw new ValidationError('Validation failed', parseResult.error.flatten().fieldErrors);
     }
-    const { query, language, userRequest } = parseResult.data;
+    const { query, language, userRequest, verbatim } = parseResult.data;
     const tenantId = await getUserTenantId(req.user!.userId);
-    const result = await voiceAsk(query, language, tenantId, undefined, userRequest);
+    const result = await voiceAsk(query, language, tenantId, undefined, userRequest, verbatim);
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);

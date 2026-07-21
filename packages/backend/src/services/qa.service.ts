@@ -906,6 +906,14 @@ export async function voiceAsk(
   courseId?: string,
   /** The caller's untouched words, when the query above has been rewritten. */
   userRequest?: string,
+  /**
+   * Explicit verbatim signal from the voice tool call. Keyword-sniffing the query cannot
+   * work here: Gemini recompresses the request differently every turn — the same spoken
+   * question arrived as "exact five points under module content" once and
+   * "module content 5 points PDF" the next, the second carrying no verbatim cue at all.
+   * The model knows what was asked, so it reports the intent directly.
+   */
+  verbatimFlag?: boolean,
 ): Promise<{ answerText: string; images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] }> {
   const openai = getOpenAI();
   const env = getEnv();
@@ -1184,11 +1192,11 @@ export async function voiceAsk(
   // returned here is what the student hears.
   // Check the caller's original words as well as the (possibly keyword-ised) query:
   // voice mode's tool call strips phrasing like "as it is" before it ever reaches here.
-  const isVerbatim = wantsVerbatim(queryText) || wantsVerbatim(userRequest ?? '');
+  const isVerbatim = verbatimFlag === true || wantsVerbatim(queryText) || wantsVerbatim(userRequest ?? '');
   // Logged at info so a "voice still rephrases" report can be diagnosed from the server:
   // it shows whether the raw transcript reached us at all and whether intent was detected.
   getLogger().info(
-    { queryText, userRequest: userRequest ?? null, hasUserRequest: !!userRequest, isVerbatim },
+    { queryText, userRequest: userRequest ?? null, verbatimFlag: verbatimFlag ?? null, isVerbatim },
     'voiceAsk: verbatim detection',
   );
   const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;

@@ -259,6 +259,10 @@ Instructions:
                       query: {
                         type: Type.STRING,
                         description: "The search query — the topic, question, or keywords to look up in the knowledge base."
+                      },
+                      verbatim: {
+                        type: Type.BOOLEAN,
+                        description: "Set TRUE when the user asked to see the source text itself — phrases like 'as it is', 'exactly', 'word for word', 'read it out', 'list them as written', 'don't rephrase'. Set FALSE when they want an explanation or summary. You compress the user's words into keywords for `query`, which loses this instruction, so this flag is the ONLY way it reaches the knowledge base."
                       }
                     },
                     required: ["query"]
@@ -527,6 +531,8 @@ Instructions:
                           // Same images as normal chat, with a synthesized answer for Gemini to read aloud
                           const res = await apiClient.post('/knowledge/voice-ask', {
                             query,
+                            // Gemini's own signal that the user wanted the source text.
+                            verbatim: (call.args as any)?.verbatim === true,
                             // The Live model rewrites the request into keywords before calling
                             // this tool, which drops phrasing like "read it as it is". Send the
                             // raw transcript too so the backend can still detect that intent.
