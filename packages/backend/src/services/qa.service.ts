@@ -605,9 +605,95 @@ async function fetchPageText(documentId: string, pageNumber: number): Promise<st
   return rows.reduce((a, b) => (b.content.length > a.content.length ? b : a)).content;
 }
 
-// A multi-passage answer is still one page per passage, each labelled. Cap the walk so a
-// vague "read me everything" cannot turn into a whole-document dump.
-const MAX_VERBATIM_PASSAGES = 8;
+/** Every list marker in a passage, in order of appearance. */
+function enumerators(text: string): number[] {
+  return [...text.matchAll(/(?:^|\n)\s*(\d{1,3})[.)]\s+/g)].map(m => parseInt(m[1], 10));
+}
+
+/**
+ * Does this page carry on the list the previous page was in the middle of?
+ *
+ * Slides repeat the last item at the seam — page 3 ends at 5, page 4 opens at 5 — so the
+ * test is that the numbering picks up where it left off (or one past it) and then goes
+ * further. A page whose numbering restarts at 1, or that has no list at all, has moved on
+ * to another topic and is not part of the same answer.
+ */
+function continuesList(prevMax: number, text: string): boolean {
+  const nums = enumerators(text);
+  if (nums.length === 0) return false;
+  return Math.min(...nums) <= prevMax + 1 && Math.max(...nums) > prevMax;
+}
+
+// Cap the walk so a runaway numbering scheme cannot drag in a whole document.
+const MAX_CONTINUATION_PAGES = 8;
+
+/**
+ * Follow a numbered list past the end of its page.
+ *
+ * Chunks never cross a page boundary, so a list spanning slides arrives truncated at
+ * whichever page retrieval happened to rank highest — the 13 module-content items of the
+ * SEPP deck live on pages 3, 4 and 5, and answering from page 3 alone yields 5 of them.
+ * Similarity ranking will not fix this: the later pages are less similar to the question
+ * than the first, so they lose. The document itself is the reliable signal, so walk it.
+ *
+ * This is deliberately NOT conditioned on how the question was phrased. "What are the
+ * module contents?" deserves all 13 just as much as "read me all 13 points" does.
+ */
+async function fetchListContinuations(
+  documentId: string,
+  fromPage: number,
+  startMax: number,
+): Promise<{ pageNumber: number; text: string }[]> {
+  const out: { pageNumber: number; text: string }[] = [];
+  let reached = startMax;
+  if (reached === 0) return out;
+  for (let page = fromPage + 1; out.length < MAX_CONTINUATION_PAGES; page++) {
+    const text = await fetchPageText(documentId, page);
+    if (!text || !continuesList(reached, text)) break;
+    reached = Math.max(reached, ...enumerators(text));
+    out.push({ pageNumber: page, text });
+  }
+  return out;
+}
+
+/**
+ * The same page-spanning problem, for the ordinary (model-generated) answer path.
+ *
+ * Asking "what are the module contents?" is not a verbatim request, so it is answered by
+ * the model from whatever chunks retrieval supplied — and if that is page 3 alone, the
+ * model faithfully reports 5 items and has no way to know 8 more follow. Feeding it the
+ * continuation pages is what lets it answer completely.
+ *
+ * Returns only pages not already present, ready to append as extra context.
+ */
+async function listContinuationChunks(
+  chunks: { documentId: string; pageNumber: number; content: string }[],
+): Promise<{ documentId: string; pageNumber: number; content: string }[]> {
+  const have = new Set(chunks.map(c => `${c.documentId}|${c.pageNumber}`));
+  const extra: { documentId: string; pageNumber: number; content: string }[] = [];
+
+  // Start from the furthest page of each document that is mid-list, so a document whose
+  // list was retrieved across two chunks is walked once, from the later of the two.
+  const anchors = new Map<string, { pageNumber: number; reached: number }>();
+  for (const c of chunks) {
+    const reached = maxEnumerator(c.content);
+    if (reached === 0) continue;
+    const prev = anchors.get(c.documentId);
+    if (!prev || c.pageNumber > prev.pageNumber) {
+      anchors.set(c.documentId, { pageNumber: c.pageNumber, reached });
+    }
+  }
+
+  for (const [documentId, a] of anchors) {
+    for (const c of await fetchListContinuations(documentId, a.pageNumber, a.reached)) {
+      const key = `${documentId}|${c.pageNumber}`;
+      if (have.has(key)) continue;
+      have.add(key);
+      extra.push({ documentId, pageNumber: c.pageNumber, content: c.text });
+    }
+  }
+  return extra;
+}
 
 async function buildVerbatimAnswer(
   sources: { filename: string; pageNumber: number; text: string; documentId?: string }[],
@@ -629,15 +715,18 @@ async function buildVerbatimAnswer(
   // Map preserves insertion order, so retrieval ranking survives the dedupe.
   sources = [...byPage.values()];
 
-  // A section can outrun its slide: the 13 module-content items of the SEPP deck live on
-  // pages 3, 4 and 5, and chunks never cross a page boundary. Returning a single passage —
-  // the rule that stopped the model dumping seven at once — then structurally caps the
-  // answer at one page, which is how "read all 13" came back with 5. So multi-passage is
-  // allowed, but only when the request actually asks for more than one section, and only
-  // ever as whole stored passages laid end to end. Nothing is merged or rewritten, so the
-  // blending this rule was introduced to prevent still cannot happen.
-  const requestedCount = parseRequestedCount(queryText);
-  const multi = wantsEveryMatch(queryText) || requestedCount !== null;
+  // Two separate ways an answer can span more than one passage, and they are not the same:
+  //
+  //  - The list runs off the end of its page. Handled below by walking the document, with
+  //    no reference to how the question was asked, because "what is in the module content"
+  //    is owed the same 13 items as "read me all 13 points".
+  //  - The request genuinely refers to several DIFFERENT passages ("all the definitions").
+  //    Only phrasing can tell us that, so the selector is allowed to return a set here.
+  //
+  // Both only ever emit whole stored passages laid end to end. Nothing is merged or
+  // rewritten, so the blending that the original single-passage rule guarded against — it
+  // once spliced page 4's items into page 3 and labelled the result page 3 — cannot recur.
+  const multi = wantsEveryMatch(queryText) || parseRequestedCount(queryText) !== null;
 
   let picked: number[] = [0];
   if (sources.length > 1) {
@@ -666,37 +755,20 @@ async function buildVerbatimAnswer(
 
   let chosen = picked.map(i => sources[i]);
 
-  // Retrieval ranks by similarity, so a later page of the same section can miss the cut
-  // entirely — no amount of selecting fixes a passage that was never a candidate. When the
-  // caller stated a count ("there are total 13 points") and the chosen passages do not
-  // reach it, walk forward page by page through the same document, taking each page's
-  // stored text, until the count is covered or the pages run out.
-  if (requestedCount !== null && chosen.length > 0) {
-    const anchor = chosen[chosen.length - 1];
-    // Scope the walk to one document: candidates can span several, and continuing "page+1"
-    // across a document boundary would quote an unrelated file's page 4.
-    const sameDoc = anchor.documentId
-      ? chosen.filter(s => s.documentId === anchor.documentId)
-      : [];
-    if (anchor.documentId && sameDoc.length > 0) {
-      const seen = new Set(sameDoc.map(s => s.pageNumber));
-      let page = Math.max(...sameDoc.map(s => s.pageNumber));
-      let reached = Math.max(...sameDoc.map(s => maxEnumerator(s.text)));
-      let misses = 0;
-      while (reached < requestedCount && chosen.length < MAX_VERBATIM_PASSAGES && misses < 2) {
-        page += 1;
-        if (seen.has(page)) continue;
-        const text = await fetchPageText(anchor.documentId, page);
-        if (!text) { misses++; continue; }
-        // A page that continues the list carries on numbering; one that does not has moved
-        // to another topic, and appending it would pad the quote with unrelated slides.
-        const reach = maxEnumerator(text);
-        if (reach === 0) { misses++; continue; }
-        misses = 0;
-        seen.add(page);
-        reached = Math.max(reached, reach);
-        chosen.push({ filename: anchor.filename, pageNumber: page, text, documentId: anchor.documentId });
-      }
+  // Follow the list off the end of its page, always — see fetchListContinuations. Whether
+  // the caller said "all 13" or just "what's in the module content" makes no difference to
+  // how much of the list they should get back.
+  const anchor = chosen[chosen.length - 1];
+  // Scope the walk to one document: candidates can span several, and continuing "page+1"
+  // across a document boundary would quote an unrelated file's page 4.
+  const sameDoc = anchor.documentId ? chosen.filter(s => s.documentId === anchor.documentId) : [];
+  if (anchor.documentId && sameDoc.length > 0) {
+    const lastPage = Math.max(...sameDoc.map(s => s.pageNumber));
+    const reached = Math.max(...sameDoc.map(s => maxEnumerator(s.text)));
+    const seen = new Set(sameDoc.map(s => s.pageNumber));
+    for (const c of await fetchListContinuations(anchor.documentId, lastPage, reached)) {
+      if (seen.has(c.pageNumber)) continue;
+      chosen.push({ filename: anchor.filename, pageNumber: c.pageNumber, text: c.text, documentId: anchor.documentId });
     }
   }
 
@@ -1283,6 +1355,28 @@ export async function voiceAsk(
   // Resolve images first so we can include visual evidence in the LLM context
   const images = await imagePromise;
 
+  // Same list-continuation step as askQuestion: a numbered list that runs past the bottom
+  // of its page must not be answered from its first page alone. See listContinuationChunks.
+  const voiceContinuations = await listContinuationChunks(
+    reranked.map((c: any) => ({ documentId: c.documentId, pageNumber: c.pageNumber, content: c.text })),
+  ).catch((err: any) => {
+    getLogger().warn({ err: err?.message }, 'voiceAsk: list continuation lookup failed');
+    return [];
+  });
+  for (const extra of voiceContinuations) {
+    // Continuation pages are pulled from the document, not scored by retrieval — they are
+    // here because the list demands them, so the scores are placeholders.
+    reranked.push({
+      id: `continuation:${extra.documentId}:${extra.pageNumber}`,
+      documentId: extra.documentId,
+      pageNumber: extra.pageNumber,
+      text: extra.content,
+      chunkIndex: 0,
+      score: 0,
+      rerankScore: 0,
+    });
+  }
+
   // ── Build context in the SAME format as askQuestion ──
   let instructions = "CONTEXT DOCUMENTS (Including Visual Evidence descriptions):\n\n";
   let sourceIdx = 1;
@@ -1811,6 +1905,29 @@ export async function askQuestion(
       'ta': "உங்கள் கேள்விக்கு பதிலளிக்க அறிவுத் தளத்தில் தொடர்புடைய ஆவணங்கள் எதுவும் காணவில்லை.",
     };
     return createEmptyAnswer(question.id, noInfoMap[language] || noInfoMap['en']);
+  }
+
+  // 6b. Pull in the rest of any list that runs off the end of a retrieved page.
+  // Without this the model answers "what are the module contents?" with the 5 items on
+  // page 3 and never learns that items 6-13 are on the two slides after it — the later
+  // pages score worse on similarity, so retrieval alone will not surface them.
+  if (mode === 'grounded' && chunks.length > 0) {
+    const continuations = await listContinuationChunks(
+      chunks.map((c: any) => ({ documentId: c.documentId, pageNumber: c.pageNumber, content: c.content })),
+    ).catch((err: any) => {
+      getLogger().warn({ err: err?.message }, 'list continuation lookup failed — answering from retrieved chunks only');
+      return [];
+    });
+    for (const extra of continuations) {
+      const sibling = chunks.find((c: any) => c.documentId === extra.documentId);
+      chunks.push({ ...extra, document: sibling?.document, isNeighbor: false });
+    }
+    if (continuations.length > 0) {
+      getLogger().info(
+        { pages: continuations.map(c => c.pageNumber) },
+        'appended list-continuation pages to context',
+      );
+    }
   }
 
   // 7. Construct Final Prompt
