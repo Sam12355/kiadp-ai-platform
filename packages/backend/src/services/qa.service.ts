@@ -537,7 +537,10 @@ CONTENT RULES (Grounded Intelligence):
  * deletes the assistant admitting it does not know, which is not.
  */
 function isCorpusDisclaimer(text: string): boolean {
-  const CORPUS = /(document|source|material|text|file|pdf|slide|knowledge ?base|content|ملف|مستند|وثائق|مصادر|النص|ලේඛන|ලිපි|මූලාශ්‍ර|ஆவண|ஆதார|மூல)/i;
+  // Substrings, not whole words, and deliberately so: "context" ("the context does not
+  // elaborate on...") must match, as must plurals and possessives. Do not add \b here —
+  // it would silently drop the corpus statements that use those forms.
+  const CORPUS = /(document|source|material|text|context|file|pdf|slide|knowledge ?base|content|ملف|مستند|وثائق|مصادر|النص|ලේඛන|ලිපි|මූලාශ්‍ර|ஆவண|ஆதார|மூல)/i;
   const NEGATION = /(\bnot\b|n't\b|\bno\b|\bnever\b|\bwithout\b|\black\b|\bdoes ?n[o']t\b|\bdo ?n[o']t\b|\bunable\b|\bfail(s|ed)? to\b|\bne\b|\bpas\b|\baucun|لا|ليس|لم|غير|نොමැත|නැත|නොවේ|නොකර|இல்லை|இல்ல)/i;
   return CORPUS.test(text) && NEGATION.test(text);
 }
