@@ -946,6 +946,133 @@ export interface ChatMessage {
   content: string;
 }
 
+const EXTRACTOR_PROMPT = `You are a text extractor. Given SOURCE DOCUMENTS and a QUESTION, extract all passages from the sources that could help answer the question — even if they answer it only partially or indirectly.
+
+Rules:
+- Copy relevant passages as they appear in the sources. Keep the original wording.
+- Prefix each extract with its source label, e.g. [Source 3]: "passage here"
+- Be GENEROUS — include passages that are even tangentially related. It is much better to include too much than too little.
+- If the question asks about a topic made from/related to another topic, include information about BOTH the specific item AND its ingredients or related concepts.
+- If the question refers to something from conversation history, find passages related to that topic.
+- You MUST always extract at least something — even loosely related passages. Never refuse to extract.
+- Do NOT add any facts, numbers, or descriptions from your own knowledge — only extract from sources.`;
+
+/** A passage an answer may be built from, flattened out of whatever shape retrieval used. */
+export interface AnswerSource {
+  documentId: string;
+  pageNumber: number;
+  text: string;
+  filename: string;
+}
+
+export interface ComposeAnswerOptions {
+  /** Passages the answer may draw on, best first, neighbours already excluded. */
+  sources: AnswerSource[];
+  /** The pre-rendered "[Source N] ..." block the model is shown. */
+  contextBlock: string;
+  /** Search form of the question — what retrieval actually ran on. */
+  query: string;
+  /** The user's own words, when they differ from `query`. Voice keyword-ises the request
+   *  before it arrives, and the part saying how much was asked for is what gets lost. */
+  rawRequest?: string;
+  /** The caller already knows this is a verbatim ask (voice's tool call states it). */
+  verbatimFlag?: boolean;
+  systemPrompt: string;
+  history?: readonly ChatMessage[];
+  /** Extract-then-answer, for long or complex questions. */
+  twoStep?: boolean;
+  chat?: { model?: string; temperature?: number; skipGemini?: boolean; preferGemini?: boolean };
+  /** Grounding rules off — Deep Dive and chit-chat are allowed outside the documents. */
+  ungrounded?: boolean;
+  /** Which caller this is, for logs. */
+  label: string;
+}
+
+export interface ComposedAnswer {
+  answerText: string;
+  isVerbatim: boolean;
+  uncited: string[];
+}
+
+/**
+ * Turn retrieved passages into an answer. The single place that decides.
+ *
+ * Voice and text used to run separate copies of this logic, and they drifted every time
+ * either was touched: verbatim reproduction, multi-page list continuation and the citation
+ * filter were each fixed once, shipped, and then reported again from the other route
+ * because only one copy had been changed. Retrieval still differs between the two — voice
+ * trades recall for latency, and that is a real difference worth keeping — but everything
+ * downstream of "here are the passages" is decided here, once.
+ *
+ * Returns '[UNGROUNDED]' when nothing survived the citation check, leaving the caller to
+ * phrase the refusal: text chat points at Deep Dive, voice says it aloud.
+ */
+async function composeGroundedAnswer(opts: ComposeAnswerOptions): Promise<ComposedAnswer> {
+  const { sources, contextBlock, query, rawRequest, label } = opts;
+  const history = [...(opts.history ?? [])];
+  const chat = opts.chat ?? {};
+
+  const isVerbatim = !opts.ungrounded
+    && sources.length > 0
+    && (opts.verbatimFlag === true || wantsVerbatim(query) || wantsVerbatim(rawRequest ?? ''));
+
+  getLogger().info(
+    { label, query, rawRequest: rawRequest ?? null, verbatimFlag: opts.verbatimFlag ?? null, isVerbatim },
+    'composeGroundedAnswer: verbatim detection',
+  );
+
+  if (isVerbatim) {
+    // Stored text, never model output — see buildVerbatimAnswer for why generating it
+    // cannot be made to work. Both the raw request and the search query are passed: the
+    // first says how much was asked for, the second says what to look for.
+    const text = await buildVerbatimAnswer(
+      sources,
+      [rawRequest, query].filter(Boolean).join(' — '),
+    );
+    return { answerText: text || 'No response generated.', isVerbatim: true, uncited: [] };
+  }
+
+  let answerText: string;
+  if (opts.twoStep && sources.length > 0 && !opts.ungrounded) {
+    // Extract first, then answer only from the extracts, so the second step has no source
+    // documents to embroider on.
+    const extracted = await chatComplete([
+      { role: 'system', content: EXTRACTOR_PROMPT },
+      ...history,
+      { role: 'user', content: contextBlock + 'QUESTION: ' + query },
+    ], { temperature: 0 }) || '';
+    getLogger().info({ label, extractLength: extracted.length }, 'extract-then-answer: step 1 complete');
+
+    answerText = await chatComplete([
+      { role: 'system', content: opts.systemPrompt },
+      ...history,
+      { role: 'user', content: `VERIFIED EXTRACTS FROM DOCUMENTS (these are the ONLY facts you may use):\n\n${extracted}\n\nUSER QUESTION: ${query}` },
+    ], { ...chat, temperature: chat.temperature ?? 0 }) || 'No response generated.';
+  } else {
+    answerText = await chatComplete([
+      { role: 'system', content: opts.systemPrompt },
+      ...history,
+      { role: 'user', content: contextBlock + 'USER QUESTION: ' + query },
+    ], { ...chat, temperature: chat.temperature ?? 0 }) || 'No response generated.';
+  }
+
+  // Deep Dive and chit-chat have nothing to cite and are not required to.
+  if (opts.ungrounded) return { answerText, isVerbatim: false, uncited: [] };
+
+  const checked = stripUncitedClaims(answerText);
+  if (checked.dropped.length > 0) {
+    getLogger().warn(
+      { label, query, dropped: checked.dropped.slice(0, 5), droppedCount: checked.dropped.length },
+      'removed uncited claims from grounded answer',
+    );
+  }
+  return {
+    answerText: hasSubstance(checked.text) ? checked.text : '[UNGROUNDED]',
+    isVerbatim: false,
+    uncited: checked.dropped,
+  };
+}
+
 /**
  * Lightweight vector search for voice mode — returns relevant document chunks without LLM processing
  */
@@ -1536,74 +1663,46 @@ export async function voiceAsk(
     instructions += `[Visual Evidence from Page ${img.pageNumber}]: ${img.description}\n\n`;
   }
 
-  // Same prompt selection as askQuestion, including the verbatim path.
-  //
-  // Voice mode reaches the knowledge base through here, not through askQuestion, so a
-  // "read it as it is" request arriving by voice needs the same handling — otherwise the
-  // spoken answer is reformatted and cited while the typed one is reproduced exactly.
-  // The Live session is instructed to read this result out word for word, so whatever is
-  // returned here is what the student hears.
-  // Check the caller's original words as well as the (possibly keyword-ised) query:
-  // voice mode's tool call strips phrasing like "as it is" before it ever reaches here.
-  const isVerbatim = verbatimFlag === true || wantsVerbatim(queryText) || wantsVerbatim(userRequest ?? '');
-  // Logged at info so a "voice still rephrases" report can be diagnosed from the server:
-  // it shows whether the raw transcript reached us at all and whether intent was detected.
-  getLogger().info(
-    { queryText, userRequest: userRequest ?? null, verbatimFlag: verbatimFlag ?? null, isVerbatim },
-    'voiceAsk: verbatim detection',
-  );
   const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
   let answerText: string;
-  // Only model-generated prose is citation-checked below: stored passages and the
-  // rate-limit excerpt fallback are source text already, and carry no citations.
-  let modelGenerated = false;
-  if (isVerbatim) {
-    // Stored text, not model output — see buildVerbatimAnswer.
-    // Pass the raw transcript alongside the query. Voice compresses the spoken request to
-    // search keywords before it reaches us, and the part that says how much was asked for
-    // — "there are total 13 points", "read them all" — is exactly what gets compressed
-    // away. Without the original words the answer silently narrows to one passage.
-    answerText = await buildVerbatimAnswer(
-      reranked.map((c: any) => ({
-        filename: docMap.get(c.documentId)?.originalFilename ?? docMap.get(c.documentId)?.title ?? 'document',
+  let isVerbatim = false;
+  try {
+    // Everything downstream of retrieval is decided in one place, shared with askQuestion —
+    // see composeGroundedAnswer. Voice reaching the knowledge base by a different route is
+    // why "read it as it is", multi-page lists and the citation filter each had to be fixed
+    // twice; only the retrieval above still differs, and that difference is deliberate.
+    //
+    // skipGemini: voice-ask is called from the Gemini Live session, which shares the same
+    // free-tier API key — calling Gemini here burns its quota and silences the Live audio.
+    // Go straight to OpenAI → Groq.
+    const composed = await composeGroundedAnswer({
+      sources: reranked.map((c: any) => ({
+        documentId: c.documentId,
         pageNumber: c.pageNumber,
         text: c.text,
-        documentId: c.documentId,
+        filename: docMap.get(c.documentId)?.originalFilename ?? docMap.get(c.documentId)?.title ?? 'document',
       })),
-      [userRequest, queryText].filter(Boolean).join(' — '),
-    );
-  } else try {
-    // skipGemini: voice-ask is called from the Gemini Live session which shares
-    // the same free-tier API key — calling Gemini here burns its quota and
-    // silences the Live audio. Go straight to OpenAI → Groq.
-    answerText = await chatComplete([
-      { role: 'system', content: finalSystemPrompt },
-      { role: 'user', content: instructions + "USER QUESTION: " + queryText },
-    ], { temperature: 0, skipGemini: !useGemini, preferGemini: useGemini }) || '';
-    modelGenerated = true;
+      contextBlock: instructions,
+      query: queryText,
+      rawRequest: userRequest,
+      verbatimFlag,
+      systemPrompt: finalSystemPrompt,
+      chat: { temperature: 0, skipGemini: !useGemini, preferGemini: useGemini },
+      label: 'voiceAsk',
+    });
+    answerText = composed.answerText;
+    isVerbatim = composed.isVerbatim;
+    // Spoken refusal — voice cannot point at a Deep Dive button the student isn't looking at.
+    if (answerText === '[UNGROUNDED]') {
+      answerText = NOT_IN_DOCUMENTS[language] ?? NOT_IN_DOCUMENTS['en'];
+    }
   } catch (llmErr: any) {
     // All AI providers rate-limited — return the raw source text as the answer
     // so the user still sees something instead of an error
     getLogger().warn({ err: llmErr?.message }, 'voiceAsk: LLM failed, returning source excerpts');
     const excerpts = reranked.slice(0, 3).map((c: any) => c.text.substring(0, 300)).join('\n\n');
     answerText = `Here is what I found in the documents:\n\n${excerpts}`;
-  }
-  // Same citation enforcement as askQuestion — see stripUncitedClaims. Voice needs it more,
-  // not less: a spoken answer arrives without the visible source markers that let a reader
-  // notice a claim came from nowhere, so an invented definition sounds exactly as
-  // authoritative as a quoted one.
-  if (modelGenerated) {
-    const checked = stripUncitedClaims(answerText);
-    if (checked.dropped.length > 0) {
-      getLogger().warn(
-        { queryText, dropped: checked.dropped.slice(0, 5), droppedCount: checked.dropped.length },
-        'voiceAsk: removed uncited claims from answer',
-      );
-    }
-    answerText = hasSubstance(checked.text)
-      ? checked.text
-      : (NOT_IN_DOCUMENTS[language] ?? NOT_IN_DOCUMENTS['en']);
   }
 
   // Clean citation markers (same as askQuestion). The run-of-spaces collapse is skipped
@@ -2088,11 +2187,6 @@ export async function askQuestion(
   }
 
   // 7. Construct Final Prompt
-  // A request to see the source text as written needs a different prompt and must skip
-  // the extract-then-answer path below, whose second step rewrites into the formatted,
-  // per-sentence-cited house style.
-  const isVerbatim = mode === 'grounded' && !isChitChat && chunks.length > 0 && wantsVerbatim(queryText);
-
   let finalSystemPrompt = (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
 
   if (isChitChat) {
@@ -2111,96 +2205,47 @@ export async function askQuestion(
   // Include history in the final answer generation too
   const historyMessages = history.map(h => ({ role: h.role, content: h.content } as const));
 
-  let answerText: string;
   let totalTokens = 0;
 
-  if (isVerbatim) {
-    // ── Verbatim reproduction ──
-    // The quote is NOT generated: buildVerbatimAnswer returns the stored chunk text and
-    // uses the model only to pick which passage was meant. See its comment for why.
-    getLogger().info({ standaloneQuery }, 'verbatim request detected — reproducing stored source text');
-    answerText = await buildVerbatimAnswer(
-      chunks
-        .filter((c: any) => !c.isNeighbor)
-        .map((c: any) => ({
-          filename: c.document?.originalFilename ?? c.document?.title ?? 'document',
-          pageNumber: c.pageNumber,
-          text: c.content,
-          documentId: c.documentId,
-        })),
-      queryText,
-    ) || 'No response generated.';
-    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after verbatim step');
-  } else if (mode === 'grounded' && !isChitChat && chunks.length > 0 && isComplex) {
-    // ── 2-Step Extract-then-Answer (anti-hallucination) for COMPLEX queries ──
-    // Step 1: Extract relevant passages from the sources (cheap model, fast)
-    const extractedQuotes = await chatComplete([
-      {
-        role: 'system',
-        content: `You are a text extractor. Given SOURCE DOCUMENTS and a QUESTION, extract all passages from the sources that could help answer the question — even if they answer it only partially or indirectly.
+  // Grounding is off for Deep Dive, which is explicitly allowed beyond the documents, and
+  // for chit-chat, which has nothing to cite. Both then skip verbatim, the extract step and
+  // the citation filter — all of which only make sense against sources.
+  const ungrounded = mode !== 'grounded' || isChitChat || chunks.length === 0;
 
-Rules:
-- Copy relevant passages as they appear in the sources. Keep the original wording.
-- Prefix each extract with its source label, e.g. [Source 3]: "passage here"
-- Be GENEROUS — include passages that are even tangentially related. It is much better to include too much than too little.
-- If the question asks about a topic made from/related to another topic, include information about BOTH the specific item AND its ingredients or related concepts.
-- If the question refers to something from conversation history, find passages related to that topic.
-- You MUST always extract at least something — even loosely related passages. Never refuse to extract.
-- Do NOT add any facts, numbers, or descriptions from your own knowledge — only extract from sources.`
-      },
-      ...historyMessages,
-      { role: 'user', content: instructions + "QUESTION: " + standaloneQuery }
-    ], { temperature: 0 }) || ''
-    getLogger().info({ standaloneQuery, extractLength: extractedQuotes.length, extractPreview: extractedQuotes.substring(0, 300) }, 'extract-then-answer: step 1 result');
-    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after extract step');
-
-    // Step 2: Answer using ONLY the extracted quotes (main model, no access to training data as "confirmation")
-    answerText = await chatComplete([
-      { role: 'system', content: finalSystemPrompt },
-      ...historyMessages,
-      {
-        role: 'user',
-        content: `VERIFIED EXTRACTS FROM DOCUMENTS (these are the ONLY facts you may use):\n\n${extractedQuotes}\n\nUSER QUESTION: ${standaloneQuery}`
-      }
-    ], { model: selectedModel, temperature: 0, preferGemini: useGemini }) || 'No response generated.';
-    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after answer step (2-step)');
-  } else if (mode === 'grounded' && !isChitChat && chunks.length > 0) {
-    // ── Direct single-step answer for SIMPLE queries (skip extract for speed) ──
-    // The system prompt already enforces "only use provided context" for anti-hallucination.
-    // Cohere reranking ensures the top chunks are highly relevant.
-    answerText = await chatComplete([
-      { role: 'system', content: finalSystemPrompt },
-      ...historyMessages,
-      { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery }
-    ], { model: selectedModel, temperature: 0, preferGemini: useGemini }) || 'No response generated.';
-    getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after direct answer step (extract skipped)');
-  } else {
-    // Non-grounded / chit-chat / general mode — single pass
-    answerText = await chatComplete([
-      { role: 'system', content: finalSystemPrompt },
-      ...historyMessages,
-      { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
-    ], { model: selectedModel, temperature: mode === 'grounded' ? 0 : 0.7, preferGemini: useGemini }) || 'No response generated.';
-  }
-
-  // Enforce the citation rule before the markers are stripped for display — they are the
-  // only evidence of which claims the model could actually source. Verbatim answers are
-  // stored text and carry no citations by design; Deep Dive is explicitly permitted to go
-  // beyond the documents; chit-chat has nothing to cite.
-  let uncited: string[] = [];
-  if (mode === 'grounded' && !isVerbatim && !isChitChat) {
-    const checked = stripUncitedClaims(answerText);
-    uncited = checked.dropped;
-    if (uncited.length > 0) {
-      getLogger().warn(
-        { queryText: standaloneQuery, dropped: uncited.slice(0, 5), droppedCount: uncited.length },
-        'removed uncited claims from grounded answer',
-      );
-    }
-    // Losing the whole answer means nothing in it was supported by the sources. Say so,
-    // rather than shipping the fragments that happened to survive.
-    answerText = hasSubstance(checked.text) ? checked.text : '[UNGROUNDED]';
-  }
+  // One place decides everything downstream of retrieval, shared with voiceAsk. Long
+  // questions go through extract-then-answer; short ones answer directly, since reranking
+  // has already put the relevant passages on top and the extra hop only costs latency.
+  const composed = await composeGroundedAnswer({
+    sources: chunks
+      .filter((c: any) => !c.isNeighbor)
+      .map((c: any) => ({
+        documentId: c.documentId,
+        pageNumber: c.pageNumber,
+        text: c.content,
+        filename: c.document?.originalFilename ?? c.document?.title ?? 'document',
+      })),
+    contextBlock: instructions,
+    query: standaloneQuery,
+    // The user's literal words, which standaloneQuery is not: with history in play it is an
+    // LLM rewrite, and a rewrite of "read the module content as it is" drops the "as it is"
+    // that verbatim detection turns on. Text chat has exactly the problem voice has, for a
+    // different reason — the condenser here, the tool call there — so both pass both forms.
+    rawRequest: queryText,
+    systemPrompt: finalSystemPrompt,
+    history: historyMessages,
+    twoStep: isComplex,
+    ungrounded,
+    chat: {
+      model: selectedModel,
+      temperature: mode === 'grounded' ? 0 : 0.7,
+      preferGemini: useGemini,
+    },
+    label: 'askQuestion',
+  });
+  let answerText = composed.answerText;
+  const isVerbatim = composed.isVerbatim;
+  const uncited = composed.uncited;
+  getLogger().debug({ ms: Date.now() - t0, isVerbatim, uncitedCount: uncited.length }, 'TIMING: after answer step');
 
   // Clean any leftover citation markers from the answer.
   // The run-of-spaces collapse is skipped for verbatim answers: indentation and column
