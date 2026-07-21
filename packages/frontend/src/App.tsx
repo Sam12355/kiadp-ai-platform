@@ -16,6 +16,7 @@ import SchoolDashboard from './pages/school/Dashboard';
 import SchoolDocuments from './pages/school/Documents';
 import SchoolUsers from './pages/school/Users';
 import SchoolApiKeys from './pages/school/ApiKeys';
+import SchoolProfile from './pages/school/Profile';
 
 import ClientLayout from './pages/client/Layout';
 import ClientKnowledge from './pages/client/KnowledgeAssistant';
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="documents" element={<SchoolDocuments />} />
         <Route path="users" element={<SchoolUsers />} />
         <Route path="api-keys" element={<SchoolApiKeys />} />
+        <Route path="profile" element={<SchoolProfile />} />
       </Route>
 
       {/* Client routes */}
