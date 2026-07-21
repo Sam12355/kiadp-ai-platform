@@ -521,52 +521,6 @@ CONTENT RULES (Grounded Intelligence):
 `;
 
 /**
- * Used instead of SYSTEM_PROMPT when the user asks to see the source text itself
- * ("read it as it is", "word for word", "quote the exact text").
- *
- * SYSTEM_PROMPT cannot serve that request, and not because the model misbehaves: it
- * mandates bolding key terms, ### headers and bullet lists, and requires an inline
- * [Source N] after every factual sentence. Those rules force the passage to be broken
- * up and rewritten, so a verbatim request comes back heavily paraphrased. This prompt
- * drops the formatting and per-sentence citation mandates and asks for reproduction.
- *
- * Note this is deliberately NOT combined with LANGUAGE_PROMPT — instructing the model
- * to "respond entirely in <language>" would make it translate the very text the user
- * asked to see unchanged.
- */
-const VERBATIM_SYSTEM_PROMPT = `
-You are reproducing source material exactly as written for a school knowledge base.
-
-The user has asked to see the text AS IT APPEARS in the source document. Your job is
-transcription, not explanation.
-
-RULES:
-1. Reproduce the relevant passage from the CONTEXT DOCUMENTS word for word. Preserve the
-   original wording, spelling, punctuation, capitalisation, numbers and line breaks.
-2. Do NOT paraphrase, summarise, shorten, simplify, correct or "improve" the text.
-3. Do NOT add bold, headers, bullet points, or any formatting that is not in the original.
-4. Do NOT add inline [Source N] citations inside the quoted text — they would corrupt it.
-   Instead, name the file and page once on a line before the quote, like:
-   From <filename>, page <N>:
-5. Reproduce the text in its ORIGINAL LANGUAGE. Do not translate it.
-6. Quote ONE passage — the single best match for what the user asked for. Do not walk
-   through every source you were given. In particular, do not quote other passages merely
-   because they share a heading with the one requested: if three slides are titled
-   "MODULE CONTENT", quote the one the user meant, not all three. Quote more than one
-   passage only if the user explicitly asked for several sections, or for "all" of them.
-   Concretely: your reply must contain exactly ONE "From <filename>, page <N>:" line.
-7. Omit repeated page furniture that is not part of the passage — page numbers, running
-   headers and footers, and an author or course name repeated on every page. This is the
-   one thing you may leave out; everything inside the passage stays exactly as written.
-8. If the requested text is not present in the CONTEXT DOCUMENTS, say so plainly and
-   trigger the [UNGROUNDED] protocol. Never reconstruct it from your own knowledge.
-9. If the passage is visibly cut off at the start or end of the provided context, quote
-   what you have and add a final line noting that the excerpt is partial.
-
-Any brief remark of your own must go after the quoted text, never inside it.
-`;
-
-/**
  * True when the user is asking for source text rather than an explanation.
  *
  * Deliberately a keyword test rather than an LLM classification: it runs on every
@@ -574,32 +528,49 @@ Any brief remark of your own must go after the quoted text, never inside it.
  * cheaper failure than a wrong negative silently paraphrasing what was asked for
  * literally. Covers the phrasings students actually use, in the four supported languages.
  */
-/** True when the user asked for several passages, not just one. */
-function wantsEveryMatch(text: string): boolean {
-  return /\b(all|every|each|both|entire|whole (document|deck|file)|list them all)\b/i.test(text);
-}
-
 /**
- * Keep only the first quoted passage of a verbatim answer.
+ * Build a verbatim answer by returning STORED text, not model output.
  *
- * The prompt asks for a single passage, but that alone is not reliable: a request like
- * "read me the five points under module content exactly as it is" still came back with
- * five separate passages, because every slide sharing that heading looked like a
- * candidate. Read aloud by voice mode, that is unusable. This enforces the rule
- * structurally instead of trusting the instruction — unless the user did ask for all of
- * them, in which case everything is kept.
+ * Generating the quote with an LLM does not work, however the prompt is written. Asked to
+ * "read me the five points under module content exactly as it is", it stitched item 5
+ * from page 3 together with items 6-9 from page 4 and labelled the result page 3 — a
+ * passage that exists in no document. For a request whose whole point is fidelity, a
+ * plausible-looking blend is the worst possible failure.
+ *
+ * So the model is used only to CHOOSE which retrieved passage was meant; the text then
+ * comes verbatim from what was stored at ingestion. Reproduction is exact by construction
+ * rather than by instruction, and no blending is possible.
+ *
+ * The trade-off is granularity: the whole chunk is returned, so a request for one
+ * paragraph of a longer section gets the section. That is a coarser answer, but a true one.
  */
-function keepFirstQuotedPassage(answer: string, query: string): string {
-  if (wantsEveryMatch(query)) return answer;
+async function buildVerbatimAnswer(
+  sources: { filename: string; pageNumber: number; text: string }[],
+  queryText: string,
+): Promise<string> {
+  if (sources.length === 0) return '';
 
-  const header = /^From .+?, page \d+:\s*$/gim;
-  const starts: number[] = [];
-  for (const m of answer.matchAll(header)) {
-    if (m.index !== undefined) starts.push(m.index);
+  let picked = 0;
+  if (sources.length > 1) {
+    const menu = sources
+      .map((s, i) => `[${i + 1}] ${s.filename} p.${s.pageNumber}: ${s.text.slice(0, 300).replace(/\s+/g, ' ')}`)
+      .join('\n');
+
+    const reply = await chatComplete([
+      {
+        role: 'system',
+        content: 'You choose which passage a request refers to. Reply with ONLY the number of the single best match — no words, no punctuation, no explanation.',
+      },
+      { role: 'user', content: `PASSAGES:\n${menu}\n\nREQUEST: ${queryText}\n\nNumber:` },
+    ], { temperature: 0 }).catch(() => '');
+
+    const n = parseInt(String(reply ?? '').trim().match(/\d+/)?.[0] ?? '', 10);
+    // Out-of-range or unparseable selection falls back to the top-ranked passage.
+    if (Number.isInteger(n) && n >= 1 && n <= sources.length) picked = n - 1;
   }
-  if (starts.length < 2) return answer;
 
-  return answer.slice(starts[0], starts[1]).trimEnd();
+  const s = sources[picked];
+  return `From ${s.filename}, page ${s.pageNumber}:\n${s.text}`;
 }
 
 function wantsVerbatim(text: string): boolean {
@@ -1191,13 +1162,20 @@ export async function voiceAsk(
   // The Live session is instructed to read this result out word for word, so whatever is
   // returned here is what the student hears.
   const isVerbatim = wantsVerbatim(queryText);
-  const finalSystemPrompt = isVerbatim
-    // No language directive: it would translate the text the user asked to hear unchanged.
-    ? VERBATIM_SYSTEM_PROMPT
-    : SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
+  const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
   let answerText: string;
-  try {
+  if (isVerbatim) {
+    // Stored text, not model output — see buildVerbatimAnswer.
+    answerText = await buildVerbatimAnswer(
+      reranked.map((c: any) => ({
+        filename: docMap.get(c.documentId)?.originalFilename ?? docMap.get(c.documentId)?.title ?? 'document',
+        pageNumber: c.pageNumber,
+        text: c.text,
+      })),
+      queryText,
+    );
+  } else try {
     // skipGemini: voice-ask is called from the Gemini Live session which shares
     // the same free-tier API key — calling Gemini here burns its quota and
     // silences the Live audio. Go straight to OpenAI → Groq.
@@ -1215,7 +1193,7 @@ export async function voiceAsk(
   // Clean citation markers (same as askQuestion). The run-of-spaces collapse is skipped
   // for verbatim answers, since indentation and alignment are part of the quoted source.
   answerText = isVerbatim
-    ? keepFirstQuotedPassage(answerText.replace(/\[Source \d+\]/g, ''), queryText)
+    ? answerText
     : answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length, isVerbatim }, 'voiceAsk: complete');
 
@@ -1676,10 +1654,7 @@ export async function askQuestion(
   // per-sentence-cited house style.
   const isVerbatim = mode === 'grounded' && !isChitChat && chunks.length > 0 && wantsVerbatim(queryText);
 
-  let finalSystemPrompt = isVerbatim
-    // No LANGUAGE_PROMPT here on purpose — see the note on VERBATIM_SYSTEM_PROMPT.
-    ? VERBATIM_SYSTEM_PROMPT
-    : (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
+  let finalSystemPrompt = (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
 
   if (isChitChat) {
     finalSystemPrompt = `You are a polite educational assistant. The user is just being polite (greetings or thanks). Respond briefly and politely. Just say "You're welcome" or "Hello, how can I help today?" or similar.` + LANGUAGE_PROMPT;
@@ -1701,16 +1676,20 @@ export async function askQuestion(
   let totalTokens = 0;
 
   if (isVerbatim) {
-    // ── Verbatim reproduction — single pass over the raw chunks ──
-    // Must come before the extract-then-answer branch: that path's second step rewrites
-    // the extracted passages into the formatted house style, which is exactly what a
-    // "read it as it is" request must not do. The chunk text goes to the model unmodified.
-    getLogger().info({ standaloneQuery }, 'verbatim request detected — reproducing source text');
-    answerText = await chatComplete([
-      { role: 'system', content: finalSystemPrompt },
-      ...historyMessages,
-      { role: 'user', content: instructions + "USER REQUEST: " + standaloneQuery }
-    ], { model: selectedModel, temperature: 0, preferGemini: useGemini }) || 'No response generated.';
+    // ── Verbatim reproduction ──
+    // The quote is NOT generated: buildVerbatimAnswer returns the stored chunk text and
+    // uses the model only to pick which passage was meant. See its comment for why.
+    getLogger().info({ standaloneQuery }, 'verbatim request detected — reproducing stored source text');
+    answerText = await buildVerbatimAnswer(
+      chunks
+        .filter((c: any) => !c.isNeighbor)
+        .map((c: any) => ({
+          filename: c.document?.originalFilename ?? c.document?.title ?? 'document',
+          pageNumber: c.pageNumber,
+          text: c.content,
+        })),
+      queryText,
+    ) || 'No response generated.';
     getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after verbatim step');
   } else if (mode === 'grounded' && !isChitChat && chunks.length > 0 && isComplex) {
     // ── 2-Step Extract-then-Answer (anti-hallucination) for COMPLEX queries ──
@@ -1768,7 +1747,7 @@ Rules:
   // The run-of-spaces collapse is skipped for verbatim answers: indentation and column
   // alignment are part of the source text the user asked to see unaltered.
   answerText = isVerbatim
-    ? keepFirstQuotedPassage(answerText.replace(/\[Source \d+\]/g, ''), queryText)
+    ? answerText
     : answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   let isGrounded = mode === 'grounded';
 
