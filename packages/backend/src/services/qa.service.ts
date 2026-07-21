@@ -522,6 +522,22 @@ CONTENT RULES (Grounded Intelligence):
 `;
 
 /**
+ * True for a sentence that reports the LIMITS of the corpus rather than asserting a fact:
+ * "the documents mention it but do not explain it".
+ *
+ * Such a sentence has nothing to cite — it is about the absence of a source — so the
+ * citation filter would otherwise delete the most honest line in the answer. Detection is
+ * a corpus noun near a negation, in each supported language. A false positive keeps one
+ * extra sentence that talks about the documents, which is harmless; a false negative
+ * deletes the assistant admitting it does not know, which is not.
+ */
+function isCorpusDisclaimer(text: string): boolean {
+  const CORPUS = /(document|source|material|text|file|pdf|slide|knowledge ?base|content|ملف|مستند|وثائق|مصادر|النص|ලේඛන|ලිපි|මූලාශ්‍ර|ஆவண|ஆதார|மூல)/i;
+  const NEGATION = /(\bnot\b|n't\b|\bno\b|\bnever\b|\bwithout\b|\black\b|\bdoes ?n[o']t\b|\bdo ?n[o']t\b|\bunable\b|\bfail(s|ed)? to\b|\bne\b|\bpas\b|\baucun|لا|ليس|لم|غير|نොමැත|නැත|නොවේ|නොකර|இல்லை|இல்ல)/i;
+  return CORPUS.test(text) && NEGATION.test(text);
+}
+
+/**
  * Delete factual claims the model failed to cite.
  *
  * SYSTEM_PROMPT already says "if you cannot cite a fact, do not write that fact at all",
@@ -546,14 +562,12 @@ function stripUncitedClaims(text: string): { text: string; dropped: string[] } {
   // lifecycles**:" — and hangs the citation off the children below it. Judging that parent
   // alone reads it as an uncited claim and deletes a properly grounded list item along with
   // everything under it.
-  let block: string[] = [];
+  type Block = { lines: string[]; heading: boolean; blanks: string[] };
+  const blocks: Block[] = [];
   let pendingBlanks: string[] = [];
-
-  const flush = () => {
-    if (block.length === 0) return;
-    if (block.some(l => /\[Source \d+\]/.test(l))) kept.push(...block);
-    else dropped.push(...block.map(l => l.trim()).filter(Boolean));
-    block = [];
+  const push = (line: string, heading: boolean) => {
+    blocks.push({ lines: [line], heading, blanks: pendingBlanks });
+    pendingBlanks = [];
   };
 
   for (const line of text.split('\n')) {
@@ -561,24 +575,44 @@ function stripUncitedClaims(text: string): { text: string; dropped: string[] } {
     if (trimmed === '') { pendingBlanks.push(line); continue; }
 
     const isHeading = /^#{1,6}\s/.test(trimmed) || /^([-*_])\1{2,}$/.test(trimmed);
-    const isNested = /^\s{2,}/.test(line);
-
-    if (isHeading) {
-      flush();
-      kept.push(...pendingBlanks, line);
-      pendingBlanks = [];
-    } else if (isNested && block.length > 0) {
+    const last = blocks[blocks.length - 1];
+    if (!isHeading && /^\s{2,}/.test(line) && last && !last.heading) {
       // Blank lines inside a list belong to the block they interrupt.
-      block.push(...pendingBlanks, line);
+      last.lines.push(...pendingBlanks, line);
       pendingBlanks = [];
     } else {
-      flush();
-      kept.push(...pendingBlanks);
-      pendingBlanks = [];
-      block.push(line);
+      push(line, isHeading);
     }
   }
-  flush();
+
+  const verdicts = blocks.map((b) => {
+    if (b.heading) return true;
+    const body = b.lines.join(' ');
+    if (/\[Source \d+\]/.test(body)) return true;
+    // A statement that the documents do NOT cover something is a claim about the corpus,
+    // not about the world. There is nothing to cite it to, and it is the single most
+    // valuable sentence a grounded assistant can produce — the first version of this
+    // filter deleted exactly that sentence and left the topic list that followed it
+    // looking like an answer to a question the documents never addressed.
+    if (isCorpusDisclaimer(body)) return true;
+    return false;
+  });
+
+  // A short lead-in ending in a colon ("...includes the following key areas:") carries no
+  // claim of its own; it belongs to the cited list beneath it. Length matters: the invented
+  // definition also ended in a colon, but ran to 200 characters of unsupported assertion.
+  for (let i = 0; i < blocks.length; i++) {
+    if (verdicts[i] || blocks[i].lines.length !== 1) continue;
+    const line = blocks[i].lines[0].trim();
+    if (!line.endsWith(':') || line.length > 120) continue;
+    const next = verdicts.findIndex((_v, j) => j > i && !blocks[j].heading);
+    if (next !== -1 && verdicts[next]) verdicts[i] = true;
+  }
+
+  blocks.forEach((b, i) => {
+    if (verdicts[i]) kept.push(...b.blanks, ...b.lines);
+    else dropped.push(...b.lines.map(l => l.trim()).filter(Boolean));
+  });
   kept.push(...pendingBlanks);
 
   // A header whose entire body was dropped is left pointing at nothing — remove it, and
