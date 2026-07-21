@@ -544,6 +544,19 @@ CONTENT RULES (Grounded Intelligence):
  * The trade-off is granularity: the whole chunk is returned, so a request for one
  * paragraph of a longer section gets the section. That is a coarser answer, but a true one.
  */
+/**
+ * Drop the running footer that PDF extraction folds into the page text — a slide number
+ * plus the author or course name repeated on every page, e.g. a passage ending
+ * "...contingency planning 3 Roshan Rajapakse". It is page furniture, not content, and
+ * once verbatim answers began returning stored text exactly it appeared in every quote.
+ */
+function stripPageFurniture(text: string): string {
+  return text
+    .replace(/\s+\d{1,3}\s+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3}\s*$/, '')
+    .replace(/\s+\d{1,3}\s*$/, '')
+    .trimEnd();
+}
+
 async function buildVerbatimAnswer(
   sources: { filename: string; pageNumber: number; text: string }[],
   queryText: string,
@@ -584,7 +597,7 @@ async function buildVerbatimAnswer(
   }
 
   const s = sources[picked];
-  return `From ${s.filename}, page ${s.pageNumber}:\n${s.text}`;
+  return `From ${s.filename}, page ${s.pageNumber}:\n${stripPageFurniture(s.text)}`;
 }
 
 function wantsVerbatim(text: string): boolean {

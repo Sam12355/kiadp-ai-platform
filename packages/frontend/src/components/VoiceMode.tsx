@@ -127,6 +127,16 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   const toolCallReceivedInTurnRef = useRef(false);
   const fillerRetryCountRef = useRef(0);
   // Keep refs to latest callbacks so closures inside connect() always use current values
+  /**
+   * Gemini sometimes emits its tool-call markup into the spoken-output transcript, so
+   * "<functioncall:search_knowledge{query:...}" was being rendered to the user as if the
+   * assistant had said it. Strip it before anything is displayed.
+   */
+  const cleanTranscript = (t: string) =>
+    t.replace(/<\s*functioncall\s*:[\s\S]*?(\}|$)/gi, '')
+     .replace(/[ 	]{2,}/g, ' ')
+     .trim();
+
   const onTranscriptRef = useRef(onTranscript);
   const onCloseRef = useRef(onClose);
   const onImagesRef = useRef(onImages);
@@ -425,7 +435,7 @@ Instructions:
                 if (cleanOutput.trim() || cleanOutput === ' ') {
                   aiTranscriptRef.current += cleanOutput;
                   // Stream partial transcript live — KnowledgeAssistant updates the same bubble in-place
-                  onTranscriptRef.current?.('assistant', aiTranscriptRef.current);
+                  onTranscriptRef.current?.('assistant', cleanTranscript(aiTranscriptRef.current));
                 }
               }
             }
@@ -444,7 +454,7 @@ Instructions:
                   .replace(/^([\u0644\u062D\u0638\u0629].{0,15}[\u0636\u0644\u0643]\.?\s*)+/u, '') // Arabic filler: "لحظة من فضلك"
                   .trim();
                 wasFillerOnly = !aiText;
-                if (aiText) onTranscriptRef.current?.('assistant', aiText);
+                if (aiText) onTranscriptRef.current?.('assistant', cleanTranscript(aiText));
                 aiTranscriptRef.current = '';
               }
               aiTurnCompleteRef.current = false;
@@ -479,7 +489,7 @@ Instructions:
                       if (answerText) {
                         toolAnswerEmittedRef.current = true;
                         onTranscriptRef.current?.('user', '');
-                        onTranscriptRef.current?.('assistant', answerText);
+                        onTranscriptRef.current?.('assistant', cleanTranscript(answerText));
                       }
                       if (isGrounded && images.length > 0) onImagesRef.current?.(images);
                     } catch (err) {
@@ -557,7 +567,7 @@ Instructions:
                               // instead of trying to update the filler ("let me check") bubble
                               // in-place, which can silently fail due to React state batching.
                               onTranscriptRef.current?.('user', '');
-                              onTranscriptRef.current?.('assistant', answerText);
+                              onTranscriptRef.current?.('assistant', cleanTranscript(answerText));
                             }
 
                             // Only attach images when the answer is grounded in the knowledge base
