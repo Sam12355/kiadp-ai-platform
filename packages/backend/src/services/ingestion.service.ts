@@ -22,6 +22,26 @@ import { embedTexts } from './embedding.service.js';
 const MIN_FRAGMENT_CHARS = 25;
 
 /**
+ * Put line breaks back in front of numbered list items.
+ *
+ * PDF text extraction frequently returns a slide or a syllabus page as one run-on line \u2014
+ * "MODULE CONTENT 1. Software Engineering... 2. Software development lifecycles..." \u2014 with
+ * the visual line breaks gone. Everything downstream then treats it as prose, and the
+ * numbering ends up detached from its items.
+ *
+ * Only applied when at least two markers are present, so ordinary prose that happens to
+ * end a sentence on a small number ("...the total was 20. Adults were unaffected.") is
+ * left alone. Markers are limited to 1-2 digits so years and decimals do not match, and
+ * must be followed by a capital so "2.5 km" and "Section 4.2" are excluded.
+ */
+function restoreListBreaks(text: string): string {
+  const marker = () => /(?:^|\s)(\d{1,2}[.)])\s+(?=[A-Z])/g;
+  const hits = text.match(marker());
+  if (!hits || hits.length < 2) return text;
+  return text.replace(marker(), (_m, m1) => '\n' + m1 + ' ');
+}
+
+/**
  * Split a page into fragments for chunking: line by line, then by sentence within a line.
  *
  * Two things this deliberately does NOT do, both of which it used to:
@@ -41,7 +61,7 @@ const MIN_FRAGMENT_CHARS = 25;
  */
 function splitIntoSentences(text: string): string[] {
   // Normalise horizontal whitespace only; keep line breaks as real boundaries.
-  const rawLines = text
+  const rawLines = restoreListBreaks(text)
     .replace(/\r\n?/g, '\n')
     .split('\n')
     .map(l => l.replace(/[^\S\n]+/g, ' ').trim())
