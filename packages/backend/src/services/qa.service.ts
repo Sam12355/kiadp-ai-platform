@@ -540,25 +540,46 @@ CONTENT RULES (Grounded Intelligence):
 function stripUncitedClaims(text: string): { text: string; dropped: string[] } {
   const dropped: string[] = [];
   const kept: string[] = [];
-  // Whether the last top-level line survived — sub-bullets follow their parent.
-  let parentKept = true;
+
+  // A top-level line and the lines nested under it are judged together, not line by line.
+  // The model routinely writes the parent as a bare label — "2. **Software development
+  // lifecycles**:" — and hangs the citation off the children below it. Judging that parent
+  // alone reads it as an uncited claim and deletes a properly grounded list item along with
+  // everything under it.
+  let block: string[] = [];
+  let pendingBlanks: string[] = [];
+
+  const flush = () => {
+    if (block.length === 0) return;
+    if (block.some(l => /\[Source \d+\]/.test(l))) kept.push(...block);
+    else dropped.push(...block.map(l => l.trim()).filter(Boolean));
+    block = [];
+  };
 
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
-    const isStructural = trimmed === ''
-      || /^#{1,6}\s/.test(trimmed)          // ### Header
-      || /^([-*_])\1{2,}$/.test(trimmed);   // --- rule
-    if (isStructural) { kept.push(line); continue; }
+    if (trimmed === '') { pendingBlanks.push(line); continue; }
 
+    const isHeading = /^#{1,6}\s/.test(trimmed) || /^([-*_])\1{2,}$/.test(trimmed);
     const isNested = /^\s{2,}/.test(line);
-    if (isNested) {
-      if (parentKept) kept.push(line); else dropped.push(trimmed);
-      continue;
-    }
 
-    if (/\[Source \d+\]/.test(line)) { parentKept = true; kept.push(line); }
-    else { parentKept = false; dropped.push(trimmed); }
+    if (isHeading) {
+      flush();
+      kept.push(...pendingBlanks, line);
+      pendingBlanks = [];
+    } else if (isNested && block.length > 0) {
+      // Blank lines inside a list belong to the block they interrupt.
+      block.push(...pendingBlanks, line);
+      pendingBlanks = [];
+    } else {
+      flush();
+      kept.push(...pendingBlanks);
+      pendingBlanks = [];
+      block.push(line);
+    }
   }
+  flush();
+  kept.push(...pendingBlanks);
 
   // A header whose entire body was dropped is left pointing at nothing — remove it, and
   // collapse the blank runs that removing lines leaves behind.
