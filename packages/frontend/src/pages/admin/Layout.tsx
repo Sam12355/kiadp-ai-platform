@@ -50,7 +50,7 @@ export default function AdminLayout() {
       <BubblesBackground />
 
       {/* Mobile Top Bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-raised/80 backdrop-blur-3xl border-b border-line-soft px-6 flex items-center justify-between z-40">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-raised/80 backdrop-blur-3xl border-b border-line px-6 flex items-center justify-between z-40">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
             <span className="text-white font-black text-sm">K</span>
@@ -75,7 +75,7 @@ export default function AdminLayout() {
 
       {/* Sidebar Drawer */}
       <aside className={`
-        fixed inset-y-0 ltr:left-0 rtl:right-0 w-72 bg-raised/80 backdrop-blur-3xl border-line-soft flex flex-col z-[50]
+        fixed inset-y-0 ltr:left-0 rtl:right-0 w-72 bg-raised/80 backdrop-blur-3xl border-line flex flex-col z-[50]
         transition-all duration-500 ease-in-out lg:relative lg:translate-x-0
         ${lang === 'ar' ? 'border-l' : 'border-r'}
         ${isSidebarOpen ? 'translate-x-0' : (lang === 'ar' ? 'translate-x-full' : '-translate-x-full')}

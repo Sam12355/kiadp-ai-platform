@@ -24,6 +24,9 @@
   --bubbles-opacity: 0.22; /* Student surface — quieter still */
 }
 
+.gradient-bg > * { display: none; }
+:root[data-theme='dark'] .gradient-bg > * { display: revert; }
+
 :root[data-theme='dark'] .gradient-bg {
   --color1: 15, 85, 45;   /* Deep Palm */
   --color2: 12, 65, 35;   /* Moss */

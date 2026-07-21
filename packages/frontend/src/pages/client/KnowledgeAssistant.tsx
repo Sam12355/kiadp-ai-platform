@@ -628,7 +628,7 @@ export default function KnowledgeAssistant() {
               </div>
            </div>
         )}
-        <header className="h-14 flex items-center justify-between px-4 z-30 border-b border-line-soft bg-transparent">
+        <header className="h-14 flex items-center justify-between px-4 z-30 border-b border-line bg-transparent">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-ink-mute hover:text-ink">
               <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
