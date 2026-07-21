@@ -134,8 +134,11 @@ export default function SchoolLayout() {
                 to={item.href}
                 className={`group flex items-center px-4 py-3.5 text-sm font-bold rounded-2xl transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-overlay text-ink shadow-lg shadow-ink/5 border border-line'
-                    : 'text-ink-mute hover:bg-raised hover:text-ink'
+                    // Blue rather than the brand-green bg-select: this panel is blue
+                    // throughout (icons, avatar, role label), and a green selection behind
+                    // a blue icon reads as a mistake rather than as a choice.
+                    ? 'bg-blue-500/10 text-ink border border-blue-500/25'
+                    : 'text-ink-mute hover:bg-overlay hover:text-ink'
                 }`}
               >
                 <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-blue-700' : 'group-hover:scale-110'}`} />

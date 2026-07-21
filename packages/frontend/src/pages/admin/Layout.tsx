@@ -113,8 +113,8 @@ export default function AdminLayout() {
                 to={item.href}
                 className={`group flex items-center px-4 py-3.5 text-sm font-bold rounded-2xl transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-overlay text-ink shadow-lg shadow-ink/5 border border-line'
-                    : 'text-ink-mute hover:bg-raised hover:text-ink'
+                    ? 'bg-select text-ink border border-select-line'
+                    : 'text-ink-mute hover:bg-overlay hover:text-ink'
                 }`}
               >
                 <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-emerald-700' : 'group-hover:scale-110'}`} />
