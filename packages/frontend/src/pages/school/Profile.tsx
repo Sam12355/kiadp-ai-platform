@@ -127,7 +127,7 @@ export default function SchoolProfile() {
       <div className="glass rounded-[1.5rem] p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-blue-700" />
+            <Building2 className="w-5 h-5 text-blue-700 dark:text-blue-400" />
           </div>
           <div>
             <h2 className="text-sm font-black text-ink uppercase tracking-widest">Institution Profile</h2>
@@ -171,12 +171,12 @@ export default function SchoolProfile() {
             </div>
           </div>
           {logoError && (
-            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{logoError}
             </div>
           )}
           {logoSaved && (
-            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 text-sm">
+            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 dark:text-emerald-400 text-sm">
               <CheckCircle2 className="w-4 h-4 flex-shrink-0" />Logo updated successfully.
             </div>
           )}
@@ -185,12 +185,12 @@ export default function SchoolProfile() {
         <div className="border-t border-line-soft" />
 
         {instError && (
-          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{instError}
           </div>
         )}
         {instSaved && (
-          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 dark:text-emerald-400 text-sm">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />Institution updated successfully.
           </div>
         )}
@@ -225,7 +225,7 @@ export default function SchoolProfile() {
       <div className="glass rounded-[1.5rem] p-8 space-y-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-            <User className="w-5 h-5 text-blue-700" />
+            <User className="w-5 h-5 text-blue-700 dark:text-blue-400" />
           </div>
           <div>
             <h2 className="text-sm font-black text-ink uppercase tracking-widest">My Account</h2>
@@ -234,12 +234,12 @@ export default function SchoolProfile() {
         </div>
 
         {profileError && (
-          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{profileError}
           </div>
         )}
         {profileSaved && (
-          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 text-sm">
+          <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 dark:text-emerald-400 text-sm">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />Profile updated successfully.
           </div>
         )}

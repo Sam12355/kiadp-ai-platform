@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { getEnv } from '../config/env.js';
-import { UnauthorizedError } from '../utils/errors.js';
+import { UnauthorizedError, ForbiddenError } from '../utils/errors.js';
 import type { UserRole } from '@khalifa/shared';
 
 export interface AuthPayload {
@@ -54,7 +54,12 @@ export function requireRole(...allowedRoles: UserRole[]) {
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      next(new UnauthorizedError('Insufficient permissions'));
+      // 403, not 401. The caller is authenticated; they are simply not allowed. Answering
+      // 401 told the client "your identity is the problem", and the axios interceptor
+      // acted on that literally — refreshing the token and, when the refresh did not help,
+      // signing the user out. A student hitting an admin route was logged out rather than
+      // refused.
+      next(new ForbiddenError('Insufficient permissions'));
       return;
     }
 

@@ -182,7 +182,7 @@ export default function Settings() {
                     <User className="absolute ltr:left-5 rtl:right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-emerald-400 transition-colors" />
                     <input
                       type="text"
-                      className="w-full bg-scrim border border-line rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-gray-700 font-medium text-ink shadow-inner"
+                      className="w-full bg-raised border border-line rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-ink-faint font-medium text-ink shadow-inner"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder={t.enterName}
@@ -196,7 +196,7 @@ export default function Settings() {
                     <Mail className="absolute ltr:left-5 rtl:right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-emerald-400 transition-colors" />
                     <input
                       type="email"
-                      className="w-full bg-scrim border border-line rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-gray-700 font-medium text-ink shadow-inner"
+                      className="w-full bg-raised border border-line rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-ink-faint font-medium text-ink shadow-inner"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="your@email.com"

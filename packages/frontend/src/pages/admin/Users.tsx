@@ -97,11 +97,11 @@ export default function UsersPage() {
       {pendingUsers && pendingUsers.length > 0 && (
         <div className="glass rounded-[2rem] overflow-hidden border border-amber-500/20 shadow-2xl">
           <div className="px-8 py-5 bg-amber-500/5 border-b border-amber-500/10 flex items-center gap-3">
-            <Clock className="w-4 h-4 text-amber-700" />
-            <h2 className="text-[11px] font-black uppercase tracking-widest text-amber-700">
+            <Clock className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+            <h2 className="text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
               {t.pendingApprovals}
             </h2>
-            <span className="ml-auto px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-700 text-[10px] font-black">
+            <span className="ml-auto px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-black">
               {pendingUsers.length}
             </span>
           </div>
@@ -125,7 +125,7 @@ export default function UsersPage() {
                 <button
                   onClick={() => approveMutation.mutate(user.id)}
                   disabled={approveMutation.isPending}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border text-emerald-700 border-emerald-400/20 hover:bg-emerald-400/10 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border text-emerald-700 dark:text-emerald-400 border-emerald-400/20 hover:bg-emerald-400/10 disabled:opacity-50"
                 >
                   <UserCheck className="w-4 h-4" />
                   {t.approve}
@@ -184,12 +184,12 @@ export default function UsersPage() {
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-2">
                       {user.role === 'ADMIN' ? (
-                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-purple-500/10 text-purple-700 text-[10px] font-black border border-purple-500/20 tracking-widest uppercase">
+                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-400 text-[10px] font-black border border-purple-500/20 tracking-widest uppercase">
                           <Shield className="w-3 h-3" />
                           {t.platformAdministrator}
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-500/10 text-blue-700 text-[10px] font-black border border-blue-500/20 tracking-widest uppercase">
+                        <span className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 text-[10px] font-black border border-blue-500/20 tracking-widest uppercase">
                           <Users className="w-3 h-3" />
                           {t.standardUser}
                         </span>
@@ -204,11 +204,11 @@ export default function UsersPage() {
                   </td>
                   <td className="px-8 py-6">
                     {user.isActive ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 text-[10px] font-black border border-emerald-400/20 uppercase tracking-widest">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] font-black border border-emerald-400/20 uppercase tracking-widest">
                         <UserCheck className="w-3.5 h-3.5" /> {t.active}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/10 text-red-700 text-[10px] font-black border border-red-500/20 uppercase tracking-widest">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/10 text-red-700 dark:text-red-400 text-[10px] font-black border border-red-500/20 uppercase tracking-widest">
                         <ShieldAlert className="w-3.5 h-3.5" /> {t.inactive}
                       </span>
                     )}
@@ -219,8 +219,8 @@ export default function UsersPage() {
                       disabled={toggleStatusMutation.isPending}
                       className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
                         user.isActive 
-                          ? 'text-red-700 border-red-400/10 hover:bg-red-400/10' 
-                          : 'text-emerald-700 border-emerald-400/10 hover:bg-emerald-400/10'
+                          ? 'text-red-700 dark:text-red-400 border-red-400/10 hover:bg-red-400/10' 
+                          : 'text-emerald-700 dark:text-emerald-400 border-emerald-400/10 hover:bg-emerald-400/10'
                       } disabled:opacity-50`}
                     >
                       {user.isActive ? (

@@ -77,7 +77,7 @@ export default function SchoolLayout() {
         </div>
         <button
           onClick={() => setIsSidebarOpen(true)}
-          className="p-2 rounded-xl bg-raised border border-line text-blue-700 cursor-pointer active:scale-95 transition-transform"
+          className="p-2 rounded-xl bg-raised border border-line text-blue-700 dark:text-blue-400 cursor-pointer active:scale-95 transition-transform"
         >
           <Menu className="w-6 h-6" />
         </button>
@@ -113,7 +113,7 @@ export default function SchoolLayout() {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="font-black text-sm uppercase tracking-widest text-ink leading-none truncate max-w-[140px]">{tenant?.name ?? 'School'}</span>
-              <span className="text-[10px] font-black text-blue-700 uppercase tracking-widest mt-1">Portal</span>
+              <span className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-widest mt-1">Portal</span>
             </div>
           </div>
           <button
@@ -141,7 +141,7 @@ export default function SchoolLayout() {
                     : 'text-ink-mute hover:bg-overlay hover:text-ink'
                 }`}
               >
-                <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-blue-700' : 'group-hover:scale-110'}`} />
+                <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-blue-700 dark:text-blue-400' : 'group-hover:scale-110'}`} />
                 {item.name}
               </Link>
             );
@@ -159,7 +159,7 @@ export default function SchoolLayout() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-ink truncate leading-none mb-1">{user?.fullName}</p>
-              <p className="text-[9px] text-blue-700/70 font-black uppercase tracking-widest truncate">Institution Admin</p>
+              <p className="text-[9px] text-blue-700 dark:text-blue-400/70 font-black uppercase tracking-widest truncate">Institution Admin</p>
             </div>
           </div>
 

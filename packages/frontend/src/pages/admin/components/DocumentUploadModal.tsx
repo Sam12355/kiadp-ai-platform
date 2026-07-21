@@ -80,7 +80,7 @@ export default function DocumentUploadModal({ onClose, onSuccess }: UploadModalP
           <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-emerald-500/[0.03] blur-[120px] pointer-events-none rounded-full" />
           
           <div className="flex justify-between items-center mb-10 border-b border-line pb-8 relative z-20">
-            <div className="flex items-center gap-4 text-emerald-700">
+            <div className="flex items-center gap-4 text-emerald-700 dark:text-emerald-400">
               <div className="w-12 h-12 rounded-[1.25rem] bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-inner">
                 <UploadCloud className="w-6 h-6" />
               </div>
@@ -93,7 +93,7 @@ export default function DocumentUploadModal({ onClose, onSuccess }: UploadModalP
 
           <form onSubmit={handleSubmit} className="space-y-8 relative z-20">
             {error && (
-              <div className="p-4 text-xs font-bold rounded-2xl bg-red-500/10 border border-red-500/20 text-red-700 flex items-center gap-3 animate-shake">
+              <div className="p-4 text-xs font-bold rounded-2xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 flex items-center gap-3 animate-shake">
                 <Info className="w-4 h-4 flex-shrink-0" />
                 {error}
               </div>
@@ -128,10 +128,10 @@ export default function DocumentUploadModal({ onClose, onSuccess }: UploadModalP
                 <input type="file" className="sr-only" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
                 {file ? (
                   <>
-                    <FileText className="w-12 h-12 text-emerald-700 animate-bounce-slow" />
+                    <FileText className="w-12 h-12 text-emerald-700 dark:text-emerald-400 animate-bounce-slow" />
                     <div className="text-center">
                       <p className="text-sm font-black text-ink">{file.name}</p>
-                      <p className="text-[10px] text-emerald-700/70 uppercase tracking-widest mt-1">{t.completed}</p>
+                      <p className="text-[10px] text-emerald-700 dark:text-emerald-400/70 uppercase tracking-widest mt-1">{t.completed}</p>
                     </div>
                   </>
                 ) : (

@@ -144,7 +144,7 @@ export default function Login() {
           ) : (
             <>
               {/* Tab switcher */}
-              <div className="flex items-center bg-scrim rounded-xl p-1 mb-6 border border-line-soft">
+              <div className="flex items-center bg-raised rounded-xl p-1 mb-6 border border-line-soft">
                 <button
                   onClick={() => switchMode('login')}
                   className={`flex-1 py-2 text-[11px] font-black uppercase tracking-widest rounded-lg transition-all ${mode === 'login' ? 'bg-[var(--color-palm-600)] text-ink shadow' : 'text-ink-mute hover:text-ink-soft'}`}
@@ -175,7 +175,7 @@ export default function Login() {
                       minLength={2}
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="w-full px-4 py-3 bg-scrim border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
+                      className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
                       placeholder={t.enterName}
                     />
                   </div>
@@ -188,7 +188,7 @@ export default function Login() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-scrim border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
+                    className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
                     placeholder={mode === 'login' ? 'admin@school.edu' : 'you@example.com'}
                   />
                 </div>
@@ -201,7 +201,7 @@ export default function Login() {
                     minLength={mode === 'register' ? 8 : 1}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 bg-scrim border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
+                    className="w-full px-4 py-3 bg-raised border border-[rgba(255,255,255,0.1)] rounded-lg text-ink focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-ink-faint"
                     placeholder={mode === 'register' ? t.minChars : '••••••••'}
                   />
                 </div>

@@ -43,7 +43,7 @@ function StatusBadge({ status }: { status: string }) {
   const t = translations[lang];
   if (status === 'online')
     return (
-      <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+      <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
         <CheckCircle2 className="w-3.5 h-3.5" /> {t.statusOnline}
       </span>
     );
@@ -54,7 +54,7 @@ function StatusBadge({ status }: { status: string }) {
       </span>
     );
   return (
-    <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-red-700">
+    <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-red-700 dark:text-red-400">
       <XCircle className="w-3.5 h-3.5" /> {t.statusError}
     </span>
   );
@@ -95,7 +95,7 @@ function CardHeader({ icon: Icon, color, name, badge }: { icon: React.ElementTyp
 
 function ErrorMsg({ msg }: { msg: string }) {
   return (
-    <p className="text-[11px] text-red-700 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 break-all">{msg}</p>
+    <p className="text-[11px] text-red-700 dark:text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 break-all">{msg}</p>
   );
 }
 
@@ -231,7 +231,7 @@ function OpenAICard({ d, period }: { d: OpenAIInfo; period?: string }) {
           {d.creditsExpire && <p className="text-[10px] text-ink-mute pt-1">{t.expiresLabel} {d.creditsExpire}</p>}
         </div>
       ) : (
-        <p className="text-[10px] text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+        <p className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
           {t.creditNotAvailable}
         </p>
       )}
@@ -257,7 +257,7 @@ function OpenAICard({ d, period }: { d: OpenAIInfo; period?: string }) {
         href="https://platform.openai.com/usage"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-violet-700 hover:text-violet-800 transition-colors pt-1"
+        className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-violet-700 dark:text-violet-400 hover:text-violet-800 transition-colors pt-1"
       >
         <ExternalLink className="w-3 h-3" /> OpenAI billing dashboard
       </a>
@@ -301,7 +301,7 @@ function GeminiCard({ d, period }: { d: GeminiInfo; period?: string }) {
         href="https://aistudio.google.com/app/usage"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-blue-700 hover:text-blue-800 transition-colors"
+        className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 hover:text-blue-800 transition-colors"
       >
         <ExternalLink className="w-3 h-3" /> AI Studio usage
       </a>
@@ -430,7 +430,7 @@ export default function ApiStatus() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-black text-ink uppercase tracking-tight flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
-            <Sparkles className="w-5 h-5 text-emerald-700" />
+            <Sparkles className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
           </div>
           {t.apiServicesQuotas}
         </h2>
@@ -454,7 +454,7 @@ export default function ApiStatus() {
 
       {/* Error */}
       {error && !isLoading && (
-        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-700 text-sm font-bold">
+        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-700 dark:text-red-400 text-sm font-bold">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           Failed to load API status.
         </div>

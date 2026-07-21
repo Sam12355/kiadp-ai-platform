@@ -92,7 +92,7 @@ export default function SchoolUsers() {
           </div>
 
           {createError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{createError}
             </div>
           )}
@@ -168,7 +168,7 @@ export default function SchoolUsers() {
           <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : error ? (
-        <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 flex items-center gap-3">
+        <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 dark:text-red-400 flex items-center gap-3">
           <AlertCircle className="w-5 h-5" /><p>Failed to load users.</p>
         </div>
       ) : filtered.length === 0 ? (
@@ -182,7 +182,7 @@ export default function SchoolUsers() {
         <div className="space-y-3">
           {filtered.map((u) => (
             <div key={u.id} className="glass rounded-[1.5rem] p-5 flex items-center gap-4 group">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0 text-blue-700 font-black text-sm">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0 text-blue-700 dark:text-blue-400 font-black text-sm">
                 {u.fullName.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -193,15 +193,15 @@ export default function SchoolUsers() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`hidden sm:flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                  u.role === 'ADMIN' ? 'text-purple-700 bg-purple-500/10 border-purple-500/25' : 'text-blue-700 bg-blue-500/10 border-blue-500/25'
+                  u.role === 'ADMIN' ? 'text-purple-700 dark:text-purple-400 bg-purple-500/10 border-purple-500/25' : 'text-blue-700 dark:text-blue-400 bg-blue-500/10 border-blue-500/25'
                 }`}>
                   {u.role === 'ADMIN' ? <Shield className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
                   {u.role}
                 </span>
                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                  u.isPendingApproval ? 'text-yellow-700 bg-yellow-500/10 border-yellow-500/25'
-                  : u.isActive ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25'
-                  : 'text-red-700 bg-red-500/10 border-red-500/25'
+                  u.isPendingApproval ? 'text-yellow-700 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/25'
+                  : u.isActive ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                  : 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25'
                 }`}>
                   {u.isPendingApproval ? 'Pending' : u.isActive ? 'Active' : 'Inactive'}
                 </span>

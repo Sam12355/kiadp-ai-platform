@@ -37,10 +37,10 @@ interface Doc {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  READY: 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25',
-  PROCESSING: 'text-yellow-700 bg-yellow-500/10 border-yellow-500/25',
-  UPLOADED: 'text-blue-700 bg-blue-500/10 border-blue-500/25',
-  FAILED: 'text-red-700 bg-red-500/10 border-red-500/25',
+  READY: 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
+  PROCESSING: 'text-yellow-700 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/25',
+  UPLOADED: 'text-blue-700 dark:text-blue-400 bg-blue-500/10 border-blue-500/25',
+  FAILED: 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25',
 };
 
 function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
@@ -251,7 +251,7 @@ export default function Institutions() {
             <button onClick={() => { setShowCreate(false); setCreateError(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {createError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{createError}
             </div>
           )}
@@ -295,7 +295,7 @@ export default function Institutions() {
             <button onClick={() => { setEditing(null); setEditError(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {editError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{editError}
             </div>
           )}
@@ -339,7 +339,7 @@ export default function Institutions() {
             <button onClick={() => { setShowCreateUser(false); setNewUserError(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {newUserError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{newUserError}
             </div>
           )}
@@ -394,7 +394,7 @@ export default function Institutions() {
             <button onClick={() => { setShowUploadDoc(false); setUploadError(''); setUploadFile(null); setUploadTitle(''); }} className="text-ink-faint hover:text-ink cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
           {uploadError && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 text-sm">
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />{uploadError}
             </div>
           )}
@@ -458,7 +458,7 @@ export default function Institutions() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-bold text-ink">{t.name}</p>
-                    {!t.isActive && <span className="text-[9px] font-black uppercase tracking-widest text-red-700 bg-red-500/10 border border-red-500/25 px-2 py-0.5 rounded-full">Inactive</span>}
+                    {!t.isActive && <span className="text-[9px] font-black uppercase tracking-widest text-red-700 dark:text-red-400 bg-red-500/10 border border-red-500/25 px-2 py-0.5 rounded-full">Inactive</span>}
                   </div>
                   <p className="text-xs text-ink-faint font-mono mt-0.5">{t.slug}</p>
                   <div className="flex items-center gap-4 mt-2 text-[10px] text-ink-faint uppercase tracking-widest">
@@ -476,7 +476,7 @@ export default function Institutions() {
                   <button onClick={() => toggleMutation.mutate({ id: t.id, isActive: !t.isActive })}
                     title={t.isActive ? 'Deactivate' : 'Activate'}
                     className="p-2 text-ink-faint hover:text-emerald-600 transition-colors cursor-pointer">
-                    {t.isActive ? <ToggleRight className="w-5 h-5 text-emerald-700" /> : <ToggleLeft className="w-5 h-5" />}
+                    {t.isActive ? <ToggleRight className="w-5 h-5 text-emerald-700 dark:text-emerald-400" /> : <ToggleLeft className="w-5 h-5" />}
                   </button>
                 </div>
                 <ChevronRight className={`w-4 h-4 text-ink-faint transition-transform ${selected?.id === t.id ? 'rotate-90' : ''}`} />
@@ -535,7 +535,7 @@ export default function Institutions() {
                 </div>
 
                 {/* Assigned users */}
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
                   Assigned ({tenantUsers?.length ?? 0})
                 </p>
                 {tuLoading ? (
@@ -544,14 +544,14 @@ export default function Institutions() {
                   <p className="text-[11px] text-ink-faint italic px-1">{userSearch ? 'No assigned users match.' : 'No users assigned yet — create or assign one above.'}</p>
                 ) : assignedFiltered.map((u) => (
                   <div key={u.id} className="flex items-center gap-3 p-3 bg-emerald-500/5 border border-emerald-500/15 rounded-2xl group">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-700 font-black text-sm flex-shrink-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-black text-sm flex-shrink-0">
                       {u.fullName.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-ink truncate leading-none">{u.fullName}</p>
                       <p className="text-[10px] text-ink-faint truncate mt-0.5">{u.email}</p>
                     </div>
-                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${u.isActive ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25' : 'text-red-700 bg-red-500/10 border-red-500/25'}`}>
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${u.isActive ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25' : 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25'}`}>
                       {u.isActive ? 'Active' : 'Inactive'}
                     </span>
                     <span className="text-[9px] font-black uppercase tracking-widest text-ink-faint">{u.role}</span>
@@ -608,7 +608,7 @@ export default function Institutions() {
                 ) : tenantDocs.map((doc) => (
                   <div key={doc.id} className="flex items-center gap-3 p-3 bg-raised border border-line-soft rounded-2xl group hover:border-line transition-all">
                     <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-4 h-4 text-emerald-700" />
+                      <FileText className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-ink truncate leading-none">{doc.title}</p>

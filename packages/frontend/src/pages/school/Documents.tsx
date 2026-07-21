@@ -6,10 +6,10 @@ import type { DocumentSummary } from '@khalifa/shared';
 import { FileText, Trash2, Plus, Search, RefreshCw, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {
-  READY: 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25',
-  PROCESSING: 'text-yellow-700 bg-yellow-500/10 border-yellow-500/25',
-  UPLOADED: 'text-blue-700 bg-blue-500/10 border-blue-500/25',
-  FAILED: 'text-red-700 bg-red-500/10 border-red-500/25',
+  READY: 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
+  PROCESSING: 'text-yellow-700 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/25',
+  UPLOADED: 'text-blue-700 dark:text-blue-400 bg-blue-500/10 border-blue-500/25',
+  FAILED: 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25',
 };
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
@@ -108,7 +108,7 @@ export default function SchoolDocuments() {
           {filtered.map((doc) => (
             <div key={doc.id} className="glass rounded-[1.5rem] p-6 flex items-center gap-4 group hover:border-line transition-all">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5 text-blue-700" />
+                <FileText className="w-5 h-5 text-blue-700 dark:text-blue-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-ink truncate">{doc.title}</p>

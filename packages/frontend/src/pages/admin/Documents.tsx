@@ -129,7 +129,7 @@ export default function DocumentsPage() {
                     <tr className="group hover:bg-raised transition-colors">
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-2xl bg-red-400/10 flex items-center justify-center text-red-700 border border-red-400/20 shadow-lg">
+                          <div className="w-12 h-12 rounded-2xl bg-red-400/10 flex items-center justify-center text-red-700 dark:text-red-400 border border-red-400/20 shadow-lg">
                             <FileText className="w-6 h-6" />
                           </div>
                           <div className="max-w-[240px]">
@@ -138,7 +138,7 @@ export default function DocumentsPage() {
                             {meta?.summary && (
                               <button
                                 onClick={() => setExpandedSummaryId(expandedSummaryId === doc.id ? null : doc.id)}
-                                className="mt-2 flex items-center gap-1 text-[10px] font-black text-emerald-700 hover:text-emerald-800 uppercase tracking-widest transition-colors"
+                                className="mt-2 flex items-center gap-1 text-[10px] font-black text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 uppercase tracking-widest transition-colors"
                               >
                                 <Sparkles className="w-3 h-3" />
                                 {t.aiSummary}
@@ -150,7 +150,7 @@ export default function DocumentsPage() {
                       </td>
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-2">
-                          <Filter className="w-3.5 h-3.5 text-emerald-700" />
+                          <Filter className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
                           <span className="text-xs font-bold text-ink-mute uppercase tracking-tight">
                             {doc.categories.map(c => t[c as keyof typeof t] || c).join(', ')}
                           </span>
@@ -159,10 +159,10 @@ export default function DocumentsPage() {
                       <td className="px-8 py-6">
                         <div className="flex flex-col gap-2">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black border w-fit tracking-widest uppercase ${
-                            doc.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20' :
-                            doc.status === 'PROCESSING' || doc.status === 'UPLOADED' ? 'bg-blue-500/10 text-blue-700 border-blue-500/20' :
-                            doc.status === 'FAILED' ? 'bg-red-500/10 text-red-700 border-red-500/20' :
-                            'bg-amber-500/10 text-amber-700 border-amber-500/20 animate-pulse'
+                            doc.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' :
+                            doc.status === 'PROCESSING' || doc.status === 'UPLOADED' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20' :
+                            doc.status === 'FAILED' ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' :
+                            'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 animate-pulse'
                           }`}>
                             {t[doc.status.toLowerCase() as keyof typeof t] || doc.status}
                           </span>
@@ -174,7 +174,7 @@ export default function DocumentsPage() {
                                   style={{ width: `${doc.progress || 0}%` }}
                                 />
                               </div>
-                              <span className="text-[10px] font-bold text-blue-700 tabular-nums">
+                              <span className="text-[10px] font-bold text-blue-700 dark:text-blue-400 tabular-nums">
                                 {doc.progress || 0}%
                               </span>
                             </div>
@@ -223,8 +223,8 @@ export default function DocumentsPage() {
                         <td colSpan={5} className="px-8 pb-6 pt-0">
                           <div className="rounded-2xl p-5 border" style={{ background: 'rgba(34,197,94,0.04)', borderColor: 'rgba(34,197,94,0.12)' }}>
                             <div className="flex items-center gap-2 mb-3">
-                              <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
-                              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">{t.aiSummary}</span>
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+                              <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">{t.aiSummary}</span>
                             </div>
                             <p className="text-sm text-ink-soft leading-relaxed mb-4">{meta.summary}</p>
                             {meta.keyPoints?.length > 0 && (

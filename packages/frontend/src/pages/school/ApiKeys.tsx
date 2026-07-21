@@ -87,13 +87,13 @@ export default function SchoolApiKeys() {
       {/* New key created banner */}
       {createdKey && (
         <div className="glass rounded-[1.5rem] p-6 border border-emerald-500/30 space-y-3">
-          <div className="flex items-center gap-2 text-emerald-700">
+          <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="w-5 h-5" />
             <span className="text-sm font-black uppercase tracking-widest">API Key Created — Save It Now</span>
           </div>
           <p className="text-xs text-ink-mute">This key will not be shown again. Copy it immediately.</p>
           <div className="flex items-center gap-3 bg-overlay border border-line rounded-xl px-4 py-3">
-            <code className="flex-1 text-sm text-emerald-700 font-mono break-all">{createdKey}</code>
+            <code className="flex-1 text-sm text-emerald-700 dark:text-emerald-400 font-mono break-all">{createdKey}</code>
             <button
               onClick={copyKey}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-[10px] font-black uppercase tracking-widest text-white transition-all cursor-pointer flex-shrink-0"
@@ -135,7 +135,7 @@ export default function SchoolApiKeys() {
           <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : error ? (
-        <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 flex items-center gap-3">
+        <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 dark:text-red-400 flex items-center gap-3">
           <AlertCircle className="w-5 h-5" />
           <p>Failed to load API keys.</p>
         </div>
@@ -149,7 +149,7 @@ export default function SchoolApiKeys() {
           {keys.map((k) => (
             <div key={k.id} className="glass rounded-[1.5rem] p-5 flex items-center gap-4 group">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
-                <Key className="w-5 h-5 text-blue-700" />
+                <Key className="w-5 h-5 text-blue-700 dark:text-blue-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-ink">{k.name}</p>
@@ -161,7 +161,7 @@ export default function SchoolApiKeys() {
                 </div>
               </div>
               <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                k.isActive ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/25' : 'text-red-700 bg-red-500/10 border-red-500/25'
+                k.isActive ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25' : 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25'
               }`}>
                 {k.isActive ? 'Active' : 'Revoked'}
               </span>

@@ -136,9 +136,9 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
                       active ? 'bg-blue-500/20 border border-blue-500/40' :
                       'bg-raised border border-line'
                     }`}>
-                      {done ? <CheckCircle2 className="w-4 h-4 text-emerald-700" /> : <Icon className={`w-4 h-4 ${active ? 'text-blue-700' : 'text-ink-faint'}`} />}
+                      {done ? <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400" /> : <Icon className={`w-4 h-4 ${active ? 'text-blue-700 dark:text-blue-400' : 'text-ink-faint'}`} />}
                     </div>
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${active ? 'text-ink' : done ? 'text-emerald-700' : 'text-ink-faint'}`}>{s.label}</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${active ? 'text-ink' : done ? 'text-emerald-700 dark:text-emerald-400' : 'text-ink-faint'}`}>{s.label}</span>
                   </div>
                   {i < steps.length - 1 && <div className={`h-px flex-1 mx-2 ${done ? 'bg-emerald-500/30' : 'bg-overlay'}`} />}
                 </div>
@@ -164,7 +164,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
                   <p className="text-[10px] text-ink-faint">PNG, JPG, SVG · max 5MB</p>
                 </div>
               </div>
-              {logoError && <p className="text-red-700 text-sm">{logoError}</p>}
+              {logoError && <p className="text-red-700 dark:text-red-400 text-sm">{logoError}</p>}
               <div className="flex gap-3 pt-2">
                 <button onClick={skip} className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink-mute rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
                 <button disabled={!logoFile || logoMutation.isPending} onClick={() => logoMutation.mutate()}
@@ -204,7 +204,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
                   </select>
                 </div>
               </div>
-              {userError && <p className="text-red-700 text-sm">{userError}</p>}
+              {userError && <p className="text-red-700 dark:text-red-400 text-sm">{userError}</p>}
               <div className="flex gap-3 pt-1">
                 <button onClick={skip} className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink-mute rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
                 <button disabled={!userName || !userEmail || !userPassword || userMutation.isPending} onClick={() => userMutation.mutate()}
@@ -234,7 +234,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
                   <span className="text-sm font-medium">{docFile ? docFile.name : 'Click to select a PDF'}</span>
                 </button>
               </div>
-              {docError && <p className="text-red-700 text-sm">{docError}</p>}
+              {docError && <p className="text-red-700 dark:text-red-400 text-sm">{docError}</p>}
               <div className="flex gap-3">
                 <button onClick={skip} className="flex-1 py-3 bg-raised hover:bg-overlay border border-line text-ink-mute rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">Skip for now</button>
                 <button disabled={!docFile || docMutation.isPending} onClick={() => docMutation.mutate()}
@@ -249,7 +249,7 @@ export default function OnboardingWizard({ tenantId, tenantName, onDismiss }: Pr
           {step === 'done' && (
             <div className="space-y-6 text-center py-4">
               <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-8 h-8 text-emerald-700" />
+                <CheckCircle2 className="w-8 h-8 text-emerald-700 dark:text-emerald-400" />
               </div>
               <div>
                 <h3 className="text-xl font-black text-ink uppercase tracking-widest">You're all set!</h3>

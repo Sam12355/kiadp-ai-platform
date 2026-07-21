@@ -59,7 +59,7 @@ export default function AdminLayout() {
         </div>
         <button 
           onClick={() => setIsSidebarOpen(true)}
-          className="p-2 rounded-xl bg-raised border border-line text-emerald-700 cursor-pointer active:scale-95 transition-transform"
+          className="p-2 rounded-xl bg-raised border border-line text-emerald-700 dark:text-emerald-400 cursor-pointer active:scale-95 transition-transform"
         >
           <Menu className="w-6 h-6" />
         </button>
@@ -92,7 +92,7 @@ export default function AdminLayout() {
               <span className="tracking-tight uppercase leading-none whitespace-nowrap app-logo">
                 <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
               </span>
-              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mt-1">{t.adminPanel}</span>
+              <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest mt-1">{t.adminPanel}</span>
             </div>
           </div>
           <button 
@@ -117,7 +117,7 @@ export default function AdminLayout() {
                     : 'text-ink-mute hover:bg-overlay hover:text-ink'
                 }`}
               >
-                <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-emerald-700' : 'group-hover:scale-110'}`} />
+                <Icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 transition-transform ${isActive ? 'scale-110 text-emerald-700 dark:text-emerald-400' : 'group-hover:scale-110'}`} />
                 {item.name}
               </Link>
             );
@@ -139,7 +139,7 @@ export default function AdminLayout() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-ink truncate leading-none mb-1">{user?.fullName}</p>
-              <p className="text-[9px] text-emerald-700/70 font-black uppercase tracking-widest truncate">{t.systemRoot}</p>
+              <p className="text-[9px] text-emerald-700 dark:text-emerald-400/70 font-black uppercase tracking-widest truncate">{t.systemRoot}</p>
             </div>
           </div>
 
@@ -147,13 +147,13 @@ export default function AdminLayout() {
           <div className="flex items-center justify-between px-2 bg-raised py-2 rounded-2xl border border-line-soft">
             <button 
               onClick={() => setLanguage('en')}
-              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'en' ? 'text-emerald-700 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
+              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'en' ? 'text-emerald-700 dark:text-emerald-400 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
             >
               English
             </button>
             <button 
               onClick={() => setLanguage('ar')}
-              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'ar' ? 'text-emerald-700 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
+              className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-xl ${lang === 'ar' ? 'text-emerald-700 dark:text-emerald-400 bg-overlay' : 'text-ink-mute hover:text-ink'}`}
             >
               العربية
             </button>

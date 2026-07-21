@@ -97,7 +97,7 @@ export default function SchoolDashboard() {
 
   if (error || !tenant) {
     return (
-      <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 flex items-center gap-3">
+      <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 dark:text-red-400 flex items-center gap-3">
         <AlertCircle className="w-5 h-5" />
         <p>Failed to load institution data.</p>
       </div>
@@ -105,9 +105,9 @@ export default function SchoolDashboard() {
   }
 
   const statCards = [
-    { name: 'Documents', value: tenant._count.documents, icon: FileText, href: '/school/documents', color: 'text-blue-700' },
-    { name: 'Questions Answered', value: tenant._count.questions.toLocaleString(), icon: HelpCircle, href: null, color: 'text-emerald-700' },
-    { name: 'Users', value: tenant._count.users, icon: Users, href: '/school/users', color: 'text-purple-700' },
+    { name: 'Documents', value: tenant._count.documents, icon: FileText, href: '/school/documents', color: 'text-blue-700 dark:text-blue-400' },
+    { name: 'Questions Answered', value: tenant._count.questions.toLocaleString(), icon: HelpCircle, href: null, color: 'text-emerald-700 dark:text-emerald-400' },
+    { name: 'Users', value: tenant._count.users, icon: Users, href: '/school/users', color: 'text-purple-700 dark:text-purple-400' },
   ];
 
   const totalInChart = analytics?.daily.reduce((s, d) => s + d.questions, 0) ?? 0;
@@ -135,7 +135,7 @@ export default function SchoolDashboard() {
             </h1>
             <p className="text-ink-mute mt-1 font-medium text-sm uppercase tracking-widest">
               Institution Dashboard · {tenant.slug}
-              {!tenant.isActive && <span className="ml-3 text-red-700">· Inactive</span>}
+              {!tenant.isActive && <span className="ml-3 text-red-700 dark:text-red-400">· Inactive</span>}
             </p>
           </div>
         </div>
@@ -174,7 +174,7 @@ export default function SchoolDashboard() {
               <h2 className="text-xs font-black uppercase tracking-widest text-ink-mute">Questions — Last 14 Days</h2>
               <p className="text-2xl font-black text-ink mt-1">{totalInChart.toLocaleString()}</p>
             </div>
-            <TrendingUp className="w-5 h-5 text-blue-700" />
+            <TrendingUp className="w-5 h-5 text-blue-700 dark:text-blue-400" />
           </div>
           {analytics && analytics.daily.some(d => d.questions > 0) ? (
             <ResponsiveContainer width="100%" height={160}>
@@ -250,9 +250,9 @@ export default function SchoolDashboard() {
               <div key={q.id} className="flex items-start gap-3 p-3 bg-raised border border-line-soft rounded-2xl hover:border-line transition-all">
                 <div className="mt-0.5 flex-shrink-0">
                   {q.isGrounded === true ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
                   ) : q.isGrounded === false ? (
-                    <XCircle className="w-4 h-4 text-red-700" />
+                    <XCircle className="w-4 h-4 text-red-700 dark:text-red-400" />
                   ) : (
                     <Clock className="w-4 h-4 text-ink-faint" />
                   )}
@@ -262,7 +262,7 @@ export default function SchoolDashboard() {
                   <p className="text-[10px] text-ink-faint mt-0.5">
                     {q.askedBy} · {fmt(q.createdAt)}
                     {q.confidence != null && (
-                      <span className="ml-2 text-blue-700">{Math.round(q.confidence * 100)}% confidence</span>
+                      <span className="ml-2 text-blue-700 dark:text-blue-400">{Math.round(q.confidence * 100)}% confidence</span>
                     )}
                   </p>
                 </div>
@@ -277,15 +277,15 @@ export default function SchoolDashboard() {
         <h2 className="text-xs font-black uppercase tracking-widest text-ink-mute">Quick Actions</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Link to="/school/documents" className="flex items-center gap-3 px-5 py-4 bg-raised hover:bg-overlay border border-line-soft hover:border-blue-500/30 rounded-2xl transition-all group">
-            <FileText className="w-5 h-5 text-blue-700 group-hover:scale-110 transition-transform" />
+            <FileText className="w-5 h-5 text-blue-700 dark:text-blue-400 group-hover:scale-110 transition-transform" />
             <span className="text-sm font-bold text-ink">Upload Document</span>
           </Link>
           <Link to="/school/users" className="flex items-center gap-3 px-5 py-4 bg-raised hover:bg-overlay border border-line-soft hover:border-blue-500/30 rounded-2xl transition-all group">
-            <Users className="w-5 h-5 text-blue-700 group-hover:scale-110 transition-transform" />
+            <Users className="w-5 h-5 text-blue-700 dark:text-blue-400 group-hover:scale-110 transition-transform" />
             <span className="text-sm font-bold text-ink">Manage Users</span>
           </Link>
           <Link to="/school/api-keys" className="flex items-center gap-3 px-5 py-4 bg-raised hover:bg-overlay border border-line-soft hover:border-blue-500/30 rounded-2xl transition-all group">
-            <Key className="w-5 h-5 text-blue-700 group-hover:scale-110 transition-transform" />
+            <Key className="w-5 h-5 text-blue-700 dark:text-blue-400 group-hover:scale-110 transition-transform" />
             <span className="text-sm font-bold text-ink">API Keys</span>
           </Link>
         </div>

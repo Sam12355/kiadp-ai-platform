@@ -47,7 +47,7 @@ export default function Dashboard() {
 
   if (error || !stats) {
     return (
-      <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 flex items-center gap-3">
+      <div className="p-6 bg-red-500/10 border border-red-500/50 rounded-xl text-red-700 dark:text-red-400 flex items-center gap-3">
         <AlertCircle className="w-5 h-5" />
         <p>Failed to load dashboard statistics.</p>
       </div>
@@ -73,11 +73,11 @@ export default function Dashboard() {
           <div key={stat.name} className="glass rounded-[1.5rem] p-8 relative overflow-hidden group hover:border-emerald-500/30 transition-all duration-300">
             {/* LTR: Right, RTL: Left */}
             <div className="absolute top-0 ltr:right-0 rtl:left-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
-              <stat.icon className="w-14 h-14 text-emerald-700" />
+              <stat.icon className="w-14 h-14 text-emerald-700 dark:text-emerald-400" />
             </div>
             <p className="text-[10px] font-black uppercase tracking-widest text-ink-mute mb-2">{stat.name}</p>
             <p className="text-4xl font-black text-ink tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>{stat.value}</p>
-            <div className="flex items-center gap-1.5 mt-6 text-[10px] font-bold text-emerald-700/70 uppercase tracking-widest">
+            <div className="flex items-center gap-1.5 mt-6 text-[10px] font-bold text-emerald-700 dark:text-emerald-400/70 uppercase tracking-widest">
               <Activity className="w-3.5 h-3.5" />
               <span>{t.liveTracking}</span>
             </div>
@@ -90,7 +90,7 @@ export default function Dashboard() {
         <div className="lg:col-span-2 glass rounded-[2rem] p-8 border border-line-soft">
           <h2 className="text-xl font-black text-ink mb-8 flex items-center gap-3 uppercase tracking-tight">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
-              <Activity className="w-5 h-5 text-emerald-700" />
+              <Activity className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
             </div>
             {t.recentActivity}
           </h2>
@@ -111,9 +111,9 @@ export default function Dashboard() {
                     </td>
                     <td className="py-6 px-2">
                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase border ${
-                        activity.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20' :
-                        activity.status === 'FAILED' ? 'bg-red-500/10 text-red-700 border-red-500/20' :
-                        'bg-amber-500/10 text-amber-700 border-amber-500/20'
+                        activity.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' :
+                        activity.status === 'FAILED' ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' :
+                        'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
                       }`}>
                         {t[activity.status.toLowerCase() as keyof typeof t] || activity.status}
                       </span>
@@ -139,7 +139,7 @@ export default function Dashboard() {
         <div className="glass rounded-[2rem] p-8 border border-line-soft">
           <h2 className="text-xl font-black text-ink mb-8 flex items-center gap-3 uppercase tracking-tight">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
             </div>
             {t.systemHealth}
           </h2>
@@ -149,7 +149,7 @@ export default function Dashboard() {
                 <p className="text-sm font-bold text-ink">{t.dbTitle}</p>
                 <p className="text-[10px] font-bold text-ink-mute uppercase tracking-tight">{t.mainRecordsHub}</p>
               </div>
-              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-glow" /> 
                 {t[stats.systemStatus.database.toLowerCase() as keyof typeof t] || stats.systemStatus.database}
               </span>
@@ -159,7 +159,7 @@ export default function Dashboard() {
                 <p className="text-sm font-bold text-ink">{t.vectorDbTitle}</p>
                 <p className="text-[10px] font-bold text-ink-mute uppercase tracking-tight">{t.vectorIndex}</p>
               </div>
-              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-glow" /> 
                 {t[stats.systemStatus.pinecone.toLowerCase() as keyof typeof t] || stats.systemStatus.pinecone}
               </span>
@@ -169,7 +169,7 @@ export default function Dashboard() {
                 <p className="text-sm font-bold text-ink">{t.aiEngineTitle}</p>
                 <p className="text-[10px] font-bold text-ink-mute uppercase tracking-tight">{t.llmSystems}</p>
               </div>
-              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-glow" /> 
                 {t[stats.systemStatus.openai.toLowerCase() as keyof typeof t] || stats.systemStatus.openai}
               </span>

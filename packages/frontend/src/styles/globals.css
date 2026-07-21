@@ -1,6 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Bungee&display=swap');
 @import "tailwindcss";
 
+/* Tailwind's built-in dark: keys off prefers-color-scheme. This app is driven by an
+   explicit data-theme attribute, so the variant is redefined to follow it. Without this,
+   a dark: utility would fire from the OS setting and ignore the toggle entirely. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 @font-face {
   font-family: 'Neo Sans Arabic';
   src: url('/fonts/Neo_Sans_Arabic_Regular.ttf') format('truetype');
@@ -164,7 +169,7 @@ html {
      cost no request, stay sharp at any zoom, and can be retuned per theme by one value.
      Held at ~13% alpha: it should register as texture when you look for it and disappear
      when you are reading. */
-  --t-grid: rgba(176, 133, 47, 0.075);
+  --t-grid: rgba(176, 133, 47, 0.16);
   --t-page-backdrop:
     repeating-linear-gradient(to right, var(--t-grid) 0 1px, transparent 1px 56px),
     repeating-linear-gradient(to bottom, var(--t-grid) 0 1px, transparent 1px 56px),
@@ -600,7 +605,7 @@ a:disabled,
   font-family: var(--font-heading);
   font-size: 56px;
   font-weight: 700;
-  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 40%, #22c55e 100%);
+  background: linear-gradient(135deg, var(--t-ink) 0%, var(--t-ink-soft) 40%, var(--t-accent) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: -0.04em;

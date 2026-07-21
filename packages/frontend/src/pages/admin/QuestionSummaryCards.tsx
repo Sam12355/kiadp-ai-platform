@@ -27,23 +27,23 @@ export default function QuestionSummaryCards() {
 
   const cards = [
     {
-      icon: MessageSquare, color: 'bg-purple-500/20 border-purple-500/20', iconColor: 'text-purple-700',
+      icon: MessageSquare, color: 'bg-purple-500/20 border-purple-500/20', iconColor: 'text-purple-700 dark:text-purple-400',
       label: t.totalQuestions, value: data?.totalQuestions.toLocaleString() ?? '—',
     },
     {
-      icon: TrendingUp, color: 'bg-emerald-500/20 border-emerald-500/20', iconColor: 'text-emerald-700',
+      icon: TrendingUp, color: 'bg-emerald-500/20 border-emerald-500/20', iconColor: 'text-emerald-700 dark:text-emerald-400',
       label: t.answeredByAi, value: data?.totalAnswered.toLocaleString() ?? '—',
     },
     {
-      icon: AlertTriangle, color: 'bg-amber-500/20 border-amber-500/20', iconColor: 'text-amber-700',
+      icon: AlertTriangle, color: 'bg-amber-500/20 border-amber-500/20', iconColor: 'text-amber-700 dark:text-amber-400',
       label: t.knowledgeGaps, value: data?.knowledgeGaps.toLocaleString() ?? '—',
     },
     {
-      icon: Users, color: 'bg-sky-500/20 border-sky-500/20', iconColor: 'text-sky-700',
+      icon: Users, color: 'bg-sky-500/20 border-sky-500/20', iconColor: 'text-sky-700 dark:text-sky-400',
       label: t.gapRate,
       value: data ? `${data.gapPercent}%` : '—',
       sub: data ? (data.gapPercent >= 20 ? t.gapHigh : t.gapHealthy) : undefined,
-      subColor: data ? (data.gapPercent >= 20 ? 'text-amber-700' : 'text-emerald-700') : undefined,
+      subColor: data ? (data.gapPercent >= 20 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400') : undefined,
     },
   ];
 
@@ -57,7 +57,7 @@ export default function QuestionSummaryCards() {
         </h2>
         <Link
           to="/admin/questions"
-          className="flex items-center gap-1.5 text-[10px] font-bold text-purple-700 hover:text-purple-800 transition-colors"
+          className="flex items-center gap-1.5 text-[10px] font-bold text-purple-700 dark:text-purple-400 hover:text-purple-800 transition-colors"
         >
           {t.viewFullAnalytics} <ArrowRight className="w-3 h-3" />
         </Link>

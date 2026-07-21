@@ -19,28 +19,28 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     label: 'Auto (Recommended)',
     description: 'GPT-4o primary with Gemini and Groq fallbacks. Best reliability.',
     icon: Layers,
-    color: 'text-emerald-700',
+    color: 'text-emerald-700 dark:text-emerald-400',
   },
   {
     id: 'openai',
     label: 'OpenAI Only',
     description: 'Force GPT-4o for all responses. No fallback to other providers.',
     icon: Brain,
-    color: 'text-blue-700',
+    color: 'text-blue-700 dark:text-blue-400',
   },
   {
     id: 'gemini',
     label: 'Gemini Only',
     description: 'Use Google Gemini exclusively (gemini-2.5-flash cascade). Skips OpenAI.',
     icon: Zap,
-    color: 'text-yellow-700',
+    color: 'text-yellow-700 dark:text-yellow-400',
   },
   {
     id: 'groq',
     label: 'Groq Only',
     description: 'Use Groq exclusively (Llama models). Fastest inference, lowest cost.',
     icon: Cpu,
-    color: 'text-purple-700',
+    color: 'text-purple-700 dark:text-purple-400',
   },
 ];
 
@@ -117,14 +117,14 @@ export default function AdminSettings() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-ink">{opt.label}</span>
                       {saved === opt.id && (
-                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
                           Active
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-ink-mute mt-0.5">{opt.description}</p>
                   </div>
-                  <div className={`mt-0.5 shrink-0 ${isActive ? 'text-emerald-700' : 'text-ink-faint'}`}>
+                  <div className={`mt-0.5 shrink-0 ${isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-ink-faint'}`}>
                     <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${isActive ? 'border-emerald-400' : 'border-line-strong'}`}>
                       {isActive && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
                     </div>
@@ -136,14 +136,14 @@ export default function AdminSettings() {
         )}
 
         {error && (
-          <div className="mt-4 flex items-center gap-2 text-red-700 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+          <div className="mt-4 flex items-center gap-2 text-red-700 dark:text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mt-4 flex items-center gap-2 text-emerald-700 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+          <div className="mt-4 flex items-center gap-2 text-emerald-700 dark:text-emerald-400 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             {success}
           </div>

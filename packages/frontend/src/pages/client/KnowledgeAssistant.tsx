@@ -524,7 +524,7 @@ export default function KnowledgeAssistant() {
               <span className="whitespace-nowrap flex items-center gap-1.5 uppercase app-logo">
                 {/* .kiadp-text paints a white→grey gradient into the glyphs, which is invisible
                     on a light sidebar; re-point it at the ink tokens so it follows the theme. */}
-                <span className="kiadp-text" style={{ backgroundImage: 'linear-gradient(to bottom, var(--t-ink), var(--t-ink-soft))' }}>Edu</span><span className="ai-highlight">AI</span>
+                <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
               </span>
               {(user?.tenantLogoUrl || institutionName) && (
                 <div className="flex items-center gap-2 mt-2">
@@ -691,7 +691,7 @@ export default function KnowledgeAssistant() {
                    </div>
                    {/* .premium-title clips a white→slate→green gradient into the glyphs; the first
                        two stops vanish on a light page, so drive the ramp from the ink tokens. */}
-                   <h2 className="premium-title mb-4" style={{ backgroundImage: 'linear-gradient(135deg, var(--t-ink) 0%, var(--t-ink-soft) 40%, var(--t-accent) 100%)' }}>{t.howCanIHelp}</h2>
+                   <h2 className="premium-title mb-4">{t.howCanIHelp}</h2>
                    <p className="text-ink-mute text-[14px] max-w-sm mb-8">{t.heroSubtitle}</p>
                    {promptSuggestions.length > 0 && (
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
@@ -775,7 +775,7 @@ export default function KnowledgeAssistant() {
               <div className="glow-border-layer" />
               {/* .inner-bar is filled with a literal near-black; drive it from the tokens instead
                   so the prompt bar is a white card in light and unchanged in dark. */}
-              <div className="inner-bar px-4" style={{ background: 'var(--t-raised)', borderColor: 'var(--t-line)' }}>
+              <div className="inner-bar px-4">
                 {isVoiceModeOpen ? (
                   /* ── Voice active: status strip + live textarea ── */
                   <div className="flex flex-col flex-1 gap-1.5 py-2">
@@ -1008,10 +1008,7 @@ export default function KnowledgeAssistant() {
 
       {/* Deep Dive Panel */}
       <div className={`thread-overlay ${activeThreadId ? 'open' : ''}`} onClick={() => setActiveThreadId(null)} />
-      {/* .thread-panel is painted near-black with a white hairline and a heavy black shadow;
-          all three come from the tokens here so the panel is a white sheet under light. */}
-      <div className={`thread-panel ${activeThreadId ? 'open' : ''}`}
-           style={{ background: 'var(--t-raised)', borderLeftColor: 'var(--t-line)', boxShadow: '-20px 0 60px rgba(15, 23, 42, 0.12)' }}>
+      <div className={`thread-panel ${activeThreadId ? 'open' : ''}`}>
           <div className="p-6 border-b border-line-soft flex justify-between">
             <h3 className="text-xs font-bold uppercase tracking-widest text-accent">{t.deepDive} Mode</h3>
             <button onClick={() => setActiveThreadId(null)} className="text-ink-faint hover:text-ink">✕</button>

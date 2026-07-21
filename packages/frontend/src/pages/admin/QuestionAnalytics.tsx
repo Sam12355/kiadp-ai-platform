@@ -120,7 +120,7 @@ function VolumeChart({ data, labelAnswered, labelGaps, labelQuestions, labelLast
         </div>
         <div className="flex items-center gap-3 text-[10px] font-bold">
           <span className="text-ink-soft">{totalAll} {labelQuestions}</span>
-          {totalGapsAll > 0 && <span className="text-red-700/80">{totalGapsAll} {labelGaps.toLowerCase()}</span>}
+          {totalGapsAll > 0 && <span className="text-red-700 dark:text-red-400/80">{totalGapsAll} {labelGaps.toLowerCase()}</span>}
           <span className="text-ink-mute">{labelLast30}</span>
         </div>
       </div>
@@ -224,14 +224,14 @@ function VolumeChart({ data, labelAnswered, labelGaps, labelQuestions, labelLast
       {selected ? (
         <div className="mt-3 p-3 rounded-xl bg-raised border border-line text-xs flex flex-wrap gap-4 animate-fade-in">
           <span className="font-bold text-ink">{fmtDate(selected.day)}</span>
-          <span className="text-emerald-700">
+          <span className="text-emerald-700 dark:text-emerald-400">
             {selected.total} question{selected.total !== 1 ? 's' : ''}
           </span>
-          <span className="text-emerald-700">
+          <span className="text-emerald-700 dark:text-emerald-400">
             {selected.total - selected.gaps} answered
           </span>
           {selected.gaps > 0 && (
-            <span className="text-red-700 font-bold">
+            <span className="text-red-700 dark:text-red-400 font-bold">
               {selected.gaps} knowledge gap{selected.gaps !== 1 ? 's' : ''}
             </span>
           )}
@@ -258,7 +258,7 @@ function HBar({ label, count, max, hadGap }: { label: string; count: number; max
         <p className="text-xs text-ink-soft leading-tight line-clamp-2 flex-1">{label}</p>
         <div className="flex items-center gap-1.5 shrink-0">
           {hadGap && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-red-700 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/25">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/25">
               gap
             </span>
           )}
@@ -353,7 +353,7 @@ export default function QuestionAnalytics() {
             style={{ fontFamily: 'var(--font-heading)' }}
           >
             <div className="w-11 h-11 rounded-xl bg-purple-500/20 flex items-center justify-center border border-purple-500/20">
-              <BarChart2 className="w-5 h-5 text-purple-700" />
+              <BarChart2 className="w-5 h-5 text-purple-700 dark:text-purple-400" />
             </div>
             {t.questionAnalytics}
           </h1>
@@ -378,7 +378,7 @@ export default function QuestionAnalytics() {
       )}
 
       {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 flex items-center gap-3 text-sm">
+        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 flex items-center gap-3 text-sm">
           <AlertCircle className="w-4 h-4 shrink-0" />
           {t.failedLoadAnalytics}
         </div>
@@ -391,7 +391,7 @@ export default function QuestionAnalytics() {
             <SummaryCard
               icon={MessageSquare}
               color="bg-purple-500/20 border-purple-500/20"
-              iconColor="text-purple-700"
+              iconColor="text-purple-700 dark:text-purple-400"
               label={t.totalQuestions}
               value={data.summary.totalQuestions.toLocaleString()}
               sub={t.allTimeAllUsers}
@@ -399,7 +399,7 @@ export default function QuestionAnalytics() {
             <SummaryCard
               icon={TrendingUp}
               color="bg-emerald-500/20 border-emerald-500/20"
-              iconColor="text-emerald-700"
+              iconColor="text-emerald-700 dark:text-emerald-400"
               label={t.answeredByAi}
               value={data.summary.totalAnswered.toLocaleString()}
               sub={t.aiResponsesGenerated}
@@ -407,7 +407,7 @@ export default function QuestionAnalytics() {
             <SummaryCard
               icon={AlertTriangle}
               color="bg-red-500/20 border-red-500/20"
-              iconColor="text-red-700"
+              iconColor="text-red-700 dark:text-red-400"
               label={t.knowledgeGaps}
               value={data.summary.knowledgeGaps.toLocaleString()}
               sub={t.aiCouldNotAnswerKb}
@@ -415,11 +415,11 @@ export default function QuestionAnalytics() {
             <SummaryCard
               icon={Users}
               color="bg-sky-500/20 border-sky-500/20"
-              iconColor="text-sky-700"
+              iconColor="text-sky-700 dark:text-sky-400"
               label={t.gapRate}
               value={`${data.summary.gapPercent}%`}
               sub={data.summary.gapPercent >= 20 ? t.gapHigh : t.gapHealthy}
-              subColor={data.summary.gapPercent >= 20 ? 'text-red-700' : 'text-emerald-700'}
+              subColor={data.summary.gapPercent >= 20 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}
             />
           </div>
 
@@ -456,7 +456,7 @@ export default function QuestionAnalytics() {
                         <p className="text-xs font-bold text-ink truncate">{u.fullName}</p>
                         <p className="text-[10px] text-ink-mute truncate">{u.email}</p>
                       </div>
-                      <span className="text-xs font-black text-purple-700 bg-purple-500/10 px-2 py-0.5 rounded-full shrink-0">
+                      <span className="text-xs font-black text-purple-700 dark:text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full shrink-0">
                         {u.questionCount}
                       </span>
                     </div>
@@ -492,8 +492,8 @@ export default function QuestionAnalytics() {
 
             {/* Knowledge gaps */}
             <div className="glass rounded-[1.5rem] p-6 border border-line-soft">
-              <h3 className="text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2 text-red-700/80">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-700" />
+              <h3 className="text-[10px] font-black uppercase tracking-widest mb-1 flex items-center gap-2 text-red-700 dark:text-red-400/80">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-700 dark:text-red-400" />
                 {t.knowledgeGaps}
               </h3>
               <p className="text-[9px] text-ink-mute italic mb-5">
@@ -501,7 +501,7 @@ export default function QuestionAnalytics() {
                 {data.recentGaps.length > 0 && ` ${t.repeatedQuestionsNote}`}
               </p>
               {data.recentGaps.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 gap-2 text-emerald-700">
+                <div className="flex flex-col items-center justify-center h-32 gap-2 text-emerald-700 dark:text-emerald-400">
                   <AlertTriangle className="w-8 h-8 opacity-30" />
                   <p className="text-xs font-bold">{t.noKnowledgeGaps}</p>
                 </div>
@@ -517,7 +517,7 @@ export default function QuestionAnalytics() {
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-xs text-ink leading-snug line-clamp-3 flex-1">{gap.questionText}</p>
                         {gap.times > 1 && (
-                          <span className="text-[9px] font-black text-red-700 bg-red-500/15 px-1.5 py-0.5 rounded border border-red-500/25 shrink-0">
+                          <span className="text-[9px] font-black text-red-700 dark:text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded border border-red-500/25 shrink-0">
                             {gap.times}x
                           </span>
                         )}

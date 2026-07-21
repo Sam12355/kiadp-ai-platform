@@ -59,7 +59,7 @@ function TBtn({ onClick, active, title, children }: {
     <button type="button" title={title} onClick={onClick}
       className={`p-1.5 rounded-lg transition-all flex-shrink-0 ${
         active
-          ? 'bg-emerald-500/20 text-emerald-700 border border-emerald-500/30'
+          ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
           : 'text-ink-mute hover:text-ink hover:bg-raised border border-transparent'
       }`}
     >
@@ -175,7 +175,7 @@ function TextEntryAddModal({
 
           {/* Header */}
           <div className="flex justify-between items-center mb-8 border-b border-line pb-6 relative z-20">
-            <div className="flex items-center gap-4 text-emerald-700">
+            <div className="flex items-center gap-4 text-emerald-700 dark:text-emerald-400">
               <div className="w-12 h-12 rounded-[1.25rem] bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-inner">
                 <BookOpen className="w-6 h-6" />
               </div>
@@ -190,12 +190,12 @@ function TextEntryAddModal({
 
           <form onSubmit={handleSubmit} className="space-y-8 relative z-20">
             {error && (
-              <div className="p-4 text-xs font-bold rounded-2xl bg-red-500/10 border border-red-500/20 text-red-700 flex items-center gap-3 animate-shake">
+              <div className="p-4 text-xs font-bold rounded-2xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 flex items-center gap-3 animate-shake">
                 <Info className="w-4 h-4 flex-shrink-0" />{error}
               </div>
             )}
             {success && (
-              <div className="p-4 text-xs font-bold rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 flex items-center gap-3">
+              <div className="p-4 text-xs font-bold rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 flex items-center gap-3">
                 <CheckCircle className="w-4 h-4 flex-shrink-0" />{t.insertSuccess}
               </div>
             )}
@@ -368,7 +368,7 @@ function TextEntryEditModal({
 
           {/* Header */}
           <div className="flex justify-between items-center mb-10 border-b border-line pb-8 relative z-20">
-            <div className="flex items-center gap-4 text-amber-700">
+            <div className="flex items-center gap-4 text-amber-700 dark:text-amber-400">
               <div className="w-12 h-12 rounded-[1.25rem] bg-amber-500/10 flex items-center justify-center border border-amber-500/20 shadow-inner">
                 <Edit3 className="w-6 h-6" />
               </div>
@@ -383,7 +383,7 @@ function TextEntryEditModal({
 
           <div className="space-y-8 relative z-20">
             {error && (
-              <div className="p-4 text-xs font-bold rounded-2xl bg-red-500/10 border border-red-500/20 text-red-700 flex items-center gap-3">
+              <div className="p-4 text-xs font-bold rounded-2xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 flex items-center gap-3">
                 <Info className="w-4 h-4 flex-shrink-0" />{error}
               </div>
             )}
@@ -480,7 +480,7 @@ export default function InsertKnowledge() {
           <h1 className="text-4xl font-black text-ink tracking-tight uppercase flex items-center gap-4"
             style={{ fontFamily: 'var(--font-heading)' }}>
             <div className="w-11 h-11 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/20">
-              <BookOpen className="w-5 h-5 text-emerald-700" />
+              <BookOpen className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
             </div>
             {t.textualKnowledge}
           </h1>
@@ -525,7 +525,7 @@ export default function InsertKnowledge() {
                 <tr key={entry.id} className="group hover:bg-raised transition-colors">
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-400/10 flex items-center justify-center text-emerald-700 border border-emerald-400/20 shadow-lg">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-400/10 flex items-center justify-center text-emerald-700 dark:text-emerald-400 border border-emerald-400/20 shadow-lg">
                         <BookOpen className="w-6 h-6" />
                       </div>
                       <div className="max-w-[240px]">
@@ -535,7 +535,7 @@ export default function InsertKnowledge() {
                   </td>
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-2">
-                      <Filter className="w-3.5 h-3.5 text-emerald-700" />
+                      <Filter className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
                       <span className="text-xs font-bold text-ink-mute uppercase tracking-tight">
                         {entry.categories.map((c: string) => (t as any)[c] || c).join(', ')}
                       </span>
@@ -543,10 +543,10 @@ export default function InsertKnowledge() {
                   </td>
                   <td className="px-8 py-6">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black border w-fit tracking-widest uppercase ${
-                      entry.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20' :
-                      entry.status === 'PROCESSING' ? 'bg-blue-500/10 text-blue-700 border-blue-500/20' :
-                      entry.status === 'FAILED'     ? 'bg-red-500/10 text-red-700 border-red-500/20' :
-                      'bg-amber-500/10 text-amber-700 border-amber-500/20'
+                      entry.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' :
+                      entry.status === 'PROCESSING' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20' :
+                      entry.status === 'FAILED'     ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' :
+                      'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
                     }`}>
                       {(t as any)[entry.status.toLowerCase()] || entry.status}
                     </span>
