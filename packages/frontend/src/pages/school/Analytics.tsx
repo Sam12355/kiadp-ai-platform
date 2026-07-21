@@ -148,7 +148,7 @@ export default function SchoolAnalytics() {
                   width={140}
                   axisLine={false}
                   tickLine={false}
-                  {/* Not `t` — that is the translations object in this scope. */}
+                  // `title`, not `t`: `t` is the translations object in this scope.
                   tickFormatter={(title: string) => (title.length > 22 ? title.slice(0, 21) + '…' : title)}
                 />
                 <Tooltip
