@@ -1148,8 +1148,18 @@ export async function voiceAsk(
     instructions += `[Visual Evidence from Page ${img.pageNumber}]: ${img.description}\n\n`;
   }
 
-  // Use the SAME system prompt as askQuestion (SYSTEM_PROMPT + language instruction)
-  const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
+  // Same prompt selection as askQuestion, including the verbatim path.
+  //
+  // Voice mode reaches the knowledge base through here, not through askQuestion, so a
+  // "read it as it is" request arriving by voice needs the same handling — otherwise the
+  // spoken answer is reformatted and cited while the typed one is reproduced exactly.
+  // The Live session is instructed to read this result out word for word, so whatever is
+  // returned here is what the student hears.
+  const isVerbatim = wantsVerbatim(queryText);
+  const finalSystemPrompt = isVerbatim
+    // No language directive: it would translate the text the user asked to hear unchanged.
+    ? VERBATIM_SYSTEM_PROMPT
+    : SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
   let answerText: string;
   try {
@@ -1167,9 +1177,12 @@ export async function voiceAsk(
     const excerpts = reranked.slice(0, 3).map((c: any) => c.text.substring(0, 300)).join('\n\n');
     answerText = `Here is what I found in the documents:\n\n${excerpts}`;
   }
-  // Clean citation markers (same as askQuestion)
-  answerText = answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
-  getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length }, 'voiceAsk: complete');
+  // Clean citation markers (same as askQuestion). The run-of-spaces collapse is skipped
+  // for verbatim answers, since indentation and alignment are part of the quoted source.
+  answerText = isVerbatim
+    ? answerText.replace(/\[Source \d+\]/g, '')
+    : answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
+  getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length, isVerbatim }, 'voiceAsk: complete');
 
   return { answerText, images };
 }
