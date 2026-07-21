@@ -82,7 +82,7 @@ Ask a question and get an answer grounded in the school's uploaded documents.
 **Example request:**
 ```bash
 curl -X POST https://your-domain.com/api/v1/ask \
-  -H "Authorization: Bearer sk-kh-816e9405c4324e2b42fa5354fd8f4bc9..." \
+  -H "Authorization: Bearer sk-kh-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What are the requirements for A/L Biology?",
@@ -524,7 +524,7 @@ Issue a new API key. The raw key is **returned once only** — store it immediat
     "tenantId": "uuid",
     "expiresAt": null,
     "createdAt": "2026-05-09T12:00:00Z",
-    "rawKey": "sk-kh-816e9405c4324e2b42fa5354fd8f4bc908838e3771b35cba"
+    "rawKey": "sk-kh-<48-hex-chars-shown-once-at-creation>"
   }
 }
 ```
