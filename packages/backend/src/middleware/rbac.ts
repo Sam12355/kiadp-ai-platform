@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import type { UserRole } from '@khalifa/shared';
 import { getPrisma } from '../config/database.js';
+import { getLogger } from '../utils/logger.js';
 
 /**
  * Middleware factory: restricts access to users with specific roles.
@@ -41,11 +42,24 @@ declare global {
       callerTenantId?: string | null;
       /** True when the caller is an ADMIN with no tenant, i.e. the platform owner. */
       isSuperAdmin?: boolean;
+      /** Set when a super admin is viewing the product as one institution. */
+      impersonatedTenantId?: string;
     }
   }
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Header a super admin sends to view the product as one institution.
+ *
+ * Deliberately a per-request header rather than a second token. A token would have to be
+ * minted, stored and expired, and while it existed it would be a credential that looks
+ * like an institution admin — if it leaked, nothing in it would say otherwise. A header is
+ * a scope request: the JWT still identifies the real person on every request, this
+ * middleware re-checks their authority every time, and closing the tab ends it.
+ */
+const IMPERSONATE_HEADER = 'x-impersonate-tenant';
 
 /**
  * Resolves the caller's tenant once and caches it on the request.
@@ -75,6 +89,47 @@ export async function resolveTenantContext(req: Request, _res: Response, next: N
 
     req.callerTenantId = user.tenantId;
     req.isSuperAdmin = user.role === 'ADMIN' && user.tenantId === null;
+
+    // ── Impersonation ────────────────────────────────────────────────────────
+    // A super admin asking to see the product as one institution. Two properties matter:
+    //
+    //  1. It can only ever NARROW access. The caller drops to that tenant's scope and
+    //     loses isSuperAdmin, so every guard downstream treats them as an institution
+    //     admin. There is no path here that widens anyone's reach.
+    //  2. Authority is re-checked per request from the database, not taken from the
+    //     header. A non-super-admin sending this header is refused, not ignored — a
+    //     school admin trying to read another school is an attack, and it should surface
+    //     as a 403 in the logs rather than silently succeeding as a no-op.
+    const requested = req.header(IMPERSONATE_HEADER);
+    if (requested) {
+      if (!req.isSuperAdmin) {
+        getLogger().warn(
+          { userId: req.user.userId, callerTenantId: user.tenantId, requestedTenantId: requested, path: req.originalUrl },
+          'rejected impersonation attempt by non-super-admin',
+        );
+        next(new ForbiddenError('Not permitted to view other institutions'));
+        return;
+      }
+      if (!UUID_RE.test(requested)) {
+        next(new ForbiddenError('Invalid institution'));
+        return;
+      }
+      const target = await getPrisma().tenant.findUnique({ where: { id: requested }, select: { id: true } });
+      if (!target) {
+        next(new ForbiddenError('Institution not found'));
+        return;
+      }
+      req.callerTenantId = target.id;
+      req.isSuperAdmin = false;
+      req.impersonatedTenantId = target.id;
+      // Every impersonated request is logged with both identities. Support access to a
+      // customer's data should never be silent, and this is the record of who saw what.
+      getLogger().info(
+        { superAdminId: req.user.userId, viewingTenantId: target.id, method: req.method, path: req.originalUrl },
+        'super admin viewing institution',
+      );
+    }
+
     next();
   } catch (err) {
     next(err);

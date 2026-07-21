@@ -239,6 +239,39 @@ router.get('/:id/analytics', async (req: Request, res: Response, next: NextFunct
       _count: { id: true },
     });
 
+    // ── Figures an institution actually acts on ──────────────────────────────
+    // Volume alone says the tool is used; it does not say it is working. The grounded rate
+    // is the one that tells a school whether its own material is answering its students'
+    // questions, and the ungrounded questions below are the reading list for what to
+    // upload next.
+    const [totalAnswers, groundedAnswers, activeAskers, topDocsRaw, ungroundedRecent] = await Promise.all([
+      prisma.answer.count({ where: { tenantId } }),
+      prisma.answer.count({ where: { tenantId, isGrounded: true } }),
+      prisma.question.findMany({
+        where: { tenantId, createdAt: { gte: since } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      // Which documents are actually carrying the answers. answer_sources rows are written
+      // once per cited chunk, so counting them ranks by how often a document is leaned on.
+      prisma.$queryRaw<{ id: string; title: string; citations: bigint }[]>`
+        SELECT d.id, d.title, COUNT(*)::bigint AS citations
+        FROM answer_sources s
+        JOIN documents d ON d.id = s.document_id
+        WHERE d.tenant_id = ${tenantId}::uuid
+        GROUP BY d.id, d.title
+        ORDER BY citations DESC
+        LIMIT 8
+      `,
+      // Questions the documents could not answer — the gaps worth filling.
+      prisma.question.findMany({
+        where: { tenantId, answer: { isGrounded: false } },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, queryText: true, createdAt: true },
+      }),
+    ]);
+
     res.json({
       success: true,
       data: {
@@ -252,6 +285,17 @@ router.get('/:id/analytics', async (req: Request, res: Response, next: NextFunct
           isGrounded: q.answer?.isGrounded ?? null,
         })),
         docStatuses: docStatuses.map(s => ({ status: s.status, count: s._count.id })),
+        summary: {
+          totalAnswers,
+          groundedAnswers,
+          // Null rather than 0 when nothing has been asked yet: "0% grounded" reads as a
+          // broken knowledge base, when it means nobody has asked anything.
+          groundedRate: totalAnswers > 0 ? groundedAnswers / totalAnswers : null,
+          activeAskers: activeAskers.length,
+          questionsLast14: daily.reduce((sum, d) => sum + d.questions, 0),
+        },
+        topDocuments: topDocsRaw.map(d => ({ id: d.id, title: d.title, citations: Number(d.citations) })),
+        ungrounded: ungroundedRecent.map(q => ({ id: q.id, question: q.queryText, createdAt: q.createdAt })),
       },
     });
   } catch (err) {

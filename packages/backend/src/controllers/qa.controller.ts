@@ -14,13 +14,15 @@ const askSchema = z.object({
   mode: z.enum(['grounded', 'general']).optional(),
 });
 
-async function getUserTenantId(userId: string): Promise<string | undefined> {
-  const prisma = getPrisma();
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { tenantId: true },
-  });
-  return user?.tenantId ?? undefined;
+/**
+ * The institution whose documents this request may search.
+ *
+ * Read from the request rather than looked up from the user, because resolveTenantContext
+ * has already done that lookup AND applied "view as" if a super admin is previewing an
+ * institution. Reading the user directly would ignore the preview and search everything.
+ */
+function scopeTenantId(req: Request): string | undefined {
+  return req.callerTenantId ?? undefined;
 }
 
 export async function ask(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -32,7 +34,7 @@ export async function ask(req: Request, res: Response, next: NextFunction): Prom
 
     const userId = req.user!.userId;
     const { question, history, language, mode } = parseResult.data;
-    const tenantId = await getUserTenantId(userId);
+    const tenantId = scopeTenantId(req);
     const result = await askQuestion(userId, question, history || [], language, mode as any, tenantId);
 
     res.json({ success: true, data: result });
@@ -52,7 +54,7 @@ export async function search(req: Request, res: Response, next: NextFunction): P
       throw new ValidationError('Validation failed', parseResult.error.flatten().fieldErrors);
     }
     const fast = req.query.fast === 'true';
-    const tenantId = await getUserTenantId(req.user!.userId);
+    const tenantId = scopeTenantId(req);
     const result = await searchKnowledge(parseResult.data.query, fast, tenantId);
     res.json({ success: true, data: result });
   } catch (err) {
@@ -77,7 +79,7 @@ export async function voiceAskHandler(req: Request, res: Response, next: NextFun
       throw new ValidationError('Validation failed', parseResult.error.flatten().fieldErrors);
     }
     const { query, language, userRequest, verbatim } = parseResult.data;
-    const tenantId = await getUserTenantId(req.user!.userId);
+    const tenantId = scopeTenantId(req);
     const result = await voiceAsk(query, language, tenantId, undefined, userRequest, verbatim);
     res.json({ success: true, data: result });
   } catch (err) {
