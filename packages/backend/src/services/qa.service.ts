@@ -549,11 +549,17 @@ RULES:
    Instead, name the file and page once on a line before the quote, like:
    From <filename>, page <N>:
 5. Reproduce the text in its ORIGINAL LANGUAGE. Do not translate it.
-6. Quote only the passage the user asked about. If they asked for a specific section and
-   the sources contain more, quote just that section.
-7. If the requested text is not present in the CONTEXT DOCUMENTS, say so plainly and
+6. Quote ONE passage — the single best match for what the user asked for. Do not walk
+   through every source you were given. In particular, do not quote other passages merely
+   because they share a heading with the one requested: if three slides are titled
+   "MODULE CONTENT", quote the one the user meant, not all three. Quote more than one
+   passage only if the user explicitly asked for several sections, or for "all" of them.
+7. Omit repeated page furniture that is not part of the passage — page numbers, running
+   headers and footers, and an author or course name repeated on every page. This is the
+   one thing you may leave out; everything inside the passage stays exactly as written.
+8. If the requested text is not present in the CONTEXT DOCUMENTS, say so plainly and
    trigger the [UNGROUNDED] protocol. Never reconstruct it from your own knowledge.
-8. If the passage is visibly cut off at the start or end of the provided context, quote
+9. If the passage is visibly cut off at the start or end of the provided context, quote
    what you have and add a final line noting that the excerpt is partial.
 
 Any brief remark of your own must go after the quoted text, never inside it.
