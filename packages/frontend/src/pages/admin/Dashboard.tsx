@@ -17,9 +17,12 @@ interface DashboardStats {
     status: string;
     createdAt: string;
   }>;
+  // Hand-written to mirror /admin/stats. It is not derived from the server, so a field
+  // removed there stays declared here and the compiler keeps believing it exists — which
+  // is exactly how `systemStatus.pinecone.toLowerCase()` survived Pinecone's removal and
+  // took the whole dashboard down with a TypeError.
   systemStatus: {
     database: string;
-    pinecone: string;
     openai: string;
   };
 }
@@ -154,16 +157,8 @@ export default function Dashboard() {
                 {t[stats.systemStatus.database.toLowerCase() as keyof typeof t] || stats.systemStatus.database}
               </span>
             </div>
-            <div className="flex justify-between items-center bg-raised p-4 rounded-2xl border border-line-soft hover:bg-raised transition-colors">
-              <div>
-                <p className="text-sm font-bold text-ink">{t.vectorDbTitle}</p>
-                <p className="text-[10px] font-bold text-ink-mute uppercase tracking-tight">{t.vectorIndex}</p>
-              </div>
-              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-glow" /> 
-                {t[stats.systemStatus.pinecone.toLowerCase() as keyof typeof t] || stats.systemStatus.pinecone}
-              </span>
-            </div>
+            {/* The vector index row is gone with Pinecone. Embeddings live in pgvector,
+                inside the database above, so its health is already reported there. */}
             <div className="flex justify-between items-center bg-raised p-4 rounded-2xl border border-line-soft hover:bg-raised transition-colors">
               <div>
                 <p className="text-sm font-bold text-ink">{t.aiEngineTitle}</p>

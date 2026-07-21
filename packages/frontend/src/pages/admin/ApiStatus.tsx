@@ -8,7 +8,6 @@ import { translations } from '../../i18n/translations';
 interface UsageBar { usageBytes?: number; limitBytes?: number | null; usage?: number; limit?: number | null; usedPercent?: number | null; isUnlimited?: boolean }
 interface SelfTracked { requests: number; inputTokens: number; outputTokens: number; byModel: Record<string, { requests: number; inputTokens: number; outputTokens: number }> }
 interface CloudinaryInfo { configured: boolean; status: string; plan?: string; storage?: UsageBar; bandwidth?: UsageBar; transformations?: UsageBar; resources?: number; lastUpdated?: string; error?: string }
-interface PineconeInfo  { configured: boolean; status: string; indexName?: string; vectorCount?: number; indexFullness?: number | null; fullnessReported?: boolean; dimension?: number; metric?: string; error?: string }
 interface OpenAIInfo    { configured: boolean; status: string; models?: { chat: string; chatMini: string; embedding: string }; creditBalance?: number; creditGranted?: number; creditUsed?: number; creditsExpire?: string; monthlyUsageUsd?: number; selfTracked?: SelfTracked; error?: string }
 interface GeminiInfo    { configured: boolean; status: string; chatModels?: string[]; voiceModel?: string; quotaVisibility?: string; selfTracked?: SelfTracked; error?: string }
 interface GroqInfo      { configured: boolean; status: string; chatModels?: string[]; tier?: string; quotaVisibility?: string; selfTracked?: SelfTracked; error?: string }
@@ -16,7 +15,6 @@ interface CohereInfo    { configured: boolean; status: string; usage?: string; s
 
 interface ApiStatusData {
   cloudinary: CloudinaryInfo;
-  pinecone:   PineconeInfo;
   openai:     OpenAIInfo;
   gemini:     GeminiInfo;
   groq:       GroqInfo;
@@ -156,44 +154,6 @@ function CloudinaryCard({ d }: { d: CloudinaryInfo }) {
             <p className="text-[10px] text-ink-mute pt-1">
               {t.updatedLabel} {new Date(d.lastUpdated).toLocaleString()}
             </p>
-          )}
-        </>
-      )}
-      {!d.configured && <p className="text-[11px] text-ink-mute">{t.statusNotSet}.</p>}
-    </div>
-  );
-}
-
-function PineconeCard({ d }: { d: PineconeInfo }) {
-  const { lang } = useLanguageStore();
-  const t = translations[lang];
-  const fullnessPct = d.indexFullness !== null && d.indexFullness !== undefined ? +(d.indexFullness * 100).toFixed(2) : null;
-  return (
-    <div className="glass rounded-[1.5rem] p-6 border border-line-soft space-y-4">
-      <CardHeader icon={Database} color="bg-emerald-500/20" name="Pinecone" badge={<StatusBadge status={d.status} />} />
-      {d.error && <ErrorMsg msg={d.error} />}
-      {d.status === 'online' && (
-        <>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {d.indexName && <Tag>{d.indexName}</Tag>}
-            {d.metric && <Tag>{d.metric}</Tag>}
-            {d.dimension && <Tag>{d.dimension}d</Tag>}
-          </div>
-          <div className="bg-raised rounded-xl p-4 border border-line-soft text-center">
-            <p className="text-3xl font-black text-ink tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>
-              {fmtNum(d.vectorCount ?? 0)}
-            </p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-ink-mute mt-1">{t.vectorsIndexed}</p>
-          </div>
-          {fullnessPct !== null ? (
-            <ProgressBar
-              label={t.indexFullness}
-              usedPercent={fullnessPct}
-              left={`${fullnessPct.toFixed(2)}%`}
-              right="100%"
-            />
-          ) : (
-            <p className="text-[10px] text-ink-mute italic">{t.capacityNotReported}</p>
           )}
         </>
       )}
@@ -464,7 +424,6 @@ export default function ApiStatus() {
       {data && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           <CloudinaryCard d={data.cloudinary} />
-          <PineconeCard   d={data.pinecone} />
           <OpenAICard     d={data.openai}  period={data.trackingPeriod ? `${data.trackingPeriod.from} → ${data.trackingPeriod.to}` : undefined} />
           <GeminiCard     d={data.gemini}  period={data.trackingPeriod ? `${data.trackingPeriod.from} → ${data.trackingPeriod.to}` : undefined} />
           <GroqCard       d={data.groq}    period={data.trackingPeriod ? `${data.trackingPeriod.from} → ${data.trackingPeriod.to}` : undefined} />
