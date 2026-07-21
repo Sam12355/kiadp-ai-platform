@@ -557,8 +557,60 @@ function stripPageFurniture(text: string): string {
     .trimEnd();
 }
 
+/** Highest list marker in a passage — page 3 of a deck numbered 1..5 returns 5. */
+function maxEnumerator(text: string): number {
+  let max = 0;
+  for (const m of text.matchAll(/(?:^|\n)\s*(\d{1,3})[.)]\s+/g)) {
+    const n = parseInt(m[1], 10);
+    if (n > max) max = n;
+  }
+  return max;
+}
+
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+};
+
+/**
+ * How many items the caller says there are — "there are total 13 points" → 13.
+ * Only counts when tied to a countable noun, so "page 3" or "COVID-19" do not register.
+ */
+function parseRequestedCount(text: string): number | null {
+  const m = text.match(
+    /\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+(?:main\s+|key\s+|different\s+|separate\s+)?(points?|items?|bullets?|steps?|stages?|phases?|reasons?|factors?|features?|principles?|objectives?|outcomes?|topics?|areas?|elements?|components?|categories?|types?|examples?|advantages?|disadvantages?|benefits?|methods?|techniques?|rules?|lines?)\b/i,
+  );
+  if (!m) return null;
+  const raw = m[1].toLowerCase();
+  const n = /^\d+$/.test(raw) ? parseInt(raw, 10) : NUMBER_WORDS[raw];
+  return Number.isInteger(n) && n > 0 && n <= 200 ? n : null;
+}
+
+/** "read them ALL" — the whole section is wanted, not the single best-matching passage. */
+function wantsEveryMatch(text: string): boolean {
+  return /\b(all|every|each|entire|whole|complete|full|both|everything|rest of|remaining|continue|list them (all|down)|from start to (end|finish))\b/i.test(text)
+    || /(සියලු|සියල්ල|මුළු)/.test(text)          // Sinhala: all / everything / entire
+    || /(அனைத்து|முழு|எல்லா)/.test(text)         // Tamil: all / whole / every
+    || /(كل|جميع|كامل|بالكامل)/.test(text);      // Arabic: all / every / complete
+}
+
+/** A page's fullest stored chunk. Overlap chunks are subsets, so the longest wins. */
+async function fetchPageText(documentId: string, pageNumber: number): Promise<string | null> {
+  const rows = await getPrisma().documentChunk.findMany({
+    where: { documentId, pageNumber, chunkIndex: { lt: 999 } },
+    select: { content: true },
+  }).catch(() => [] as { content: string }[]);
+  if (rows.length === 0) return null;
+  return rows.reduce((a, b) => (b.content.length > a.content.length ? b : a)).content;
+}
+
+// A multi-passage answer is still one page per passage, each labelled. Cap the walk so a
+// vague "read me everything" cannot turn into a whole-document dump.
+const MAX_VERBATIM_PASSAGES = 8;
+
 async function buildVerbatimAnswer(
-  sources: { filename: string; pageNumber: number; text: string }[],
+  sources: { filename: string; pageNumber: number; text: string; documentId?: string }[],
   queryText: string,
 ): Promise<string> {
   if (sources.length === 0) return '';
@@ -577,7 +629,17 @@ async function buildVerbatimAnswer(
   // Map preserves insertion order, so retrieval ranking survives the dedupe.
   sources = [...byPage.values()];
 
-  let picked = 0;
+  // A section can outrun its slide: the 13 module-content items of the SEPP deck live on
+  // pages 3, 4 and 5, and chunks never cross a page boundary. Returning a single passage —
+  // the rule that stopped the model dumping seven at once — then structurally caps the
+  // answer at one page, which is how "read all 13" came back with 5. So multi-passage is
+  // allowed, but only when the request actually asks for more than one section, and only
+  // ever as whole stored passages laid end to end. Nothing is merged or rewritten, so the
+  // blending this rule was introduced to prevent still cannot happen.
+  const requestedCount = parseRequestedCount(queryText);
+  const multi = wantsEveryMatch(queryText) || requestedCount !== null;
+
+  let picked: number[] = [0];
   if (sources.length > 1) {
     const menu = sources
       .map((s, i) => `[${i + 1}] ${s.filename} p.${s.pageNumber}: ${s.text.slice(0, 300).replace(/\s+/g, ' ')}`)
@@ -586,18 +648,66 @@ async function buildVerbatimAnswer(
     const reply = await chatComplete([
       {
         role: 'system',
-        content: 'You choose which passage a request refers to. Reply with ONLY the number of the single best match — no words, no punctuation, no explanation.',
+        content: multi
+          ? 'You choose which passages a request refers to. The request may span several passages. Reply with ONLY the numbers of every passage that is part of what was asked for, comma-separated and in order (e.g. "2,3,5"). If one passage covers the whole request on its own, reply with just that number. No words, no explanation.'
+          : 'You choose which passage a request refers to. Reply with ONLY the number of the single best match — no words, no punctuation, no explanation.',
       },
-      { role: 'user', content: `PASSAGES:\n${menu}\n\nREQUEST: ${queryText}\n\nNumber:` },
+      { role: 'user', content: `PASSAGES:\n${menu}\n\nREQUEST: ${queryText}\n\nNumber${multi ? 's' : ''}:` },
     ], { temperature: 0 }).catch(() => '');
 
-    const n = parseInt(String(reply ?? '').trim().match(/\d+/)?.[0] ?? '', 10);
+    const nums = [...String(reply ?? '').matchAll(/\d+/g)]
+      .map(m => parseInt(m[0], 10))
+      .filter(n => n >= 1 && n <= sources.length)
+      .map(n => n - 1);
+    const unique = [...new Set(nums)];
     // Out-of-range or unparseable selection falls back to the top-ranked passage.
-    if (Number.isInteger(n) && n >= 1 && n <= sources.length) picked = n - 1;
+    if (unique.length > 0) picked = multi ? unique : [unique[0]];
   }
 
-  const s = sources[picked];
-  return `From ${s.filename}, page ${s.pageNumber}:\n${stripPageFurniture(s.text)}`;
+  let chosen = picked.map(i => sources[i]);
+
+  // Retrieval ranks by similarity, so a later page of the same section can miss the cut
+  // entirely — no amount of selecting fixes a passage that was never a candidate. When the
+  // caller stated a count ("there are total 13 points") and the chosen passages do not
+  // reach it, walk forward page by page through the same document, taking each page's
+  // stored text, until the count is covered or the pages run out.
+  if (requestedCount !== null && chosen.length > 0) {
+    const anchor = chosen[chosen.length - 1];
+    // Scope the walk to one document: candidates can span several, and continuing "page+1"
+    // across a document boundary would quote an unrelated file's page 4.
+    const sameDoc = anchor.documentId
+      ? chosen.filter(s => s.documentId === anchor.documentId)
+      : [];
+    if (anchor.documentId && sameDoc.length > 0) {
+      const seen = new Set(sameDoc.map(s => s.pageNumber));
+      let page = Math.max(...sameDoc.map(s => s.pageNumber));
+      let reached = Math.max(...sameDoc.map(s => maxEnumerator(s.text)));
+      let misses = 0;
+      while (reached < requestedCount && chosen.length < MAX_VERBATIM_PASSAGES && misses < 2) {
+        page += 1;
+        if (seen.has(page)) continue;
+        const text = await fetchPageText(anchor.documentId, page);
+        if (!text) { misses++; continue; }
+        // A page that continues the list carries on numbering; one that does not has moved
+        // to another topic, and appending it would pad the quote with unrelated slides.
+        const reach = maxEnumerator(text);
+        if (reach === 0) { misses++; continue; }
+        misses = 0;
+        seen.add(page);
+        reached = Math.max(reached, reach);
+        chosen.push({ filename: anchor.filename, pageNumber: page, text, documentId: anchor.documentId });
+      }
+    }
+  }
+
+  // Read in document order, not retrieval order — a quote spanning slides should follow the
+  // deck, and this is also why each passage keeps its own page label rather than being
+  // silently concatenated: the reader can see where one page ends and the next begins.
+  chosen.sort((a, b) => a.filename.localeCompare(b.filename) || a.pageNumber - b.pageNumber);
+
+  return chosen
+    .map(s => `From ${s.filename}, page ${s.pageNumber}:\n${stripPageFurniture(s.text)}`)
+    .join('\n\n');
 }
 
 function wantsVerbatim(text: string): boolean {
@@ -1217,13 +1327,18 @@ export async function voiceAsk(
   let answerText: string;
   if (isVerbatim) {
     // Stored text, not model output — see buildVerbatimAnswer.
+    // Pass the raw transcript alongside the query. Voice compresses the spoken request to
+    // search keywords before it reaches us, and the part that says how much was asked for
+    // — "there are total 13 points", "read them all" — is exactly what gets compressed
+    // away. Without the original words the answer silently narrows to one passage.
     answerText = await buildVerbatimAnswer(
       reranked.map((c: any) => ({
         filename: docMap.get(c.documentId)?.originalFilename ?? docMap.get(c.documentId)?.title ?? 'document',
         pageNumber: c.pageNumber,
         text: c.text,
+        documentId: c.documentId,
       })),
-      queryText,
+      [userRequest, queryText].filter(Boolean).join(' — '),
     );
   } else try {
     // skipGemini: voice-ask is called from the Gemini Live session which shares
@@ -1737,6 +1852,7 @@ export async function askQuestion(
           filename: c.document?.originalFilename ?? c.document?.title ?? 'document',
           pageNumber: c.pageNumber,
           text: c.content,
+          documentId: c.documentId,
         })),
       queryText,
     ) || 'No response generated.';
