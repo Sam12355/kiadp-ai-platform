@@ -554,6 +554,7 @@ RULES:
    because they share a heading with the one requested: if three slides are titled
    "MODULE CONTENT", quote the one the user meant, not all three. Quote more than one
    passage only if the user explicitly asked for several sections, or for "all" of them.
+   Concretely: your reply must contain exactly ONE "From <filename>, page <N>:" line.
 7. Omit repeated page furniture that is not part of the passage — page numbers, running
    headers and footers, and an author or course name repeated on every page. This is the
    one thing you may leave out; everything inside the passage stays exactly as written.
@@ -573,6 +574,34 @@ Any brief remark of your own must go after the quoted text, never inside it.
  * cheaper failure than a wrong negative silently paraphrasing what was asked for
  * literally. Covers the phrasings students actually use, in the four supported languages.
  */
+/** True when the user asked for several passages, not just one. */
+function wantsEveryMatch(text: string): boolean {
+  return /\b(all|every|each|both|entire|whole (document|deck|file)|list them all)\b/i.test(text);
+}
+
+/**
+ * Keep only the first quoted passage of a verbatim answer.
+ *
+ * The prompt asks for a single passage, but that alone is not reliable: a request like
+ * "read me the five points under module content exactly as it is" still came back with
+ * five separate passages, because every slide sharing that heading looked like a
+ * candidate. Read aloud by voice mode, that is unusable. This enforces the rule
+ * structurally instead of trusting the instruction — unless the user did ask for all of
+ * them, in which case everything is kept.
+ */
+function keepFirstQuotedPassage(answer: string, query: string): string {
+  if (wantsEveryMatch(query)) return answer;
+
+  const header = /^From .+?, page \d+:\s*$/gim;
+  const starts: number[] = [];
+  for (const m of answer.matchAll(header)) {
+    if (m.index !== undefined) starts.push(m.index);
+  }
+  if (starts.length < 2) return answer;
+
+  return answer.slice(starts[0], starts[1]).trimEnd();
+}
+
 function wantsVerbatim(text: string): boolean {
   return /\b(verbatim|word[- ]for[- ]word|word by word|exact(ly)? as|as it is|as[- ]is|as written|as it appears|as they appear|copy the text|exact text|exact wording|original text|original wording|quote (the|it|that|this)|without (changing|rephrasing|paraphrasing|summari[sz]ing)|don'?t (change|rephrase|paraphrase|summari[sz]e)|do not (change|rephrase|paraphrase|summari[sz]e)|read it out|read the (text|content|passage|paragraph)|full text)\b/i.test(text)
     // Sinhala: "as it is" / "exactly" / "word for word"
@@ -1186,7 +1215,7 @@ export async function voiceAsk(
   // Clean citation markers (same as askQuestion). The run-of-spaces collapse is skipped
   // for verbatim answers, since indentation and alignment are part of the quoted source.
   answerText = isVerbatim
-    ? answerText.replace(/\[Source \d+\]/g, '')
+    ? keepFirstQuotedPassage(answerText.replace(/\[Source \d+\]/g, ''), queryText)
     : answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length, isVerbatim }, 'voiceAsk: complete');
 
@@ -1739,7 +1768,7 @@ Rules:
   // The run-of-spaces collapse is skipped for verbatim answers: indentation and column
   // alignment are part of the source text the user asked to see unaltered.
   answerText = isVerbatim
-    ? answerText.replace(/\[Source \d+\]/g, '')
+    ? keepFirstQuotedPassage(answerText.replace(/\[Source \d+\]/g, ''), queryText)
     : answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   let isGrounded = mode === 'grounded';
 
