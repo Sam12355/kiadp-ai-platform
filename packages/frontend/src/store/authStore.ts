@@ -42,7 +42,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'khalifa-auth-storage',
+      name: 'eduai-auth-storage',
       storage: createJSONStorage(() => localStorage),
     }
   )

@@ -1,0 +1,30 @@
+# Keep the build context small and secrets out of the image.
+node_modules
+**/node_modules
+.git
+.vscode
+dist
+**/dist
+build
+**/build
+
+# Runtime data — bind-mounted at run time, must not be baked in.
+uploads
+
+# Secrets. Production values are supplied by compose env_file / build args.
+.env
+**/.env
+!.env.example
+!**/.env.example
+
+# Local scratch that has no business in an image. These are root-anchored on purpose:
+# the real copies of earth.png, leaf.png, thinking.wav and the Neo Sans font live in
+# packages/frontend/public/ and must stay in the context.
+/*.pdf
+/*.wav
+/*.ttf
+/*.png
+/test-result.json
+/check-db.js
+/verify_interstitial.js
+/ports.txt

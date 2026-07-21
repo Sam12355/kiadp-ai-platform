@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: moodle-postgres
+    environment:
+      POSTGRES_DB: moodle
+      POSTGRES_USER: moodle
+      POSTGRES_PASSWORD: moodle
+    volumes:
+      - moodle-db-data:/var/lib/postgresql/data
+    networks:
+      - moodle-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moodle"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  moodle:
+    image: erseco/alpine-moodle:latest
+    container_name: moodle-app
+    ports:
+      - "8082:8080"
+    environment:
+      MOODLE_URL: http://localhost:8082
+      SITE_URL: http://localhost:8082
+      MOODLE_ADMIN_USER: admin
+      MOODLE_ADMIN_PASSWORD: Admin1234!
+      MOODLE_ADMIN_EMAIL: admin@example.com
+      POSTGRES_DB: moodle
+      POSTGRES_USER: moodle
+      POSTGRES_PASSWORD: moodle
+      POSTGRES_HOST: postgres
+    volumes:
+      - moodle-data:/var/www/moodledata
+      - ./local_eduai:/var/www/html/local/eduai
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - moodle-net
+
+volumes:
+  moodle-db-data:
+  moodle-data:
+
+networks:
+  moodle-net:
+    driver: bridge

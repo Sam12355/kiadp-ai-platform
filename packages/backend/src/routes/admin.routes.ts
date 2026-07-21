@@ -4,6 +4,8 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { UserRole } from '@prisma/client';
 import { processTextContent } from '../services/ingestion.service.js';
 import { BadRequestError } from '../utils/errors.js';
+import { generateApiKey } from '../middleware/api-key.middleware.js';
+import { z } from 'zod';
 
 const router: Router = Router();
 
@@ -229,7 +231,7 @@ router.post('/users', authenticate, requireRole(UserRole.ADMIN as any), async (r
         fullName,
         email,
         passwordHash,
-        role: role || 'CLIENT',
+        role: role || 'STUDENT',
       },
     });
 
@@ -877,5 +879,153 @@ router.post(
     }
   }
 );
+
+// ─── AI Provider Settings ────────────────────────────────────────────────────
+
+const VALID_PROVIDERS = ['auto', 'openai', 'gemini', 'groq'] as const;
+type AIProvider = typeof VALID_PROVIDERS[number];
+
+/**
+ * @openapi
+ * /admin/settings/ai-provider:
+ *   get:
+ *     summary: Get current AI provider setting (Admin only)
+ *     tags: [Admin]
+ */
+router.get('/settings/ai-provider', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const setting = await prisma.appSetting.findUnique({ where: { key: 'ai_provider' } });
+    const provider: AIProvider = (setting?.value as AIProvider) ?? 'auto';
+    res.json({ success: true, data: { provider } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/settings/ai-provider:
+ *   put:
+ *     summary: Update AI provider setting (Admin only)
+ *     tags: [Admin]
+ */
+router.put('/settings/ai-provider', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { provider } = req.body;
+    if (!VALID_PROVIDERS.includes(provider)) {
+      return res.status(400).json({ success: false, error: `provider must be one of: ${VALID_PROVIDERS.join(', ')}` });
+    }
+    const prisma = getPrisma();
+    await prisma.appSetting.upsert({
+      where: { key: 'ai_provider' },
+      update: { value: provider },
+      create: { key: 'ai_provider', value: provider },
+    });
+    res.json({ success: true, data: { provider } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── API Key Management ──────────────────────────────────────────────────────
+
+const apiKeyCreateSchema = z.object({
+  name: z.string().min(1, 'name is required'),
+  tenantId: z.string().uuid().optional(),
+  expiresAt: z.string().datetime().optional(), // ISO string or omit for never-expires
+});
+
+// POST /admin/api-keys — issue a new API key (raw key returned ONCE)
+router.post('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = apiKeyCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.flatten().fieldErrors });
+    }
+    const { name, tenantId, expiresAt } = parsed.data;
+    const { rawKey, hash, prefix } = generateApiKey();
+    const prisma = getPrisma();
+    const apiKey = await prisma.apiKey.create({
+      data: {
+        keyHash: hash,
+        keyPrefix: prefix,
+        name,
+        ...(tenantId ? { tenantId } : {}),
+        ...(expiresAt ? { expiresAt: new Date(expiresAt) } : {}),
+        createdBy: req.user!.userId,
+      },
+      select: { id: true, keyPrefix: true, name: true, tenantId: true, expiresAt: true, createdAt: true },
+    });
+    // rawKey is returned ONCE — the client must store it immediately
+    res.status(201).json({ success: true, data: { ...apiKey, rawKey } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /admin/api-keys — list all API keys (no raw keys, prefix only)
+router.get('/api-keys', authenticate, requireRole(UserRole.ADMIN as any), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const keys = await prisma.apiKey.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, keyPrefix: true, name: true, tenantId: true,
+        isActive: true, lastUsedAt: true, expiresAt: true,
+        requestCount: true, createdAt: true,
+        tenant: { select: { name: true, slug: true } },
+      },
+    });
+    res.json({ success: true, data: keys });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /admin/api-keys/:id — revoke a key
+router.delete('/api-keys/:id', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    await prisma.apiKey.update({
+      where: { id: req.params.id },
+      data: { isActive: false },
+    });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /admin/api-keys/:id/rotate — revoke old key, issue a new one with same settings
+router.post('/api-keys/:id/rotate', authenticate, requireRole(UserRole.ADMIN as any), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const old = await prisma.apiKey.findUnique({
+      where: { id: req.params.id },
+      select: { name: true, tenantId: true, expiresAt: true },
+    });
+    if (!old) return res.status(404).json({ success: false, error: 'API key not found' });
+
+    const { rawKey, hash, prefix } = generateApiKey();
+    const [, newKey] = await prisma.$transaction([
+      prisma.apiKey.update({ where: { id: req.params.id }, data: { isActive: false } }),
+      prisma.apiKey.create({
+        data: {
+          keyHash: hash,
+          keyPrefix: prefix,
+          name: old.name,
+          ...(old.tenantId ? { tenantId: old.tenantId } : {}),
+          ...(old.expiresAt ? { expiresAt: old.expiresAt } : {}),
+          createdBy: req.user!.userId,
+        },
+        select: { id: true, keyPrefix: true, name: true, tenantId: true, expiresAt: true, createdAt: true },
+      }),
+    ]);
+    res.json({ success: true, data: { ...newKey, rawKey } });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

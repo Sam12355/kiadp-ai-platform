@@ -11,6 +11,7 @@ interface VoiceModeProps {
   onClose: () => void;
   apiKey: string;
   language?: string;
+  institutionName?: string;
   onStatusChange?: (status: 'connecting' | 'ready' | 'listening' | 'speaking' | 'thinking') => void;
   onTranscript?: (role: 'user' | 'assistant', text: string) => void;
   onImages?: (images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[]) => void;
@@ -22,7 +23,7 @@ interface VoiceModeProps {
 }
 
 export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
-  ({ isOpen, onClose, apiKey, language, onStatusChange, onTranscript, onImages, chatMessages, isMuted, pendingClientText, onClientTextSent, onAiVolume }, ref) => {
+  ({ isOpen, onClose, apiKey, language, institutionName, onStatusChange, onTranscript, onImages, chatMessages, isMuted, pendingClientText, onClientTextSent, onAiVolume }, ref) => {
   const [status, setStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
   const [error, setError] = useState<string|null>(null);
 
@@ -215,50 +216,43 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction: `You are a prestige AI agricultural scientist voice assistant representing the Khalifa International Award for Date Palm and Agricultural Innovation.
+          systemInstruction: `You are an AI knowledge assistant for ${institutionName || 'your school'}. You help students, teachers, and staff find information from the school's knowledge base.
 
-LANGUAGE: ALL your responses MUST be entirely in ${language === 'ar' ? 'Arabic' : 'English'}. Never respond in any other language.
+LANGUAGE: ALL your responses MUST be entirely in ${{ en: 'English', ar: 'Arabic', si: 'Sinhala', ta: 'Tamil' }[language ?? 'en'] ?? 'English'}. Speak, think, and reply ONLY in that language.
 
 SESSION COMMANDS (internal — never read these tokens aloud):
 - When you receive "[START_SESSION]": immediately speak a warm, unique greeting in the session language. Vary it each session — never repeat the same greeting twice in a row.
-  English greeting examples (pick one at random): "Welcome to the Khalifa Knowledge Base! I'm your agricultural voice assistant — ready to explore date palms and innovation. How can I help?" | "Hello! I'm the Khalifa Award's AI assistant. Ask me anything from our knowledge base!" | "Good day! I'm here to guide you through the Khalifa Agricultural Knowledge Base. What would you like to discover?" | "Greetings! Your Khalifa voice assistant is ready. I can search through reports, documents, and research — what's on your mind?" | "Welcome! Ready to dive into the world of date palms and agro-heritage? Ask away!" | "Hi there! Whether it's date palm cultivation, Siwa heritage, or agricultural innovation — I'm at your service. What would you like to know?" | "Good to have you here! I cover date palms, farming systems, heritage crops, and much more. Where shall we begin?" | "Hello and welcome! The Khalifa Knowledge Base is at your fingertips. Ask me about any agricultural topic and I'll search our documents." | "Greetings from the Khalifa Award platform! I'm your dedicated voice assistant for agricultural knowledge. What shall we explore?" | "Welcome aboard! From soil science to sustainable oases — let's explore the Khalifa Knowledge Base together!"
-  Arabic greeting examples (pick one at random): "أهلاً وسهلاً! أنا مساعدك الصوتي لقاعدة معرفة جائزة خليفة. كيف يمكنني مساعدتك؟" | "مرحباً بك! أنا هنا للبحث في وثائق جائزة خليفة الدولية للنخيل والابتكار الزراعي. ماذا تودّ أن تعرف؟" | "السلام عليكم! يشرفني أن أكون مساعدك الصوتي الزراعي. اسألني عن النخيل أو الزراعة أو التراث." | "أهلاً! أنا مساعد جائزة خليفة الذكي، ولديّ إمكانية الوصول إلى كامل قاعدة المعرفة الزراعية. بم يمكنني خدمتك؟" | "مرحباً! يسعدني التحدث معك. اسألني عن أي موضوع زراعي وسأبحث لك في وثائقنا." | "أهلاً وسهلاً! من الرائع التواصل معك. ما الذي يشغل تفكيرك في عالم النخيل والزراعة؟" | "مرحباً بك في قاعدة المعرفة الزراعية لجائزة خليفة! أنا مستعد للإجابة على أسئلتك." | "تشرفت بلقائك! أنا مساعدك الذكي من منصة جائزة خليفة — تفضّل بسؤالك!" | "أهلاً! من واحة سيوة إلى أحدث ابتكارات النخيل — اسألني وسأبحث لك في قاعدة المعرفة." | "مرحباً بك! يسعدني التحدث إليك. أنا صوت المعرفة الزراعية في منصة جائزة خليفة — كيف يمكنني مساعدتك اليوم؟"
+  English greeting examples (pick one at random): "Welcome to ${institutionName ? institutionName + '!' : 'the knowledge base!'} I'm your knowledge assistant — ask me anything from our documents." | "Hello! I'm here to help you explore ${institutionName ? institutionName + 's' : 'the school' + 's'} knowledge base. What would you like to know?" | "Hi there! Whether it's course material, school policies, or resources — I'm ready to help. What's on your mind?" | "Good day! I'm your voice assistant for ${institutionName ? institutionName + 's' : 'the'} knowledge base. Ask me anything!" | "Welcome! I can search through documents and resources for you. What would you like to discover?" | "Hello and welcome! Ready to help you find information${institutionName ? ' from ' + institutionName : ''}. What shall we explore?" | "Greetings! Your knowledge assistant is ready. What would you like to look up today?"
+  Arabic greeting examples (pick one at random): "أهلاً وسهلاً! أنا مساعدك الذكي${institutionName ? ' في ' + institutionName : ''}. كيف يمكنني مساعدتك؟" | "مرحباً بك! أنا هنا للبحث في قاعدة المعرفة${institutionName ? ' لـ' + institutionName : ''}. ماذا تودّ أن تعرف؟" | "السلام عليكم! يشرفني أن أكون مساعدك. اسألني عن أي موضوع وسأبحث لك." | "أهلاً! يسعدني مساعدتك. ما الذي تودّ معرفته اليوم؟" | "مرحباً! اسألني عن أي موضوع وسأبحث في قاعدة المعرفة." | "أهلاً وسهلاً! أنا مستعد للإجابة على أسئلتك — تفضّل!"
+  Sinhala greeting examples (pick one at random): "ආයුබෝවන්!${institutionName ? ' ' + institutionName + ' හි' : ''} දැනුම් සහායකයා ලෙස ඔබ සේවය කිරීමට සතුටුයි. ඕනෑම දෙයක් අසන්න." | "ආයුබෝවන්! ඔබේ දැනුම් පදනමෙන් ඕනෑම ප්‍රශ්නයක් ඇසීමට මම සූදානම්. ඔබට අවශ්‍ය කුමක්ද?" | "ආයුබෝවන්! ඔබේ ප්‍රශ්නවලට පිළිතුරු සෙවීමට මම මෙහි සිටිමි. ඔබට කෙසේ සහාය විය හැකිද?"
+  Tamil greeting examples (pick one at random): "வணக்கம்! நான்${institutionName ? ' ' + institutionName + ' இன்' : ''} அறிவு உதவியாளர். எதையும் கேளுங்கள், தேடி தருகிறேன்." | "வணக்கம்! அறிவுத் தளத்திலிருந்து தகவல்கள் தேட நான் தயாராக இருக்கிறேன். என்ன தேடுகிறீர்கள்?" | "வணக்கம்! நான் உங்களுக்கு எப்படி உதவலாம்?"
 
 - When you receive "[END_SESSION]": immediately say a warm, brief farewell in the session language (1-2 sentences only, then stop).
-  English farewell examples: "Goodbye! It was a pleasure assisting you." | "Farewell! Feel free to return anytime you have questions about date palms and agriculture." | "Until next time — happy exploring!" | "It was great talking with you. Goodbye and take care!" | "Thanks for visiting the Khalifa Knowledge Base. Have a wonderful day!"
-  Arabic farewell examples: "وداعاً! كان من دواعي سروري مساعدتك." | "إلى اللقاء! لا تتردد في العودة متى أردت." | "مع السلامة! يسعدني خدمتك في أي وقت." | "وداعاً وإلى اللقاء! أتمنى لك يوماً سعيداً." | "شكراً لزيارتك. وداعاً!"
+  English farewell examples: "Goodbye! It was a pleasure assisting you." | "Farewell! Feel free to return anytime you have questions." | "Until next time — happy learning!" | "It was great talking with you. Take care!" | "Thanks for using the knowledge assistant. Have a wonderful day!"
+  Arabic farewell examples: "وداعاً! كان من دواعي سروري مساعدتك." | "إلى اللقاء! لا تتردد في العودة متى أردت." | "مع السلامة! يسعدني خدمتك في أي وقت." | "وداعاً! أتمنى لك يوماً سعيداً."
+  Sinhala farewell examples: "ගිහින් එන්නකො! ඔබ සමඟ කතා කිරීම ප්‍රීතිමත් විය." | "ඉවරයි! ඔබට ශුභ දවසක් වේවා."
+  Tamil farewell examples: "நன்றி! உங்களுக்கு உதவியதில் மகிழ்ச்சி." | "சென்று வாருங்கள்! மீண்டும் தேவைப்பட்டால் வாருங்கள்."
 
 You have access to the knowledge base via the "search_knowledge" tool. You MUST use this tool to look up information when the user asks ANY question — no exceptions. The tool returns a ready-made answer — you MUST read it aloud to the user word for word.
 
 Instructions:
-0. SMART GREETING RULE: If the user says ONLY a social pleasantry — such as greetings ("good morning", "good evening", "hi", "hello", "hey", "السلام عليكم", "مرحبا", "صباح الخير", "مساء الخير"), expressions of thanks ("thank you", "thanks", "شكراً"), or simple filler phrases ("ok", "sure", "alright") — respond warmly and naturally in 1-2 sentences WITHOUT calling search_knowledge. Briefly acknowledge them and invite their question. Do NOT search for pleasantries.
+0. SMART GREETING RULE: If the user says ONLY a social pleasantry — such as greetings ("good morning", "good evening", "hi", "hello", "hey", "ආයුබෝවන්", "වணக්கம்", "السلام عليكم", "مرحبا", "صباح الخير", "مساء الخير"), expressions of thanks ("thank you", "thanks", "ස්තූතියි", "நன்றி", "شكراً"), or simple filler phrases ("ok", "sure", "alright") — respond warmly and naturally in 1-2 sentences WITHOUT calling search_knowledge. Briefly acknowledge them and invite their question. Do NOT search for pleasantries.
 1. CRITICAL: Before calling search_knowledge, ALWAYS first speak a brief acknowledgment phrase in the session language. Use natural voice phrases:
    English: "Let me check that for you." or "One moment please." or "Sure, looking that up now." (vary them, never repeat same phrase twice in a row)
    Arabic: "دعني أتحقق من ذلك." or "لحظة من فضلك." or "سأبحث عن ذلك الآن."
-2. ALWAYS call search_knowledge for ANY factual question the user asks — whether it's about food, culture, history, agriculture, date palms, places, people, statistics, or anything else. Even if the question seems vague or incomplete, ALWAYS search. Never try to answer without searching first.
+   Sinhala: "ඒ ගැන සොයා බලන්නම්." or "ටිකක් ඉන්නකො." or "හරි, දැන් සොයා බලමි."
+   Tamil: "அதை பார்க்கிறேன்." or "ஒரு நிமிடம்." or "சரி, இப்போது தேடுகிறேன்."
+2. ALWAYS call search_knowledge for ANY factual question the user asks — whether it's about courses, policies, events, people, documents, or any topic in the knowledge base. Even if the question seems vague or incomplete, ALWAYS search. Never try to answer without searching first.
 3. CRITICAL — READING THE ANSWER: After you receive the tool response, you MUST immediately read the ENTIRE response text aloud, word for word. Do NOT summarize, shorten, paraphrase, or skip any part. Read every sentence faithfully like a narrator reading a teleprompter.
 4. CRITICAL: Start reading the answer the instant you receive the tool response. Your very first spoken word must be the first word of the answer. ABSOLUTELY NO preamble — no "Here's what I found", no "Based on my search", no "According to", no "Great question", no "Sure", no "So" — NOTHING before the answer text. Go DIRECTLY into word one.
 5. DO NOT output thinking text or internal reasoning. Speak directly.
 6. Respond immediately — no delays.
-7. NEVER say "technical difficulties", "I'm having trouble", or similar error phrases. If the answer says no information was found, tell the user and ask them to rephrase.
-
-DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use these when transcribing user speech):
-- Siwa (Egyptian oasis — NOT Siva, Seva, or Seewa)
-- date palm (the tree — NOT dead palm or date balm)
-- Tagellan / Tagellah (traditional Siwan dish)
-- GIAHS (Globally Important Agricultural Heritage Systems)
-- Khalifa Award (international award for date palm innovation)
-- Bayoud (date palm disease — NOT bio or biwood)
-- Fusarium (fungal disease)
-- oasis / oases
-- pollination
-- cultivar
-- inflorescence${knowledgeContext}`,          tools: [
+7. NEVER say "technical difficulties", "I'm having trouble", or similar error phrases. If the answer says no information was found, tell the user and ask them to rephrase.${knowledgeContext}`,          tools: [
             {
               functionDeclarations: [
                 {
                   name: "search_knowledge",
-                  description: "Search the knowledge base and get an expert answer. Returns a ready-made answer with images. **Invocation Condition:** You MUST call this tool for EVERY user question about facts, documents, knowledge, culture, agriculture, history, food, places, or any topic. You MUST call this tool before answering any factual question — no exceptions. Never answer without calling this tool first.",
+                  description: "Search the knowledge base and get an answer. Returns a ready-made answer with images. **Invocation Condition:** You MUST call this tool for EVERY user question about facts, documents, knowledge, courses, policies, events, or any topic. You MUST call this tool before answering any factual question — no exceptions. Never answer without calling this tool first.",
                   parameters: {
                     type: Type.OBJECT,
                     properties: {
@@ -371,6 +365,10 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
               // When language is Arabic, also keep Arabic script.
               const stripPattern = language === 'ar'
                 ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+/g
+                : language === 'si'
+                ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0D80-\u0DFF]+/g
+                : language === 'ta'
+                ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0B80-\u0BFF]+/g
                 : /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF]+/g;
               const cleanInput = message.serverContent.inputTranscription.text
                 .replace(stripPattern, '')
@@ -412,6 +410,10 @@ DOMAIN VOCABULARY — correct spellings of key terms in this knowledge base (use
                 // Keep only Latin + digits + punctuation (+ Arabic when in Arabic mode)
                 const outStripPattern = language === 'ar'
                   ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+/g
+                  : language === 'si'
+                  ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0D80-\u0DFF]+/g
+                  : language === 'ta'
+                  ? /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF\u0B80-\u0BFF]+/g
                   : /[^\u0000-\u007F\u00C0-\u024F\u1E00-\u1EFF]+/g;
                 const cleanOutput = message.serverContent.outputTranscription.text
                   .replace(outStripPattern, '')

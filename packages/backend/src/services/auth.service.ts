@@ -49,7 +49,7 @@ export async function registerUser(input: RegisterInput): Promise<{ pending: tru
       email: input.email,
       fullName: input.fullName,
       passwordHash,
-      role: 'CLIENT',
+      role: 'STUDENT',
       isActive: false,
       isPendingApproval: true,
     },
@@ -66,6 +66,7 @@ export async function loginUser(input: LoginInput): Promise<{ user: UserProfile;
   
   const user = await prisma.user.findUnique({
     where: { email: input.email },
+    include: { tenant: { select: { name: true, logoUrl: true } } },
   });
 
   if (!user) {
@@ -109,6 +110,9 @@ export async function loginUser(input: LoginInput): Promise<{ user: UserProfile;
       isActive: user.isActive,
       isPendingApproval: user.isPendingApproval,
       createdAt: user.createdAt.toISOString(),
+      tenantId: user.tenantId,
+      tenantName: user.tenant?.name ?? null,
+      tenantLogoUrl: user.tenant?.logoUrl ?? null,
     },
     tokens,
   };
@@ -171,6 +175,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
   
   const user = await prisma.user.findUnique({
     where: { id: userId },
+    include: { tenant: { select: { name: true, logoUrl: true } } },
   });
 
   if (!user) {
@@ -185,5 +190,8 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     role: user.role as unknown as UserProfile['role'],
     isActive: user.isActive,
     createdAt: user.createdAt.toISOString(),
+    tenantId: user.tenantId,
+    tenantName: user.tenant?.name ?? null,
+    tenantLogoUrl: user.tenant?.logoUrl ?? null,
   };
 }

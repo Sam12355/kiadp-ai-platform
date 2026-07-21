@@ -25,10 +25,21 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
     const category = req.query.category as string | undefined;
     const skip = (page - 1) * limit;
 
+    // Scope to the uploader's tenant when the user is an institution admin
+    const callerUser = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: { tenantId: true },
+    });
+
+    // Super admins may pass ?tenantId= to filter a specific institution's docs
+    const queryTenantId = req.query.tenantId as string | undefined;
+    const effectiveTenantId = callerUser?.tenantId ?? queryTenantId ?? null;
+
     // Exclude manually inserted text entries (mimeType: 'text/html') — those belong to Textual Knowledge
     const where: any = {
       mimeType: { not: 'text/html' },
       ...(category ? { categories: { has: category } } : {}),
+      ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}),
     };
 
     const [documents, total] = await Promise.all([
@@ -112,9 +123,16 @@ router.post(
         throw new BadRequestError('No PDF file uploaded');
       }
 
-      const { title, category } = req.body;
+      const { title, category, tenantId: bodyTenantId, courseId } = req.body;
       const prisma = getPrisma();
-      
+
+      // Inherit tenantId from the uploading user; super admins may pass tenantId in body
+      const uploaderUser = await prisma.user.findUnique({
+        where: { id: req.user!.userId },
+        select: { tenantId: true },
+      });
+      const effectiveTenantId = uploaderUser?.tenantId ?? bodyTenantId ?? null;
+
       // 1. Initial record
       const newDoc = await prisma.document.create({
         data: {
@@ -127,6 +145,8 @@ router.post(
           categories: [category || 'GENERAL'],
           status: 'UPLOADED',
           uploadedBy: req.user!.userId,
+          ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}),
+          ...(courseId ? { courseId: String(courseId) } : {}),
         },
       });
 
@@ -382,6 +402,72 @@ router.delete('/:id', authenticate, requireRole(UserRole.ADMIN as any), async (r
 
     await prisma.document.delete({ where: { id: docId } });
     res.json({ success: true, data: { message: 'Document deleted successfully' } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /documents/suggestions — returns random chunk excerpts for home-page prompt cards
+router.get('/suggestions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const prisma = getPrisma();
+    const callerUser = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: { tenantId: true },
+    });
+    const tenantId = callerUser?.tenantId ?? (req.query.tenantId as string | undefined) ?? null;
+
+    // Count available chunks so we can random-sample
+    const total = await prisma.documentChunk.count({
+      where: {
+        content: { not: '' },
+        document: {
+          mimeType: { not: 'text/html' },
+          status: 'READY',
+          ...(tenantId ? { tenantId } : {}),
+        },
+      },
+    });
+
+    if (total === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Pick up to 12 random offsets, fetch those chunks, return the trimmed content
+    const COUNT = Math.min(12, total);
+    const offsets = Array.from({ length: COUNT }, () => Math.floor(Math.random() * total));
+    const chunks = await Promise.all(
+      offsets.map(skip =>
+        prisma.documentChunk.findFirst({
+          where: {
+            content: { not: '' },
+            document: {
+              mimeType: { not: 'text/html' },
+              status: 'READY',
+              ...(tenantId ? { tenantId } : {}),
+            },
+          },
+          select: { content: true },
+          skip,
+        })
+      )
+    );
+
+    // Take first sentence of each chunk, deduplicate, trim to 120 chars
+    const seen = new Set<string>();
+    const suggestions: string[] = [];
+    for (const chunk of chunks) {
+      if (!chunk?.content) continue;
+      const sentence = chunk.content.replace(/\s+/g, ' ').split(/(?<=[.?!])\s+/)[0].trim();
+      if (sentence.length < 20 || sentence.length > 200) continue;
+      const key = sentence.slice(0, 60).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      suggestions.push(sentence.length > 120 ? sentence.slice(0, 117) + '…' : sentence);
+      if (suggestions.length >= 8) break;
+    }
+
+    res.json({ success: true, data: suggestions });
   } catch (err) {
     next(err);
   }

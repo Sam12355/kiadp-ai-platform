@@ -3,10 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { uploadUrl, imageProxyUrl } from '../../api/urls';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
-import { useLanguageStore } from '../../store/languageStore';
+import { useLanguageStore, LANGUAGE_LABELS } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 import Portal from '../../components/Portal';
 import { VoiceMode, VoiceModeHandle } from '../../components/VoiceMode';
+import SettingsPanel from './SettingsPanel';
 
 interface Source {
   id: string;
@@ -62,15 +63,29 @@ export default function KnowledgeAssistant() {
   const [isThreadLoading, setIsThreadLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null } | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
+  const [showSettings, setShowSettings] = useState(false);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
   const [isMuted, setIsMuted] = useState(false);
   const [pendingVoiceText, setPendingVoiceText] = useState<string | null>(null);
+  const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
   const voiceFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (!isVoiceModeOpen) { setIsMuted(false); setPendingVoiceText(null); }
   }, [isVoiceModeOpen]);
+
+  useEffect(() => {
+    apiClient.get('/documents/suggestions')
+      .then((res: { data: { data: string[] } }) => {
+        const all = res.data.data;
+        if (all.length === 0) { setPromptSuggestions([]); return; }
+        // Pick 2 random distinct suggestions on each page load
+        const shuffled = [...all].sort(() => Math.random() - 0.5);
+        setPromptSuggestions(shuffled.slice(0, 2));
+      })
+      .catch(() => setPromptSuggestions([]));
+  }, []);
 
   const voiceModeRef = useRef<VoiceModeHandle>(null);
   // Tracks the session created by voice (so transcripts go somewhere even without URL session)
@@ -177,11 +192,12 @@ export default function KnowledgeAssistant() {
 
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const institutionName = user?.tenantName || '';
 
   // Keep local chat history isolated per logged-in user account.
   const storageScope = user ? `${user.role.toLowerCase()}_${user.id}` : 'guest';
-  const sessionsIndexKey = `khalifa_sessions_index_${storageScope}`;
-  const sessionMessagesKey = (sessionId: string) => `khalifa_session_${storageScope}_${sessionId}`;
+  const sessionsIndexKey = `eduai_sessions_index_${storageScope}`;
+  const sessionMessagesKey = (sessionId: string) => `eduai_session_${storageScope}_${sessionId}`;
 
   // Active session logic — during voice mode, use voiceSessionIdRef (no URL navigation while voice is active)
   const effectiveSessionId = urlSessionId || (isVoiceModeOpen ? voiceSessionIdRef.current : null);
@@ -361,6 +377,14 @@ export default function KnowledgeAssistant() {
       const newId = Date.now().toString();
       const newSession: ChatSession = { id: newId, title: currentQ.substring(0, 200), messages: [userMsg], updatedAt: Date.now() };
       setSessions(prev => [newSession, ...prev]);
+      // Persist synchronously before navigate — route change unmounts this component,
+      // so the useEffect persists would never run for this new session otherwise.
+      const existingIndex: { id: string; title: string; updatedAt: number }[] =
+        JSON.parse(localStorage.getItem(sessionsIndexKey) || '[]');
+      localStorage.setItem(sessionsIndexKey, JSON.stringify(
+        [{ id: newId, title: newSession.title, updatedAt: newSession.updatedAt }, ...existingIndex]
+      ));
+      localStorage.setItem(sessionMessagesKey(newId), JSON.stringify([userMsg]));
       navigate(`/knowledge/chat/${newId}`, { replace: true });
       targetId = newId;
     } else {
@@ -459,9 +483,21 @@ export default function KnowledgeAssistant() {
       <aside className="sidebar-container h-full flex-none flex flex-col z-20 overflow-hidden" style={{ width: isSidebarOpen ? 280 : 0 }}>
         <div className="px-5 pt-7 pb-6">
           <div className="flex items-center justify-between">
-            <span className="whitespace-nowrap flex items-center gap-1.5 uppercase app-logo">
-              <span className="kiadp-text">KIADP</span> <span className="ai-highlight">AI</span>
-            </span>
+            <div className="flex flex-col">
+              <span className="whitespace-nowrap flex items-center gap-1.5 uppercase app-logo">
+                <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
+              </span>
+              {(user?.tenantLogoUrl || institutionName) && (
+                <div className="flex items-center gap-2 mt-2">
+                  {user?.tenantLogoUrl && (
+                    <img src={user.tenantLogoUrl} alt={institutionName} className="h-6 w-auto object-contain rounded" />
+                  )}
+                  {institutionName && (
+                    <span className="text-[10px] font-bold text-white/60 tracking-wide truncate max-w-[140px]">{institutionName}</span>
+                  )}
+                </div>
+              )}
+            </div>
             <button onClick={handleNewChat} title={t.newChat} className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all">
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
             </button>
@@ -516,8 +552,25 @@ export default function KnowledgeAssistant() {
           )}
         </div>
 
-        <div className="p-4 border-t border-white/5">
-          <button onClick={logout} className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-semibold uppercase tracking-widest text-white/40 hover:text-red-500 transition-all">
+        <div className="p-4 border-t border-white/5 space-y-2">
+          {/* User card → navigates to settings */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all group text-left"
+          >
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden bg-gradient-to-br from-emerald-500 to-emerald-700 text-white">
+              {user?.avatarUrl
+                ? <img src={user.avatarUrl} alt={user?.fullName} className="w-full h-full object-cover" />
+                : user?.fullName?.charAt(0).toUpperCase() || '?'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-white truncate leading-none">{user?.fullName}</p>
+              <p className="text-[10px] text-white/30 truncate mt-0.5">{user?.email}</p>
+            </div>
+            <svg className="w-3.5 h-3.5 text-white/20 group-hover:text-white/50 transition-colors flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          </button>
+
+          <button onClick={logout} className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-semibold uppercase tracking-widest text-white/30 hover:text-red-500 transition-all">
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
             {t.signOut}
           </button>
@@ -525,6 +578,7 @@ export default function KnowledgeAssistant() {
       </aside>
 
       <main className="flex-1 flex flex-col relative overflow-hidden h-full">
+        {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {messages.length === 0 && (
            <div className="absolute inset-x-0 bottom-0 h-full overflow-hidden pointer-events-none z-0">
               {/* ── Background Planet Animation ── */}
@@ -564,20 +618,22 @@ export default function KnowledgeAssistant() {
             )}
           </div>
 
+          <div className="flex items-center gap-3">
           <div className="relative">
             <button onClick={() => setIsLanguageMenuOpen(!isLanguageMenuOpen)} className="px-3 py-1.5 rounded-lg flex items-center gap-2 text-[11px] font-semibold border border-white/10 bg-white/5 text-white/60">
               {lang.toUpperCase()}
               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m6 9 6 6 6-6" /></svg>
             </button>
             {isLanguageMenuOpen && (
-              <div className="absolute top-full end-0 mt-2 w-32 bg-[#0f110c] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
-                {['en', 'ar'].map(l => (
-                  <button key={l} onClick={() => { setLanguage(l as any); setIsLanguageMenuOpen(false); }} className="w-full text-left px-4 py-2 text-[12px] hover:bg-white/5 transition-colors">
-                    {l === 'en' ? 'English' : 'العربية'}
+              <div className="absolute top-full end-0 mt-2 w-36 bg-[#0f110c] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
+                {(['en', 'ar', 'si', 'ta'] as const).map(l => (
+                  <button key={l} onClick={() => { setLanguage(l); setIsLanguageMenuOpen(false); }} className="w-full text-left px-4 py-2 text-[12px] hover:bg-white/5 transition-colors">
+                    {LANGUAGE_LABELS[l]}
                   </button>
                 ))}
               </div>
             )}
+          </div>
           </div>
         </header>
 
@@ -593,11 +649,13 @@ export default function KnowledgeAssistant() {
                    </div>
                    <h2 className="premium-title mb-4">{t.howCanIHelp}</h2>
                    <p className="text-white/40 text-[14px] max-w-sm mb-8">{t.heroSubtitle}</p>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-                     {[t.prompt1, t.prompt2].map((p, i) => (
-                       <button key={i} onClick={() => setQuery(p)} className="text-start p-4 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/30 hover:text-white text-white/60 text-[13px] transition-all">{p}</button>
-                     ))}
-                   </div>
+                   {promptSuggestions.length > 0 && (
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                       {promptSuggestions.map((p, i) => (
+                         <button key={i} onClick={() => setQuery(p)} className="text-start p-4 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/30 hover:text-white text-white/60 text-[13px] transition-all">{p}</button>
+                       ))}
+                     </div>
+                   )}
                  </div>
             )}
 
@@ -816,6 +874,7 @@ export default function KnowledgeAssistant() {
           onStatusChange={setVoiceStatus}
           apiKey={import.meta.env.VITE_GEMINI_API_KEY || ""}
           language={lang}
+          institutionName={institutionName || ''}
           chatMessages={messages}
           isMuted={isMuted}
           pendingClientText={pendingVoiceText}

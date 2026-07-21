@@ -22,7 +22,11 @@ export default function Login() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      navigate(user.role === 'ADMIN' ? '/admin' : '/knowledge', { replace: true });
+      if (user.role === 'ADMIN') {
+        navigate(user.tenantId ? '/school' : '/admin', { replace: true });
+      } else {
+        navigate('/knowledge', { replace: true });
+      }
     }
   }, [isAuthenticated, user, navigate]);
 
@@ -53,7 +57,7 @@ export default function Login() {
       setAuth(user, tokens);
 
       if (user.role === 'ADMIN') {
-        navigate('/admin');
+        navigate(user.tenantId ? '/school' : '/admin');
       } else {
         navigate('/knowledge');
       }
@@ -113,7 +117,7 @@ export default function Login() {
               </svg>
             </div>
             <h1 className="tracking-tight whitespace-nowrap app-logo uppercase mb-2" style={{ fontSize: '2.8rem' }}>
-              <span className="kiadp-text">KIADP</span> <span className="ai-highlight">AI</span>
+              <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
             </h1>
             <p className="text-[var(--color-text-secondary)] mt-2 text-sm">{t.loginSubtitle}</p>
           </div>
@@ -185,7 +189,7 @@ export default function Login() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-4 py-3 bg-black/20 border border-[rgba(255,255,255,0.1)] rounded-lg text-white focus:outline-none focus:border-[var(--color-palm-500)] focus:ring-1 focus:ring-[var(--color-palm-500)] transition-all placeholder:text-white/20"
-                    placeholder={mode === 'login' ? 'admin@khalifa.ae' : 'you@example.com'}
+                    placeholder={mode === 'login' ? 'admin@school.edu' : 'you@example.com'}
                   />
                 </div>
 

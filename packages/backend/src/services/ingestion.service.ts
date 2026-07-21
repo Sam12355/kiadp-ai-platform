@@ -519,7 +519,7 @@ export async function processDocument(documentId: string, filePath: string): Pro
         messages: [
           {
             role: 'system',
-            content: `You are an expert agricultural knowledge assistant. Analyze the following document excerpt and categorize it into the most relevant "Smart Folders". respond ONLY with a valid JSON object.
+            content: `You are an expert educational knowledge assistant. Analyze the following document excerpt and categorize it into the most relevant "Smart Folders". respond ONLY with a valid JSON object.
             
 Smart Folders keys:
 - "PESTS_DISEASE_MANAGEMENT"

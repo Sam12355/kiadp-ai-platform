@@ -43,6 +43,27 @@ enum IngestionStep {
 }
 
 // ================================================
+// Tenant (Institution) Model
+// ================================================
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users     User[]
+  documents Document[]
+  questions Question[]
+  answers   Answer[]
+  apiKeys   ApiKey[]
+
+  @@map("tenants")
+}
+
+// ================================================
 // Auth Models
 // ================================================
 
@@ -55,14 +76,18 @@ model User {
   role              UserRole @default(CLIENT)
   isActive          Boolean  @default(true) @map("is_active")
   isPendingApproval Boolean  @default(false) @map("is_pending_approval")
+  tenantId          String?  @map("tenant_id") @db.Uuid
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id])
   refreshTokens RefreshToken[]
   documents     Document[]
   questions     Question[]
   auditLogs     AuditLog[]
+  apiKeys       ApiKey[]
 
+  @@index([tenantId])
   @@map("users")
 }
 
@@ -98,10 +123,12 @@ model Document {
   categories       String[]       @default([])
   metadata         Json?          @default("{}")
   uploadedBy       String         @map("uploaded_by") @db.Uuid
+  tenantId         String?        @map("tenant_id") @db.Uuid
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
   uploader      User             @relation(fields: [uploadedBy], references: [id])
+  tenant        Tenant?          @relation(fields: [tenantId], references: [id])
   pages         DocumentPage[]
   chunks        DocumentChunk[]
   images        DocumentImage[]
@@ -109,6 +136,7 @@ model Document {
 
   @@index([status])
   @@index([uploadedBy])
+  @@index([tenantId])
   @@map("documents")
 }
 
@@ -204,19 +232,23 @@ model IngestionJob {
 model Question {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @map("user_id") @db.Uuid
+  tenantId  String?  @map("tenant_id") @db.Uuid
   queryText String   @map("query_text") @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
   user   User    @relation(fields: [userId], references: [id])
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
   answer Answer?
 
   @@index([userId])
+  @@index([tenantId])
   @@map("questions")
 }
 
 model Answer {
   id              String   @id @default(uuid()) @db.Uuid
   questionId      String   @unique @map("question_id") @db.Uuid
+  tenantId        String?  @map("tenant_id") @db.Uuid
   answerText      String   @map("answer_text") @db.Text
   confidenceScore Float?   @map("confidence_score")
   isGrounded      Boolean  @default(true) @map("is_grounded")
@@ -227,9 +259,11 @@ model Answer {
   createdAt       DateTime @default(now()) @map("created_at")
 
   question     Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  tenant       Tenant?        @relation(fields: [tenantId], references: [id])
   sources      AnswerSource[]
   answerImages AnswerImage[]
 
+  @@index([tenantId])
   @@map("answers")
 }
 
@@ -301,4 +335,44 @@ model ApiUsageDay {
   @@unique([date, service, model])
   @@index([service, date])
   @@map("api_usage_day")
+}
+
+// ================================================
+// API Keys (machine-to-machine access)
+// ================================================
+
+/// Long-lived API keys for external integrations (Moodle, n8n, etc.).
+/// The raw key is returned ONCE at creation and never stored.
+/// Only the SHA-256 hash is persisted.
+model ApiKey {
+  id           String    @id @default(uuid()) @db.Uuid
+  keyHash      String    @unique @map("key_hash")
+  keyPrefix    String    @map("key_prefix") // first 12 chars shown in UI, e.g. "sk-kh-a1b2c3"
+  name         String    // human label, e.g. "Moodle — Royal College"
+  tenantId     String?   @map("tenant_id") @db.Uuid
+  isActive     Boolean   @default(true) @map("is_active")
+  lastUsedAt   DateTime? @map("last_used_at")
+  expiresAt    DateTime? @map("expires_at") // null = never expires
+  requestCount Int       @default(0) @map("request_count")
+  createdBy    String    @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant       Tenant? @relation(fields: [tenantId], references: [id])
+  createdByUser User   @relation(fields: [createdBy], references: [id])
+
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+// ================================================
+// App Settings (key-value store for admin config)
+// ================================================
+
+model AppSetting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
 }

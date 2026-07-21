@@ -8,8 +8,97 @@ import { embedText } from './embedding.service.js';
 import { GoogleGenAI } from '@google/genai';
 import { trackUsage } from '../utils/usageTracker.js';
 
+// ── Language support ───────────────────────────────────────────────────────
+export const SUPPORTED_LANGUAGES: Record<string, string> = {
+  en: 'English',
+  ar: 'Arabic',
+  si: 'Sinhala',
+  ta: 'Tamil',
+  fr: 'French',
+};
+
+const SINHALA_TAMIL_LANGS = new Set(['si', 'ta']);
+
+/**
+ * Detects the language of a short text snippet.
+ * Returns a language code: 'en', 'si', 'ta', 'ar', or 'other'.
+ * Used when the client sends language='auto'.
+ */
+export async function detectLanguage(text: string): Promise<string> {
+  if (!text.trim()) return 'en';
+  try {
+    const result = await chatComplete([
+      {
+        role: 'system',
+        content: `Detect the language of the user's text. Reply with ONLY one of these codes: en, si, ta, ar, fr, other. Nothing else.
+- en: English
+- si: Sinhala (සිංහල)
+- ta: Tamil (தமிழ்)
+- ar: Arabic
+- fr: French
+- other: anything else`,
+      },
+      { role: 'user', content: text.slice(0, 200) },
+    ], { temperature: 0, max_tokens: 5 });
+    const code = result.trim().toLowerCase().replace(/[^a-z]/g, '');
+    return SUPPORTED_LANGUAGES[code] ? code : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
+// ── Tenant isolation helpers ───────────────────────────────────────────────
+// UUID pattern — safe to interpolate into raw SQL (no SQL-injection risk)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function tenantJoin(tenantId?: string, courseId?: string): string {
+  if (!tenantId && !courseId) return '';
+  return 'INNER JOIN documents d ON dc.document_id = d.id';
+}
+
+function tenantWhere(tenantId?: string, courseId?: string): string {
+  const parts: string[] = [];
+  if (tenantId && UUID_RE.test(tenantId)) parts.push(`d.tenant_id = '${tenantId}'`);
+  if (courseId) parts.push(`d.course_id = '${courseId.replace(/'/g, "''")}'`);
+  return parts.length ? 'AND ' + parts.join(' AND ') : '';
+}
+
+function tenantChunkFilter(tenantId?: string, courseId?: string): object[] {
+  const filters: object[] = [];
+  if (tenantId && UUID_RE.test(tenantId)) filters.push({ document: { tenantId } });
+  if (courseId) filters.push({ document: { courseId } });
+  return filters;
+}
+
+function tenantImageFilter(tenantId?: string, courseId?: string): object {
+  const and: object[] = [];
+  if (tenantId && UUID_RE.test(tenantId)) and.push({ tenantId });
+  if (courseId) and.push({ courseId });
+  return and.length ? { document: and.length === 1 ? and[0] : { AND: and } } : {};
+}
+
 /** Sticky flag — once OpenAI chat quota is exhausted this process run, always use Gemini */
 let openaiChatExhausted = false;
+
+// ── AI Provider override (set by admin panel) ──────────────────────────────
+type AIProvider = 'auto' | 'openai' | 'gemini' | 'groq';
+let _cachedProvider: AIProvider = 'auto';
+let _providerCacheTime = 0;
+const PROVIDER_CACHE_TTL_MS = 30_000;
+
+async function getAIProvider(): Promise<AIProvider> {
+  const now = Date.now();
+  if (now - _providerCacheTime < PROVIDER_CACHE_TTL_MS) return _cachedProvider;
+  try {
+    const prisma = getPrisma();
+    const setting = await prisma.appSetting.findUnique({ where: { key: 'ai_provider' } });
+    _cachedProvider = (setting?.value as AIProvider) ?? 'auto';
+  } catch {
+    // DB unavailable — keep cached value
+  }
+  _providerCacheTime = now;
+  return _cachedProvider;
+}
 
 const GEMINI_CHAT_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
 const CHAT_MAX_RETRIES = 1; // 1 retry per model — fail fast so Groq fallback kicks in quickly
@@ -31,6 +120,7 @@ async function geminiChatComplete(
   for (const model of GEMINI_CHAT_MODELS) {
     for (let attempt = 0; attempt <= CHAT_MAX_RETRIES; attempt++) {
       try {
+        getLogger().info({ model }, '🤖 [AI] Trying Gemini model=' + model);
         const response = await ai.models.generateContent({
           model,
           contents: convMsgs,
@@ -76,6 +166,7 @@ async function groqChatComplete(
   const client = new OpenAI({ apiKey: groqKey, baseURL: 'https://api.groq.com/openai/v1' });
   for (const model of GROQ_MODELS) {
     try {
+      getLogger().info({ model }, '🤖 [AI] Trying Groq model=' + model);
       const resp = await client.chat.completions.create({
         model,
         messages,
@@ -104,19 +195,71 @@ async function groqChatComplete(
 
 async function chatComplete(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
-  opts: { model?: string; temperature?: number; max_tokens?: number; skipGemini?: boolean } = {},
+  opts: { model?: string; temperature?: number; max_tokens?: number; skipGemini?: boolean; preferGemini?: boolean } = {},
 ): Promise<string> {
   const env = getEnv();
+  const provider = await getAIProvider();
+
+  // Sinhala/Tamil queries prefer Gemini — it handles these scripts better than OpenAI models
+  if (opts.preferGemini && provider === 'auto') {
+    const geminiKey = env.GEMINI_API_KEY;
+    if (geminiKey) {
+      getLogger().info({ preferGemini: true }, '🤖 [AI] Preferring Gemini for Sinhala/Tamil');
+      const result = await geminiChatComplete(messages, opts, geminiKey);
+      if (result !== null) return result;
+      getLogger().warn('Gemini preferred but unavailable — falling through to normal auto chain');
+    }
+  }
+
+  // ── Forced provider modes ──────────────────────────────────────────────────
+  if (provider === 'gemini') {
+    const geminiKey = env.GEMINI_API_KEY;
+    if (!geminiKey) throw new AppError('Gemini API key not configured', 503, 'AI_RATE_LIMITED');
+    getLogger().info({ provider: 'gemini' }, '🤖 [AI] Using Gemini (forced)');
+    const result = await geminiChatComplete(messages, opts, geminiKey);
+    if (result !== null) return result;
+    throw new AppError('All Gemini models are currently rate-limited. Please try again in a minute.', 503, 'AI_RATE_LIMITED');
+  }
+
+  if (provider === 'groq') {
+    const groqKey = env.GROQ_API_KEY;
+    if (!groqKey) throw new AppError('Groq API key not configured', 503, 'AI_RATE_LIMITED');
+    getLogger().info({ provider: 'groq' }, '🤖 [AI] Using Groq (forced)');
+    const result = await groqChatComplete(messages, opts, groqKey);
+    if (result !== null) return result;
+    throw new AppError('All Groq models are currently rate-limited. Please try again in a minute.', 503, 'AI_RATE_LIMITED');
+  }
+
+  if (provider === 'openai') {
+    const model = opts.model ?? env.OPENAI_CHAT_MODEL_MINI;
+    getLogger().info({ provider: 'openai', model }, '🤖 [AI] Using OpenAI (forced) model=' + model);
+    const openai = getOpenAI();
+    const resp = await openai.chat.completions.create({
+      model,
+      messages,
+      temperature: opts.temperature ?? 0,
+      ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
+    });
+    trackUsage('openai', model,
+      resp.usage?.prompt_tokens ?? 0,
+      resp.usage?.completion_tokens ?? 0,
+    );
+    return resp.choices[0].message.content ?? '';
+  }
+
+  // ── Auto mode: OpenAI → Gemini → Groq ────────────────────────────────────
   if (!openaiChatExhausted) {
     try {
+      const model = opts.model ?? env.OPENAI_CHAT_MODEL_MINI;
+      getLogger().info({ provider: 'openai', model }, '🤖 [AI] Using OpenAI (auto) model=' + model);
       const openai = getOpenAI();
       const resp = await openai.chat.completions.create({
-        model: opts.model ?? env.OPENAI_CHAT_MODEL_MINI,
+        model,
         messages,
         temperature: opts.temperature ?? 0,
         ...(opts.max_tokens !== undefined ? { max_tokens: opts.max_tokens } : {}),
       });
-      trackUsage('openai', opts.model ?? env.OPENAI_CHAT_MODEL_MINI,
+      trackUsage('openai', model,
         resp.usage?.prompt_tokens ?? 0,
         resp.usage?.completion_tokens ?? 0,
       );
@@ -352,14 +495,14 @@ export interface AnswerResponse {
 }
 
 const SYSTEM_PROMPT = `
-You are a prestige AI agricultural scientist representing the Khalifa International Award for Date Palm and Agricultural Innovation.
+You are an intelligent educational assistant for a school knowledge base system.
 
 FORMATTING INSTRUCTIONS (CRITICAL):
-1. **Bold** all technical terms, pest names, and chemical components.
-2. Use ### Headers to separate different categories of information.
-3. Use bullet points or numbered lists.
+1. **Bold** all key terms, concepts, and subject-specific vocabulary.
+2. Use ### Headers to separate different topics or sections.
+3. Use bullet points or numbered lists for steps, lists, and comparisons.
 4. NO sources section is needed at the end of the text.
-5. Use — for emphasis.
+5. Use — for emphasis where appropriate.
 
 CITATION RULE (MANDATORY — THIS IS THE MOST IMPORTANT RULE):
 Every factual statement you write MUST end with an inline citation like [Source 1] or [Source 3]. The number must match one of the CONTEXT DOCUMENTS provided.
@@ -378,11 +521,11 @@ CONTENT RULES (Grounded Intelligence):
 `;
 
 const GENERAL_SYSTEM_PROMPT = `
-You are a prestige AI agricultural scientist representing the Khalifa International Award for Date Palm and Agricultural Innovation.
-You are now in 'Deep Dive' mode. While you still represent the Khalifa platform, you are encouraged to use your complete internal training data and general scientific knowledge to provide a comprehensive answer.
+You are an intelligent educational assistant.
+You are now in 'Deep Dive' mode — you may draw on your full training knowledge to provide a comprehensive, well-structured answer beyond what is in the uploaded documents.
 
 FORMATTING INSTRUCTIONS:
-Same as standard (Bold terms, ### Headers, bullet points).
+Same as standard (Bold key terms, ### Headers, bullet points).
 `;
 
 export interface ChatMessage {
@@ -393,7 +536,7 @@ export interface ChatMessage {
 /**
  * Lightweight vector search for voice mode — returns relevant document chunks without LLM processing
  */
-export async function searchKnowledge(queryText: string, fast = false): Promise<{ results: { title: string; pageNumber: number; text: string; score: number }[]; images: { id: string; url: string; description: string; pageNumber: number }[] }> {
+export async function searchKnowledge(queryText: string, fast = false, tenantId?: string, courseId?: string): Promise<{ results: { title: string; pageNumber: number; text: string; score: number }[]; images: { id: string; url: string; description: string; pageNumber: number }[] }> {
   const openai = getOpenAI();
   const env = getEnv();
   const prisma = getPrisma();
@@ -402,7 +545,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
   if (fast) {
     // Query expansion: same as normal path — rewrite the noisy voice query into focused search terms
     const expansionPromise = chatComplete([
-      { role: 'system', content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.' },
+      { role: 'system', content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a school knowledge base. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely subject-specific words.' },
       { role: 'user', content: queryText },
     ], { temperature: 0 });
     const expandedQueryFast = (await expansionPromise).trim() || queryText;
@@ -419,6 +562,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
           where: {
             AND: [
               { chunkIndex: { lt: 999 } },
+              ...tenantChunkFilter(tenantId, courseId),
               ...(keywords.length >= 2
                 ? keywords.slice(0, 4).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } }))
                 : [{ OR: keywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })) }]),
@@ -436,7 +580,9 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
       SELECT dc.id, dc.document_id, dc.content, dc.page_number,
              1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
       FROM document_chunks dc
+      ${tenantJoin(tenantId, courseId)}
       WHERE dc.embedding IS NOT NULL AND dc.chunk_index < 999
+      ${tenantWhere(tenantId, courseId)}
       ORDER BY dc.embedding <=> '${vectorStr}'::vector
       LIMIT 60
     `);
@@ -476,9 +622,11 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
       SELECT dc.id, dc.document_id, dc.content, dc.page_number,
              1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
       FROM document_chunks dc
+      ${tenantJoin(tenantId, courseId)}
       WHERE dc.embedding IS NOT NULL
         AND dc.chunk_index >= 999
         AND 1 - (dc.embedding <=> '${vectorStr}'::vector) > 0.32
+      ${tenantWhere(tenantId, courseId)}
       ORDER BY dc.embedding <=> '${vectorStr}'::vector
       LIMIT 5
     `);
@@ -539,7 +687,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
   const expandedQuery = (await chatComplete([
     {
       role: 'system',
-      content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a knowledge base about agriculture, date palms, and related topics. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely domain-specific words.'
+      content: 'You are a search query optimizer. Given a user question (possibly from voice transcription), rewrite it as an optimal search query for a school knowledge base. Return ONLY the rewritten query — no explanation. Keep it concise (under 20 words). Include key terms, synonyms, and likely subject-specific words.'
     },
     { role: 'user', content: queryText }
   ], { temperature: 0 })).trim() || queryText;
@@ -564,6 +712,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
       where: {
         AND: [
           { chunkIndex: { lt: 999 } },
+          ...tenantChunkFilter(tenantId, courseId),
           ...andKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })),
         ],
       },
@@ -575,6 +724,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
         where: {
           AND: [
             { chunkIndex: { lt: 999 } },
+            ...tenantChunkFilter(tenantId, courseId),
             { OR: allKeywords.map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })) },
           ],
         },
@@ -589,6 +739,7 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
       where: {
         AND: [
           { chunkIndex: { lt: 999 } },
+          ...tenantChunkFilter(tenantId, courseId),
           { OR: allKeywords.slice(0, 6).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } })) },
         ],
       },
@@ -608,8 +759,10 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
     SELECT dc.id, dc.document_id, dc.content, dc.page_number,
            1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
     FROM document_chunks dc
+    ${tenantJoin(tenantId, courseId)}
     WHERE dc.embedding IS NOT NULL
       AND dc.chunk_index < 999
+    ${tenantWhere(tenantId, courseId)}
     ORDER BY dc.embedding <=> '${vectorStr}'::vector
     LIMIT 60
   `);
@@ -666,15 +819,17 @@ export async function searchKnowledge(queryText: string, fast = false): Promise<
  */
 export async function voiceAsk(
   queryText: string,
-  language: string = 'en'
+  language: string = 'en',
+  tenantId?: string,
+  courseId?: string,
 ): Promise<{ answerText: string; images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] }> {
   const openai = getOpenAI();
   const env = getEnv();
   const prisma = getPrisma();
   const t0 = Date.now();
 
-  const langMap: Record<string, string> = { 'ar': 'Arabic', 'fr': 'French', 'en': 'English' };
-  const targetLanguage = langMap[language] || 'English';
+  const targetLanguage = SUPPORTED_LANGUAGES[language] || 'English';
+  const useGemini = SINHALA_TAMIL_LANGS.has(language);
 
   // ── Step 1: Embed original query directly (skip expansion — saves ~4s) ──
   const queryVector = await embedText(queryText);
@@ -690,14 +845,16 @@ export async function voiceAsk(
     SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
            1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
     FROM document_chunks dc
+    ${tenantJoin(tenantId, courseId)}
     WHERE dc.embedding IS NOT NULL AND dc.chunk_index < 999
+    ${tenantWhere(tenantId, courseId)}
     ORDER BY dc.embedding <=> '${vectorStr}'::vector
     LIMIT 60
   `);
 
   const keywordPromise = keywords.length >= 2
     ? prisma.documentChunk.findMany({
-        where: { AND: [{ chunkIndex: { lt: 999 } }, ...keywords.slice(0, 3).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } }))] },
+        where: { AND: [{ chunkIndex: { lt: 999 } }, ...tenantChunkFilter(tenantId, courseId), ...keywords.slice(0, 3).map(kw => ({ content: { contains: kw, mode: 'insensitive' as const } }))] },
         select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
         take: 25,
       })
@@ -707,8 +864,10 @@ export async function voiceAsk(
     SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
            1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
     FROM document_chunks dc
+    ${tenantJoin(tenantId, courseId)}
     WHERE dc.embedding IS NOT NULL AND dc.chunk_index >= 999
       AND 1 - (dc.embedding <=> '${vectorStr}'::vector) > 0.32
+    ${tenantWhere(tenantId, courseId)}
     ORDER BY dc.embedding <=> '${vectorStr}'::vector
     LIMIT 5
   `);
@@ -742,6 +901,7 @@ export async function voiceAsk(
     where: {
       AND: [
         { chunkIndex: { lt: 999 } },
+        ...tenantChunkFilter(tenantId, courseId),
         { OR: top5.flatMap(c => [
             { documentId: c.documentId, chunkIndex: c.chunkIndex - 1 },
             { documentId: c.documentId, chunkIndex: c.chunkIndex + 1 },
@@ -772,7 +932,7 @@ export async function voiceAsk(
       const requestedFigNum = figureRequestMatch[1];
       const keptIds = new Set(visualHits.map((img: any) => img.id));
       const directFigImages = await prisma.documentImage.findMany({
-        where: { description: { contains: `Figure ${requestedFigNum}`, mode: 'insensitive' } },
+        where: { description: { contains: `Figure ${requestedFigNum}`, mode: 'insensitive' }, ...tenantImageFilter(tenantId, courseId) },
         select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
       });
       for (const img of directFigImages) {
@@ -836,6 +996,7 @@ export async function voiceAsk(
       const descImages = await prisma.documentImage.findMany({
         where: {
           AND: imageKeywords.slice(0, 2).map(kw => ({ description: { contains: kw, mode: 'insensitive' as const } })),
+          ...(tenantId && UUID_RE.test(tenantId) ? ({ document: { tenantId } } as any) : {}),
         },
         select: { id: true, filePath: true, description: true, pageNumber: true, documentId: true, width: true, height: true },
         take: 10,
@@ -941,7 +1102,7 @@ export async function voiceAsk(
     answerText = await chatComplete([
       { role: 'system', content: finalSystemPrompt },
       { role: 'user', content: instructions + "USER QUESTION: " + queryText },
-    ], { temperature: 0, skipGemini: true }) || '';
+    ], { temperature: 0, skipGemini: !useGemini, preferGemini: useGemini }) || '';
   } catch (llmErr: any) {
     // All AI providers rate-limited — return the raw source text as the answer
     // so the user still sees something instead of an error
@@ -957,29 +1118,29 @@ export async function voiceAsk(
 }
 
 export async function askQuestion(
-  userId: string, 
-  queryText: string, 
-  history: ChatMessage[] = [], 
-  language: string = 'en', 
-  mode: 'grounded' | 'general' = 'grounded'
+  userId: string,
+  queryText: string,
+  history: ChatMessage[] = [],
+  language: string = 'en',
+  mode: 'grounded' | 'general' = 'grounded',
+  tenantId?: string,
+  courseId?: string,
 ): Promise<AnswerResponse> {
   const prisma = getPrisma();
   const openai = getOpenAI();
   const env = getEnv();
 
-  const langMap: Record<string, string> = {
-    'ar': 'Arabic',
-    'fr': 'French',
-    'en': 'English'
-  };
-  const targetLanguage = langMap[language] || 'English';
+  // Auto-detect language if client requests it
+  if (language === 'auto') language = await detectLanguage(queryText);
+  const targetLanguage = SUPPORTED_LANGUAGES[language] || 'English';
+  const useGemini = SINHALA_TAMIL_LANGS.has(language);
   const LANGUAGE_PROMPT = `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
 
   // 1. Create Question Record
   const t0 = Date.now();
   const question = await prisma.question.create({
-    data: { userId, queryText },
+    data: { userId, queryText, ...(tenantId ? { tenantId } : {}) },
   });
 
   // 1.5 Smart Intent Classifier (Bypass RAG for small talk and social questions)
@@ -988,7 +1149,7 @@ export async function askQuestion(
     const result = (await chatComplete([
       { 
         role: 'system', 
-        content: 'Classify the users intent. If it is a greeting, farewell, thanks, apology, social small-talk (like "how are you", "what is up", "how is your day"), or simple acknowledgment, respond with "CHIT_CHAT". If it is a real request for knowledge, data, or agricultural assistance, respond with "QUERY". Return ONLY the word.' 
+        content: 'Classify the users intent. If it is a greeting, farewell, thanks, apology, social small-talk (like "how are you", "what is up", "how is your day"), or simple acknowledgment, respond with "CHIT_CHAT". If it is a real request for knowledge, data, or educational assistance, respond with "QUERY". Return ONLY the word.'
       },
       { role: 'user', content: queryText },
     ], { temperature: 0 })).trim().toUpperCase();
@@ -1047,8 +1208,10 @@ export async function askQuestion(
       SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
              1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
       FROM document_chunks dc
+      ${tenantJoin(tenantId, courseId)}
       WHERE dc.embedding IS NOT NULL
         AND dc.chunk_index < 999
+      ${tenantWhere(tenantId, courseId)}
       ORDER BY dc.embedding <=> '${vectorStr}'::vector
       LIMIT 60
     `);
@@ -1064,6 +1227,7 @@ export async function askQuestion(
           AND: [
             ...andKeywords.map((kw: string) => ({ content: { contains: kw, mode: 'insensitive' as const } })),
             { chunkIndex: { lt: 999 } },
+            ...tenantChunkFilter(tenantId, courseId),
           ]
         },
         select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
@@ -1075,6 +1239,7 @@ export async function askQuestion(
           AND: [
             { OR: queryWords.slice(0, 6).map((kw: string) => ({ content: { contains: kw, mode: 'insensitive' as const } })) },
             { chunkIndex: { lt: 999 } },
+            ...tenantChunkFilter(tenantId, courseId),
           ]
         },
         select: { id: true, documentId: true, content: true, pageNumber: true, chunkIndex: true },
@@ -1095,9 +1260,11 @@ export async function askQuestion(
       SELECT dc.id, dc.document_id, dc.content, dc.page_number, dc.chunk_index,
              1 - (dc.embedding <=> '${vectorStr}'::vector) AS similarity
       FROM document_chunks dc
+      ${tenantJoin(tenantId, courseId)}
       WHERE dc.embedding IS NOT NULL
         AND dc.chunk_index >= 999
         AND 1 - (dc.embedding <=> '${vectorStr}'::vector) > 0.32
+      ${tenantWhere(tenantId, courseId)}
       ORDER BY dc.embedding <=> '${vectorStr}'::vector
       LIMIT 5
     `);
@@ -1145,6 +1312,7 @@ export async function askQuestion(
         where: {
           AND: [
             { chunkIndex: { lt: 999 } },
+            ...tenantChunkFilter(tenantId, courseId),
             {
               OR: top5.flatMap(c => [
                 { documentId: c.documentId, chunkIndex: c.chunkIndex - 1 },
@@ -1192,7 +1360,10 @@ export async function askQuestion(
       const requestedFigNum = figureRequestMatch[1];
       const keptIds = new Set(visualHits.map((img: any) => img.id));
       const directFigImages = await prisma.documentImage.findMany({
-        where: { description: { contains: `Figure ${requestedFigNum}`, mode: 'insensitive' } },
+        where: {
+          description: { contains: `Figure ${requestedFigNum}`, mode: 'insensitive' },
+          ...(tenantId && UUID_RE.test(tenantId) ? ({ document: { tenantId } } as any) : {}),
+        },
         include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
       });
       for (const img of directFigImages) {
@@ -1279,6 +1450,7 @@ export async function askQuestion(
       const descImages = await prisma.documentImage.findMany({
         where: {
           AND: imageKeywords.slice(0, 2).map(kw => ({ description: { contains: kw, mode: 'insensitive' as const } })),
+          ...(tenantId && UUID_RE.test(tenantId) ? ({ document: { tenantId } } as any) : {}),
         },
         include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
         take: 10,
@@ -1347,7 +1519,10 @@ export async function askQuestion(
       if (pageFigurePairs.length > 0) {
         // Fetch all images on those pages
         const siblingImages = await prisma.documentImage.findMany({
-          where: { OR: pageFigurePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })) },
+          where: {
+            OR: pageFigurePairs.map(p => ({ documentId: p.documentId, pageNumber: p.pageNumber })),
+            ...(tenantId && UUID_RE.test(tenantId) ? ({ document: { tenantId } } as any) : {}),
+          },
           include: { document: { select: { title: true, originalFilename: true, storedFilename: true } } },
         });
         for (const sib of siblingImages) {
@@ -1381,9 +1556,11 @@ export async function askQuestion(
   // 6. Handle grounded mode with no results (EXCEPT for chit-chat)
   if (mode === 'grounded' && chunks.length === 0 && !isChitChat) {
     const noInfoMap: Record<string, string> = {
-      'en': "I couldn't find any relevant documents or visual evidence in the Khalifa repository to address your specific query.",
-      'fr': "Je n'ai trouvé aucun document ou preuve visuelle pertinente dans le répertoire Khalifa pour répondre à votre demande spécifique.",
-      'ar': "لم أتمكن من العثور على أي وثائق أو أدلة مرئية ذات صلة في مستودع خليفة للإجابة على استفسارك المحدد."
+      'en': "I couldn't find any relevant documents in the knowledge base to address your query.",
+      'fr': "Je n'ai trouvé aucun document pertinent dans la base de connaissances pour répondre à votre demande.",
+      'ar': "لم أتمكن من العثور على أي وثائق ذات صلة في قاعدة المعرفة للإجابة على استفسارك.",
+      'si': "ඔබගේ ප්‍රශ්නයට පිළිතුරු දීමට දැනුම් පදනමේ අදාළ ලේඛන සොයාගත නොහැකි විය.",
+      'ta': "உங்கள் கேள்விக்கு பதிலளிக்க அறிவுத் தளத்தில் தொடர்புடைய ஆவணங்கள் எதுவும் காணவில்லை.",
     };
     return createEmptyAnswer(question.id, noInfoMap[language] || noInfoMap['en']);
   }
@@ -1392,7 +1569,7 @@ export async function askQuestion(
   let finalSystemPrompt = (mode === 'grounded' ? SYSTEM_PROMPT : GENERAL_SYSTEM_PROMPT) + LANGUAGE_PROMPT;
   
   if (isChitChat) {
-    finalSystemPrompt = `You are a polite assistant representing the Khalifa platform. The user is just being polite (greetings or thanks). Respond briefly and politely. DO NOT talk about technical limitations or deep dive modes. Just say "You're welcome" or "Hello, how can I help today?" or similar.` + LANGUAGE_PROMPT;
+    finalSystemPrompt = `You are a polite educational assistant. The user is just being polite (greetings or thanks). Respond briefly and politely. Just say "You're welcome" or "Hello, how can I help today?" or similar.` + LANGUAGE_PROMPT;
   }
   
   let instructions = "";
@@ -1441,7 +1618,7 @@ Rules:
         role: 'user',
         content: `VERIFIED EXTRACTS FROM DOCUMENTS (these are the ONLY facts you may use):\n\n${extractedQuotes}\n\nUSER QUESTION: ${standaloneQuery}`
       }
-    ], { model: selectedModel, temperature: 0 }) || 'No response generated.';
+    ], { model: selectedModel, temperature: 0, preferGemini: useGemini }) || 'No response generated.';
     getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after answer step (2-step)');
   } else if (mode === 'grounded' && !isChitChat && chunks.length > 0) {
     // ── Direct single-step answer for SIMPLE queries (skip extract for speed) ──
@@ -1451,7 +1628,7 @@ Rules:
       { role: 'system', content: finalSystemPrompt },
       ...historyMessages,
       { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery }
-    ], { model: selectedModel, temperature: 0 }) || 'No response generated.';
+    ], { model: selectedModel, temperature: 0, preferGemini: useGemini }) || 'No response generated.';
     getLogger().debug({ ms: Date.now() - t0 }, 'TIMING: after direct answer step (extract skipped)');
   } else {
     // Non-grounded / chit-chat / general mode — single pass
@@ -1459,7 +1636,7 @@ Rules:
       { role: 'system', content: finalSystemPrompt },
       ...historyMessages,
       { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
-    ], { model: selectedModel, temperature: mode === 'grounded' ? 0 : 0.7 }) || 'No response generated.';
+    ], { model: selectedModel, temperature: mode === 'grounded' ? 0 : 0.7, preferGemini: useGemini }) || 'No response generated.';
   }
 
   // Clean any leftover citation markers from the answer
@@ -1473,9 +1650,11 @@ Rules:
     // Safety Net: If AI only sent [UNGROUNDED] or failed to provide a refusal
     if (!answerText) {
       const fallbackMap: Record<string, string> = {
-        'en': "I'm sorry, but this information or visual evidence is not available in the Khalifa Knowledge Base. For a general scientific explanation, please try the **Deep Dive** ✦ mode below.",
-        'fr': "Je suis désolé, mais cette information ou preuve visuelle n'est pas disponible dans la base de connaissances Khalifa. Pour une explication scientifique générale, veuillez essayer le mode **Deep Dive** ✦ ci-dessous.",
-        'ar': "عذرًا، هذه المعلومات أو الأدلة المرئية غير متوفرة في قاعدة معرفة خليفة. للحصول على شرح علمي عام، يرجى تجربة وضع **Deep Dive** ✦ أدناه."
+        'en': "I'm sorry, but this information is not available in the knowledge base. For a broader answer, please try **Deep Dive** ✦ mode.",
+        'fr': "Je suis désolé, mais cette information n'est pas disponible dans la base de connaissances. Pour une réponse plus large, veuillez essayer le mode **Deep Dive** ✦.",
+        'ar': "عذرًا، هذه المعلومات غير متوفرة في قاعدة المعرفة. للحصول على إجابة أشمل، يرجى تجربة وضع **Deep Dive** ✦.",
+        'si': "සමාවෙන්න, මෙම තොරතුරු දැනුම් පදනමේ නොමැත. පුළුල් පිළිතුරක් සඳහා **Deep Dive** ✦ ප්‍රකාරය උත්සාහ කරන්න.",
+        'ta': "மன்னிக்கவும், இந்தத் தகவல் அறிவுத் தளத்தில் இல்லை. விரிவான பதிலுக்கு **Deep Dive** ✦ முறையை முயற்சிக்கவும்.",
       };
       answerText = fallbackMap[language] || fallbackMap['en'];
     }
@@ -1489,6 +1668,7 @@ Rules:
       isGrounded,
       modelUsed: env.OPENAI_CHAT_MODEL,
       tokensUsed: totalTokens,
+      ...(tenantId ? { tenantId } : {}),
       sources: {
         create: mode === 'grounded' ? chunks.filter((c: any) => !c.isVisual && !c.isNeighbor).map((chunk: any, idx: number) => ({
           chunkId: chunk.id,

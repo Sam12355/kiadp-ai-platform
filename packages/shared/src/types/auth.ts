@@ -4,7 +4,7 @@
 
 export enum UserRole {
   ADMIN = 'ADMIN',
-  CLIENT = 'CLIENT',
+  STUDENT = 'STUDENT',
 }
 
 export interface UserProfile {
@@ -16,6 +16,9 @@ export interface UserProfile {
   isActive: boolean;
   isPendingApproval?: boolean;
   createdAt: string;
+  tenantId?: string | null;
+  tenantName?: string | null;
+  tenantLogoUrl?: string | null;
 }
 
 export interface LoginRequest {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import BubblesBackground from '../../components/BubblesBackground';
-import { LayoutDashboard, FileText, Users, Settings as SettingsIcon, LogOut, Menu, X, BarChart2, BookOpen } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Settings as SettingsIcon, LogOut, Menu, X, BarChart2, BookOpen, Building2 } from 'lucide-react';
 import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 
@@ -22,6 +22,8 @@ export default function AdminLayout() {
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'ADMIN') {
       navigate('/login');
+    } else if (user?.tenantId) {
+      navigate('/school');
     }
   }, [isAuthenticated, user, navigate]);
 
@@ -30,10 +32,11 @@ export default function AdminLayout() {
     setIsSidebarOpen(false);
   }, [location.pathname]);
 
-  if (!isAuthenticated || user?.role !== 'ADMIN') return null;
+  if (!isAuthenticated || user?.role !== 'ADMIN' || user?.tenantId) return null;
 
   const navigation = [
     { name: t.dashboard, href: '/admin', icon: LayoutDashboard },
+    { name: 'Institutions', href: '/admin/institutions', icon: Building2 },
     { name: t.documentManagement, href: '/admin/documents', icon: FileText },
     { name: t.userManagement, href: '/admin/users', icon: Users },
     { name: t.questionAnalytics, href: '/admin/questions', icon: BarChart2 },
@@ -86,7 +89,7 @@ export default function AdminLayout() {
             </div>
             <div className="flex flex-col">
               <span className="tracking-tight uppercase leading-none whitespace-nowrap app-logo">
-                <span className="kiadp-text">KIADP</span> <span className="ai-highlight">AI</span>
+                <span className="kiadp-text">Edu</span><span className="ai-highlight">AI</span>
               </span>
               <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mt-1">{t.adminPanel}</span>
             </div>

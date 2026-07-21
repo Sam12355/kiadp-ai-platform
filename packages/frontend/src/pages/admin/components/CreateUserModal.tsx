@@ -17,7 +17,7 @@ export default function CreateUserModal({ onClose, onSuccess }: CreateUserModalP
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('CLIENT');
+  const [role, setRole] = useState('STUDENT');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -112,7 +112,7 @@ export default function CreateUserModal({ onClose, onSuccess }: CreateUserModalP
                     className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 ltr:pl-14 rtl:pr-14 ltr:pr-6 rtl:pl-6 text-sm text-white focus:border-emerald-500/40 focus:outline-none transition-all placeholder:text-gray-700 font-medium"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="user@khalifa.ai"
+                    placeholder="user@school.edu"
                   />
                 </div>
               </div>
@@ -121,7 +121,7 @@ export default function CreateUserModal({ onClose, onSuccess }: CreateUserModalP
                 <label className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-500 ml-1">{t.systemRole}</label>
                 <SearchableSelect
                   options={[
-                    { value: 'CLIENT', label: t.standardUser },
+                    { value: 'STUDENT', label: t.standardUser },
                     { value: 'ADMIN', label: t.platformAdministrator }
                   ]}
                   value={role}
