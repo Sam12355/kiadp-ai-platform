@@ -63,6 +63,9 @@ export async function search(req: Request, res: Response, next: NextFunction): P
 const voiceAskSchema = z.object({
   query: z.string().min(1, 'Query must be provided'),
   language: z.string().optional(),
+  // The caller's untouched words. Voice mode's tool call rewrites the request into
+  // keywords, which loses phrasing like "read it as it is"; this preserves that intent.
+  userRequest: z.string().optional(),
 });
 
 export async function voiceAskHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -71,9 +74,9 @@ export async function voiceAskHandler(req: Request, res: Response, next: NextFun
     if (!parseResult.success) {
       throw new ValidationError('Validation failed', parseResult.error.flatten().fieldErrors);
     }
-    const { query, language } = parseResult.data;
+    const { query, language, userRequest } = parseResult.data;
     const tenantId = await getUserTenantId(req.user!.userId);
-    const result = await voiceAsk(query, language, tenantId);
+    const result = await voiceAsk(query, language, tenantId, undefined, userRequest);
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);

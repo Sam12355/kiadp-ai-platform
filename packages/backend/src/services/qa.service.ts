@@ -899,6 +899,8 @@ export async function voiceAsk(
   language: string = 'en',
   tenantId?: string,
   courseId?: string,
+  /** The caller's untouched words, when the query above has been rewritten. */
+  userRequest?: string,
 ): Promise<{ answerText: string; images: { id: string; url: string; description: string; pageNumber: number; width?: number | null; height?: number | null }[] }> {
   const openai = getOpenAI();
   const env = getEnv();
@@ -1175,7 +1177,9 @@ export async function voiceAsk(
   // spoken answer is reformatted and cited while the typed one is reproduced exactly.
   // The Live session is instructed to read this result out word for word, so whatever is
   // returned here is what the student hears.
-  const isVerbatim = wantsVerbatim(queryText);
+  // Check the caller's original words as well as the (possibly keyword-ised) query:
+  // voice mode's tool call strips phrasing like "as it is" before it ever reaches here.
+  const isVerbatim = wantsVerbatim(queryText) || wantsVerbatim(userRequest ?? '');
   const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
   let answerText: string;

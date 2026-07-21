@@ -465,6 +465,7 @@ Instructions:
                       setStatusAndNotify('thinking');
                       const res = await apiClient.post('/knowledge/voice-ask', {
                         query: lastUserQueryRef.current,
+                        userRequest: lastUserQueryRef.current,
                         language: language || 'en',
                       }, { timeout: 20000 });
                       const data = res.data?.data || {};
@@ -526,6 +527,10 @@ Instructions:
                           // Same images as normal chat, with a synthesized answer for Gemini to read aloud
                           const res = await apiClient.post('/knowledge/voice-ask', {
                             query,
+                            // The Live model rewrites the request into keywords before calling
+                            // this tool, which drops phrasing like "read it as it is". Send the
+                            // raw transcript too so the backend can still detect that intent.
+                            userRequest: lastUserQueryRef.current,
                             language: language || 'en',
                           }, { timeout: 20000 });
                           const data = res.data?.data || {};
