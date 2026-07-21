@@ -701,7 +701,16 @@ export default function KnowledgeAssistant() {
                    {promptSuggestions.length > 0 && (
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
                        {promptSuggestions.map((p, i) => (
-                         <button key={i} onClick={() => setQuery(p)} className="text-start p-4 rounded-xl bg-raised border border-line hover:border-green-500/30 hover:text-ink text-ink-soft text-[13px] transition-all">{p}</button>
+                         <button
+                           key={i}
+                           onClick={() => setQuery(p)}
+                           className="group glass text-start p-4 rounded-2xl hover:border-accent/40 transition-all flex items-start gap-2.5"
+                         >
+                           <svg className="w-4 h-4 mt-0.5 flex-none text-ink-faint group-hover:text-accent transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                             <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" />
+                           </svg>
+                           <span className="text-ink-soft group-hover:text-ink text-[13px] leading-snug transition-colors">{p}</span>
+                         </button>
                        ))}
                      </div>
                    )}

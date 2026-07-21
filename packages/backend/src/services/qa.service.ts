@@ -193,7 +193,9 @@ async function groqChatComplete(
   return null;
 }
 
-async function chatComplete(
+// Exported so other routes can reuse the provider fallback chain rather than each
+// reaching for a single provider and failing differently when it is rate-limited.
+export async function chatComplete(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   opts: { model?: string; temperature?: number; max_tokens?: number; skipGemini?: boolean; preferGemini?: boolean } = {},
 ): Promise<string> {

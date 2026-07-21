@@ -9,6 +9,7 @@ import { UserRole } from '@prisma/client';
 import { getBoss } from '../queue/boss.js';
 import { JOB_QUEUES } from '../queue/jobs.js';
 import { getLogger } from '../utils/logger.js';
+import { chatComplete } from '../services/qa.service.js';
 
 const router: Router = Router();
 const logger = getLogger();
@@ -122,68 +123,113 @@ router.get('/', authenticate, resolveTenantContext, async (req: Request, res: Re
   }
 });
 
+/**
+ * Prompt suggestions for the student home screen.
+ *
+ * These used to be the first sentence of a random chunk, which produced things like
+ * "[Visual Evidence from Page 1]: Roshan Rajapakse 1 https://youtube.com/..." — a caption
+ * for an image, a name and a URL, offered as something to ask. Two faults: the query never
+ * excluded the visual-evidence pseudo-chunks, and more fundamentally a fragment of a
+ * document is not a prompt. A suggestion has to be a QUESTION, or clicking it sends
+ * nonsense to the assistant.
+ *
+ * So the sample is cleaned, then one cheap model call turns it into questions the material
+ * can actually answer. Cached per institution: the documents change rarely, students load
+ * this screen constantly, and a model call per page load would be absurd.
+ */
+const suggestionCache = new Map<string, { at: number; items: string[] }>();
+const SUGGESTION_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Chunk text that is furniture rather than prose, and makes a poor basis for a question. */
+function isUsableForPrompt(text: string): boolean {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length < 60) return false;
+  if (/^\[Visual Evidence/i.test(t)) return false;          // image captions
+  if (/https?:\/\/|www\./i.test(t)) return false;             // link dumps
+  // Mostly capitals is a title slide or a header, not a sentence.
+  const letters = t.replace(/[^A-Za-z]/g, '');
+  if (letters.length > 20 && letters.replace(/[^A-Z]/g, '').length / letters.length > 0.6) return false;
+  return true;
+}
+
 router.get('/suggestions', authenticate, resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const prisma = getPrisma();
-    // Same rule as the document list above — suggestions quote real chunks, so an
-    // unscoped list would surface one school's material on another school's home page.
+    // Same rule as the document list above — suggestions are drawn from real material, so
+    // an unscoped sample would surface one school's content on another school's home page.
     const tenantId = req.callerTenantId ?? (req.isSuperAdmin ? (req.query.tenantId as string | undefined) ?? null : null);
 
-    // Count available chunks so we can random-sample
-    const total = await prisma.documentChunk.count({
-      where: {
-        content: { not: '' },
-        document: {
-          mimeType: { not: 'text/html' },
-          status: 'COMPLETED',
-          ...(tenantId ? { tenantId } : {}),
-        },
-      },
-    });
+    const cacheKey = tenantId ?? '__platform__';
+    const cached = suggestionCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < SUGGESTION_TTL_MS) {
+      return res.json({ success: true, data: cached.items });
+    }
 
+    const where = {
+      content: { not: '' },
+      // Visual pseudo-chunks sit at chunkIndex >= 999 (page images) or below zero (images
+      // inside text entries). Both describe a picture; neither is prose to ask about.
+      chunkIndex: { gte: 0, lt: 999 },
+      document: {
+        mimeType: { not: 'text/html' },
+        status: 'COMPLETED' as const,
+        ...(tenantId ? { tenantId } : {}),
+      },
+    };
+
+    const total = await prisma.documentChunk.count({ where });
     if (total === 0) {
       return res.json({ success: true, data: [] });
     }
 
-    // Pick up to 12 random offsets, fetch those chunks, return the trimmed content
-    const COUNT = Math.min(12, total);
-    const offsets = Array.from({ length: COUNT }, () => Math.floor(Math.random() * total));
-    const chunks = await Promise.all(
-      offsets.map(skip =>
-        prisma.documentChunk.findFirst({
-          where: {
-            content: { not: '' },
-            document: {
-              mimeType: { not: 'text/html' },
-              status: 'COMPLETED',
-              ...(tenantId ? { tenantId } : {}),
-            },
-          },
-          select: { content: true },
-          skip,
-        })
-      )
+    const SAMPLE = Math.min(10, total);
+    const offsets = [...new Set(Array.from({ length: SAMPLE }, () => Math.floor(Math.random() * total)))];
+    const rows = await Promise.all(
+      offsets.map(skip => prisma.documentChunk.findFirst({ where, select: { content: true }, skip })),
     );
 
-    // Take first sentence of each chunk, deduplicate, trim to 120 chars
-    const seen = new Set<string>();
-    const suggestions: string[] = [];
-    for (const chunk of chunks) {
-      if (!chunk?.content) continue;
-      const sentence = chunk.content.replace(/\s+/g, ' ').split(/(?<=[.?!])\s+/)[0].trim();
-      if (sentence.length < 20 || sentence.length > 200) continue;
-      const key = sentence.slice(0, 60).toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      suggestions.push(sentence.length > 120 ? sentence.slice(0, 117) + '…' : sentence);
-      if (suggestions.length >= 8) break;
+    const material = rows
+      .map(r => r?.content ?? '')
+      .filter(isUsableForPrompt)
+      .map(t => t.replace(/\s+/g, ' ').trim().slice(0, 400))
+      .join('\n---\n');
+
+    if (!material) {
+      return res.json({ success: true, data: [] });
     }
 
-    res.json({ success: true, data: suggestions });
+    let items: string[] = [];
+    try {
+      const reply = await chatComplete([
+        {
+          role: 'system',
+          content:
+            'You write example questions a student might ask about their course material. ' +
+            'Given excerpts, return 4 short questions ANSWERABLE FROM THOSE EXCERPTS. ' +
+            'One per line, no numbering, no quotes, no preamble. Each under 12 words. ' +
+            'Ask about the subject matter, never about the document itself — not "what does page 3 say".',
+        },
+        { role: 'user', content: material },
+      ], { temperature: 0.4 });
+
+      items = String(reply ?? '')
+        .split('\n')
+        .map(l => l.replace(/^\s*(?:[-*\d.)]+\s*)?/, '').replace(/^["'“]|["'”]$/g, '').trim())
+        .filter(l => l.length >= 12 && l.length <= 110 && l.includes(' '))
+        .slice(0, 4);
+    } catch (err) {
+      getLogger().warn({ err: (err as Error)?.message }, 'suggestions: generation failed');
+    }
+
+    // No cards beats bad cards. An empty home screen reads as "nothing yet"; a card of
+    // scraped header text reads as a broken product.
+    suggestionCache.set(cacheKey, { at: Date.now(), items });
+    res.json({ success: true, data: items });
   } catch (err) {
     next(err);
   }
 });
+
 
 /**
  * @openapi

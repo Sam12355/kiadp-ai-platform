@@ -115,15 +115,15 @@ export default function SchoolLayout() {
         ${lang === 'ar' ? 'border-l' : 'border-r'}
         ${isSidebarOpen ? 'translate-x-0' : (lang === 'ar' ? 'translate-x-full' : '-translate-x-full')}
       `}>
-        <div className="h-24 flex items-center justify-between px-8">
+        <div className="min-h-[7rem] py-4 flex items-center justify-between px-6">
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative group flex-none">
               {tenant?.logoUrl ? (
                 <img src={tenant.logoUrl} alt={tenant.name}
-                  className="w-12 h-12 rounded-2xl object-cover shadow-2xl group-hover:scale-105 transition-transform border border-line" />
+                  className="w-20 h-20 rounded-2xl object-contain bg-raised p-1 shadow-lg group-hover:scale-105 transition-transform border border-line" />
               ) : (
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-400 to-blue-800 flex items-center justify-center shadow-2xl group-hover:scale-105 transition-transform">
-                  <span className="text-white font-black text-xl">{tenant?.name?.charAt(0).toUpperCase() ?? 'S'}</span>
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-400 to-blue-800 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                  <span className="text-white font-black text-3xl">{tenant?.name?.charAt(0).toUpperCase() ?? 'S'}</span>
                 </div>
               )}
               <div className="absolute -inset-1 bg-blue-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
