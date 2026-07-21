@@ -21,12 +21,3 @@ export function isTrialExpired(
   if (!user?.tenantPlan || user.tenantPlan !== 'trial' || !user.tenantTrialEndsAt) return false;
   return new Date(user.tenantTrialEndsAt).getTime() <= Date.now();
 }
-
-/** Whole days left in the trial, floored at 0. Null when no trial is running. */
-export function trialDaysLeft(
-  user: Pick<UserProfile, 'tenantPlan' | 'tenantTrialEndsAt'> | null | undefined,
-): number | null {
-  if (!user?.tenantPlan || user.tenantPlan !== 'trial' || !user.tenantTrialEndsAt) return null;
-  const ms = new Date(user.tenantTrialEndsAt).getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
-}

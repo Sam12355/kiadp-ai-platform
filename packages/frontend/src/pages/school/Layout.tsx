@@ -74,7 +74,6 @@ export default function SchoolLayout() {
   return (
     <div className="flex h-screen bg-transparent text-ink relative overflow-hidden font-body">
       <BubblesBackground />
-      <TrialBanner subject={tenant ? { plan: tenant.plan, trialEndsAt: tenant.trialEndsAt } : undefined} />
 
       {/* Mobile Top Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-raised/80 backdrop-blur-3xl border-b border-line px-6 flex items-center justify-between z-40">
@@ -162,6 +161,7 @@ export default function SchoolLayout() {
         </nav>
 
         <div className="p-6 border-t border-line-soft lg:bg-transparent space-y-4">
+          <TrialBanner subject={tenant ? { plan: tenant.plan, trialEndsAt: tenant.trialEndsAt } : undefined} />
           <div className="flex items-center gap-3 px-3 py-3 bg-raised rounded-[1.5rem] border border-line-soft">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 text-white font-black shadow-lg overflow-hidden border border-line">
               {user?.avatarUrl ? (

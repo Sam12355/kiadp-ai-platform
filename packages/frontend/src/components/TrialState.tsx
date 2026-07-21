@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import apiClient from '../api/client';
 import { isTrialExpired } from '../lib/homeRoute';
 
 /**
@@ -109,39 +110,41 @@ export function TrialBanner({ subject }: { subject?: { plan?: string | null; tri
 
   const remaining = endsAt ? new Date(endsAt).getTime() - now : 0;
   const active = plan === 'trial' && !!endsAt && remaining > 0;
+  const urgent = remaining < 3600_000;
 
   useEffect(() => {
     if (!active) return;
-    const everySecond = remaining < 3600_000;
-    const id = window.setInterval(() => setNow(Date.now()), everySecond ? 1000 : 60_000);
+    // Tick at the granularity on screen: once a minute while days show, once a second in
+    // the final hour. Re-rendering every second for six days would be half a million
+    // renders to animate a digit that has not moved.
+    const id = window.setInterval(() => setNow(Date.now()), urgent ? 1000 : 60_000);
     return () => window.clearInterval(id);
-    // Re-armed when crossing the one-hour mark, so the cadence tightens on its own.
-  }, [active, remaining < 3600_000]);
+  }, [active, urgent]);
 
   if (!active) return null;
 
-  // Neutral for most of the trial; the colour only escalates when it is nearly out, so
-  // urgency still means something when it arrives.
   const hours = remaining / 3600_000;
+  // Neutral for most of the trial. Urgency that is always on stops being urgency.
   const tone =
     hours <= 24
-      ? 'bg-red-500/15 border-red-500/25 text-red-800 dark:text-red-300'
+      ? 'bg-red-500/10 border-red-500/25 text-red-700 dark:text-red-400'
       : hours <= 72
-        ? 'bg-amber-500/15 border-amber-500/25 text-amber-800 dark:text-amber-300'
+        ? 'bg-amber-500/10 border-amber-500/25 text-amber-700 dark:text-amber-400'
         : 'bg-overlay border-line text-ink-soft';
 
   return (
-    <div className={`flex items-center justify-center gap-2 px-4 py-1.5 border-b text-[11px] font-semibold ${tone}`}>
-      <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <Link
+      to="/school/profile"
+      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl border transition-colors hover:brightness-95 ${tone}`}
+    >
+      <svg className="w-4 h-4 flex-shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
       </svg>
-      <span>
-        Free trial — <strong className="tabular-nums">{formatCountdown(remaining)}</strong> left
+      <span className="flex flex-col leading-tight min-w-0">
+        <span className="text-[9px] font-black uppercase tracking-widest opacity-70">Free trial</span>
+        <span className="text-[13px] font-bold tabular-nums truncate">{formatCountdown(remaining)} left</span>
       </span>
-      <Link to="/school/profile" className="underline underline-offset-2 hover:no-underline">
-        Keep your account
-      </Link>
-    </div>
+    </Link>
   );
 }
 
@@ -159,16 +162,18 @@ export function TrialBanner({ subject }: { subject?: { plan?: string | null; tri
  */
 export function useTrialLock(subject?: { plan?: string | null; trialEndsAt?: string | null } | null): boolean {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const trialLocked = useAuthStore((s) => s.trialLocked);
   const setTrialLocked = useAuthStore((s) => s.setTrialLocked);
 
-  // `subject` is the institution actually on screen. It differs from the signed-in user
-  // only during "view as", where the platform owner has no trial of their own — without
-  // it the preview would show a working panel for an institution whose staff are locked
-  // out, which is precisely the thing the preview exists to reveal.
+  // `subject` is the institution actually on screen — the impersonated one under "view as",
+  // where the signed-in platform owner has no trial of their own.
   const endsAt = subject ? subject.trialEndsAt ?? null : user?.tenantTrialEndsAt ?? null;
   const isTrial = (subject ? subject.plan : user?.tenantPlan) === 'trial';
+  const expiredByData = isTrial && !!endsAt && new Date(endsAt).getTime() <= Date.now();
 
+  // Arm a timer for the exact expiry instant, so an idle tab locks the moment it lapses
+  // rather than at the next request.
   useEffect(() => {
     if (!isTrial || !endsAt) return;
     const ms = new Date(endsAt).getTime() - Date.now();
@@ -176,12 +181,45 @@ export function useTrialLock(subject?: { plan?: string | null; trialEndsAt?: str
       setTrialLocked(true);
       return;
     }
-    // setTimeout saturates above ~24.8 days; anything beyond that is re-armed on the next
-    // mount long before it matters.
+    // setTimeout saturates above ~24.8 days; longer trials re-arm on the next mount.
     const id = window.setTimeout(() => setTrialLocked(true), Math.min(ms, 2_000_000_000));
     return () => window.clearTimeout(id);
   }, [isTrial, endsAt, setTrialLocked]);
 
-  if (subject) return trialLocked || (isTrial && !!endsAt && new Date(endsAt).getTime() <= Date.now());
-  return trialLocked || isTrialExpired(user);
+  // Release the lock when fresh server data says the institution is live again.
+  //
+  // `trialLocked` was a one-way latch: once a 402 set it, only signing out cleared it, so
+  // extending a trial left the customer staring at the expired screen until they logged
+  // out and back in. `subject` comes from a react-query fetch, which refetches on window
+  // focus — so an extension is picked up as soon as the tab is looked at.
+  useEffect(() => {
+    if (trialLocked && subject && !expiredByData) setTrialLocked(false);
+  }, [trialLocked, subject, expiredByData, setTrialLocked]);
+
+  // Where there is no `subject` — the student surface reads the trial off its own auth
+  // profile, which was captured at sign-in and cannot notice an extension on its own —
+  // re-read the profile while locked. Only while locked, so it costs nothing normally.
+  useEffect(() => {
+    if (!trialLocked || subject) return;
+    let cancelled = false;
+    const revalidate = async () => {
+      try {
+        const { data } = await apiClient.get('/auth/me');
+        if (cancelled) return;
+        setUser(data.data);
+        const ends = data.data?.tenantTrialEndsAt;
+        const stillExpired =
+          data.data?.tenantPlan === 'trial' && !!ends && new Date(ends).getTime() <= Date.now();
+        if (!stillExpired) setTrialLocked(false);
+      } catch {
+        /* Offline or refused: stay locked. Failing open on a billing check is the wrong
+           direction to guess in. */
+      }
+    };
+    void revalidate();
+    const id = window.setInterval(revalidate, 30_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [trialLocked, subject, setUser, setTrialLocked]);
+
+  return trialLocked || expiredByData;
 }
