@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { homeRouteFor } from '../lib/homeRoute';
 import apiClient from '../api/client';
 import type { LoginResponse } from '@khalifa/shared';
 import { useLanguageStore } from '../store/languageStore';
@@ -23,7 +24,7 @@ export default function Login() {
   useEffect(() => {
     if (isAuthenticated && user) {
       if (user.role === 'ADMIN') {
-        navigate(user.tenantId ? '/school' : '/admin', { replace: true });
+        navigate(homeRouteFor(user), { replace: true });
       } else {
         navigate('/knowledge', { replace: true });
       }
@@ -57,7 +58,7 @@ export default function Login() {
       setAuth(user, tokens);
 
       if (user.role === 'ADMIN') {
-        navigate(user.tenantId ? '/school' : '/admin');
+        navigate(homeRouteFor(user));
       } else {
         navigate('/knowledge');
       }

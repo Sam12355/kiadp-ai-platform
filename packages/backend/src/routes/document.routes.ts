@@ -3,7 +3,7 @@ import { getPrisma } from '../config/database.js';
 import { uploadPDF } from '../middleware/upload.js';
 import { uploadToCloudinary } from '../services/storage.service.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { resolveTenantContext } from '../middleware/rbac.js';
+import { resolveTenantContext, requireLiveTenant } from '../middleware/rbac.js';
 import { NotFoundError, BadRequestError } from '../utils/errors.js';
 import { UserRole } from '@prisma/client';
 import { getBoss } from '../queue/boss.js';
@@ -217,6 +217,7 @@ router.post(
   authenticate,
   requireRole(UserRole.ADMIN as any),
   resolveTenantContext,
+  requireLiveTenant,
   uploadPDF.single('file'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

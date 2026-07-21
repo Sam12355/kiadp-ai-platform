@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { getPrisma } from '../config/database.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { resolveTenantContext, tenantScope, requireSuperAdmin } from '../middleware/rbac.js';
+import { resolveTenantContext, tenantScope, requireSuperAdmin, requireLiveTenant } from '../middleware/rbac.js';
 import { UserRole, Prisma } from '@prisma/client';
 import { processTextContent } from '../services/ingestion.service.js';
 import { BadRequestError, NotFoundError } from '../utils/errors.js';
@@ -277,7 +277,7 @@ router.post('/bootstrap', async (req: Request, res: Response, next: NextFunction
  *     summary: Create a new user (Admin only)
  *     tags: [Admin]
  */
-router.post('/users', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/users', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireLiveTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { fullName, email, password, role, tenantId: bodyTenantId } = req.body;
     const prisma = getPrisma();

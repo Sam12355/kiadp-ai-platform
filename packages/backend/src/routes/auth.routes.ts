@@ -16,6 +16,19 @@ router.post('/register', authLimiter, authController.register);
 
 /**
  * @openapi
+ * /auth/trial-signup:
+ *   post:
+ *     summary: Start a 7-day institution trial (public, no card required)
+ *     tags: [Auth]
+ */
+// Behind authLimiter with the other credential endpoints. This one creates a tenant AND a
+// user for an anonymous caller, so it is the most abusable route in the app: every signup
+// is an institution that can spend LLM budget. The rate limit is the first line of
+// defence; the trial lockout is the second.
+router.post('/trial-signup', authLimiter, authController.startTrial);
+
+/**
+ * @openapi
  * /auth/login:
  *   post:
  *     summary: Login user

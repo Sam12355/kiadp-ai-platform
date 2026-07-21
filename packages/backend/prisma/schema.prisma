@@ -52,6 +52,11 @@ model Tenant {
   slug      String   @unique
   logoUrl   String?  @map("logo_url")
   isActive  Boolean  @default(true) @map("is_active")
+  /// 'trial' until someone pays; 'paid' is never time-limited. Institutions created by a
+  /// platform admin default to 'paid' — only self-serve signups start a clock.
+  plan      String   @default("paid")
+  /// When the free trial lapses. Null means there is no trial to lapse.
+  trialEndsAt DateTime? @map("trial_ends_at")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

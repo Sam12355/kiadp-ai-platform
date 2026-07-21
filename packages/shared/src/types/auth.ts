@@ -19,6 +19,10 @@ export interface UserProfile {
   tenantId?: string | null;
   tenantName?: string | null;
   tenantLogoUrl?: string | null;
+  /// 'trial' until someone pays. Absent for users with no institution.
+  tenantPlan?: string | null;
+  /// ISO date the free trial lapses; null when there is no trial running.
+  tenantTrialEndsAt?: string | null;
 }
 
 export interface LoginRequest {

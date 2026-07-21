@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { ForbiddenError, UnauthorizedError } from '../utils/errors.js';
+import { ForbiddenError, UnauthorizedError, PaymentRequiredError } from '../utils/errors.js';
 import type { UserRole } from '@khalifa/shared';
 import { getPrisma } from '../config/database.js';
 import { getLogger } from '../utils/logger.js';
+import { isTrialExpired } from '../services/auth.service.js';
 
 // ── Tenant scoping ──
 //
@@ -172,4 +173,44 @@ export function requireSuperAdmin(req: Request, _res: Response, next: NextFuncti
  */
 export function tenantScope(req: Request): { tenantId?: string } {
   return req.isSuperAdmin ? {} : { tenantId: req.callerTenantId ?? undefined };
+}
+
+/**
+ * Blocks an institution whose free trial has run out.
+ *
+ * Mounted on the endpoints that cost money or grow the account — asking questions,
+ * uploading documents, adding users — and deliberately NOT on the reads the expired
+ * screen itself needs. Locking those too would leave the app unable to explain why it
+ * had locked.
+ *
+ * Answers 402 Payment Required. It is the one status that says "your access is a billing
+ * matter", which lets the client tell an expired trial apart from a permissions problem
+ * without parsing the message.
+ *
+ * Must run AFTER resolveTenantContext. Reads the tenant fresh rather than trusting the
+ * JWT: the token is issued for days, so a trial that lapses mid-session would otherwise
+ * keep working until the user happened to log out.
+ */
+export async function requireLiveTenant(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  // No tenant means the platform owner, who has no trial to expire.
+  if (!req.callerTenantId) {
+    next();
+    return;
+  }
+
+  try {
+    const tenant = await getPrisma().tenant.findUnique({
+      where: { id: req.callerTenantId },
+      select: { plan: true, trialEndsAt: true },
+    });
+
+    if (isTrialExpired(tenant)) {
+      next(new PaymentRequiredError('Your free trial has ended. Contact us to continue using the platform.'));
+      return;
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
 }

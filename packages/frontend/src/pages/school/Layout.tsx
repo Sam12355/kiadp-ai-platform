@@ -9,6 +9,8 @@ import { useLanguageStore } from '../../store/languageStore';
 import { translations } from '../../i18n/translations';
 import ThemeToggle from '../../components/ThemeToggle';
 import { useImpersonationStore } from '../../store/impersonationStore';
+import { TrialExpiredScreen, TrialBanner } from '../../components/TrialState';
+import { isTrialExpired } from '../../lib/homeRoute';
 
 interface TenantInfo {
   id: string;
@@ -50,6 +52,10 @@ export default function SchoolLayout() {
 
   if (!isAuthenticated || user?.role !== 'ADMIN' || !activeTenantId) return null;
 
+  // The backend already refuses the work; this is the same decision made visible, so the
+  // panel explains itself instead of failing request by request.
+  if (isTrialExpired(user)) return <TrialExpiredScreen />;
+
   const navigation = [
     { name: t.dashboard, href: '/school', icon: LayoutDashboard },
     { name: t.documentManagement, href: '/school/documents', icon: FileText },
@@ -62,6 +68,7 @@ export default function SchoolLayout() {
   return (
     <div className="flex h-screen bg-transparent text-ink relative overflow-hidden font-body">
       <BubblesBackground />
+      <TrialBanner />
 
       {/* Mobile Top Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-raised/80 backdrop-blur-3xl border-b border-line px-6 flex items-center justify-between z-40">

@@ -1,5 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
+import Landing from './pages/Landing';
+import TrialSignup from './pages/TrialSignup';
+import { Navigate as RouterNavigate } from 'react-router-dom';
+import { useAuthStore } from './store/authStore';
+import { homeRouteFor } from './lib/homeRoute';
 import NotFound from './pages/NotFound';
 
 import AdminLayout from './pages/admin/Layout';
@@ -24,6 +29,17 @@ import ClientLayout from './pages/client/Layout';
 import ClientKnowledge from './pages/client/KnowledgeAssistant';
 import ClientSettings from './pages/client/ClientSettings';
 import Settings from './pages/Settings';
+
+/**
+ * The root path serves two audiences. A visitor gets the landing page; someone already
+ * signed in gets their own dashboard, because being bounced to a marketing page you have
+ * already bought is a small insult.
+ */
+function Home() {
+  const { user, isAuthenticated } = useAuthStore();
+  if (isAuthenticated && user) return <RouterNavigate to={homeRouteFor(user)} replace />;
+  return <Landing />;
+}
 
 export default function App() {
   return (
@@ -62,8 +78,10 @@ export default function App() {
         <Route path="settings" element={<ClientSettings />} />
       </Route>
 
-      {/* Default redirect */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      {/* Public marketing entry. Signed-in visitors never see it — they are sent to
+          whichever dashboard their role belongs to. */}
+      <Route path="/" element={<Home />} />
+      <Route path="/signup" element={<TrialSignup />} />
 
       {/* 404 */}
       <Route path="*" element={<NotFound />} />

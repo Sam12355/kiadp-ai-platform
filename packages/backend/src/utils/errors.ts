@@ -49,6 +49,19 @@ export class ConflictError extends AppError {
   }
 }
 
+/**
+ * The caller is who they say they are and would be allowed — but their institution's
+ * access has lapsed. Distinct from 403 so the client can show "your trial ended" rather
+ * than "you are not permitted", which are different problems with different fixes.
+ */
+export class PaymentRequiredError extends AppError {
+  constructor(message = 'Payment required') {
+    // Explicit code so the client keys off a constant rather than the prose, which is
+    // user-facing copy and will change.
+    super(message, 402, 'TRIAL_EXPIRED');
+  }
+}
+
 export class ValidationError extends AppError {
   public readonly details: Record<string, unknown>;
 

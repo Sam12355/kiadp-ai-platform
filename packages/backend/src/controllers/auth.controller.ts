@@ -1,7 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
-import { registerSchema, loginSchema, refreshSchema } from '../validators/auth.validator.js';
+import { registerSchema, loginSchema, refreshSchema, trialSignupSchema } from '../validators/auth.validator.js';
 import { ValidationError } from '../utils/errors.js';
 import * as authService from '../services/auth.service.js';
+
+export async function startTrial(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = trialSignupSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError('Validation failed', parsed.error.flatten().fieldErrors);
+    }
+    const result = await authService.startTrial(parsed.data);
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
