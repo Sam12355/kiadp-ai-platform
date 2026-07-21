@@ -164,16 +164,17 @@ html {
      cost no request, stay sharp at any zoom, and can be retuned per theme by one value.
      Held at ~13% alpha: it should register as texture when you look for it and disappear
      when you are reading. */
-  --t-grid: rgba(176, 133, 47, 0.13);
+  --t-grid: rgba(176, 133, 47, 0.075);
   --t-page-backdrop:
-    repeating-linear-gradient(to right, var(--t-grid) 0 1px, transparent 1px 112px),
-    repeating-linear-gradient(to bottom, var(--t-grid) 0 1px, transparent 1px 112px),
+    repeating-linear-gradient(to right, var(--t-grid) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(to bottom, var(--t-grid) 0 1px, transparent 1px 56px),
     var(--t-surface);
   /* Cards are SOLID in light. Translucency over a near-white page buys nothing and costs
      text contrast, so the blur is switched off rather than merely re-coloured. */
   --t-glass: #ffffff;
   --t-glass-border: #dce3ec;
   --t-glass-blur: none;
+  --t-sidebar: transparent;
   /* Elevation is the light theme's job of work — two layers: a tight contact shadow and a
      wider ambient one. */
   --t-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 8px rgba(16, 24, 40, 0.05);
@@ -206,17 +207,18 @@ html {
   --t-line-strong: #3a3b3e;
   --t-accent: #22c55e;
   --t-accent-soft: #4ade80;
-  /* Same grid, warmer and fainter: gold carries further on black, so it needs less. */
-  --t-grid: rgba(214, 169, 76, 0.085);
+  /* No grid in dark — the radial wash is texture enough there. */
+  --t-grid: transparent;
   --t-page-backdrop:
-    repeating-linear-gradient(to right, var(--t-grid) 0 1px, transparent 1px 112px),
-    repeating-linear-gradient(to bottom, var(--t-grid) 0 1px, transparent 1px 112px),
+    repeating-linear-gradient(to right, var(--t-grid) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(to bottom, var(--t-grid) 0 1px, transparent 1px 56px),
     radial-gradient(ellipse at 25% 35%, rgba(34, 197, 94, 0.07), transparent 55%),
     radial-gradient(ellipse at 75% 65%, rgba(21, 128, 61, 0.05), transparent 55%),
     #0a0b0d;
   --t-glass: rgba(17, 18, 20, 0.75);
   --t-glass-border: rgba(255, 255, 255, 0.06);
   --t-glass-blur: blur(16px);
+  --t-sidebar: rgba(17, 18, 20, 0.75);
   --t-shadow: none;
   --t-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
   --t-select-bg: rgba(34, 197, 94, 0.12);
@@ -411,7 +413,7 @@ a:disabled,
 
 .sidebar-container {
   transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-  background: var(--t-glass);
+  background: var(--t-sidebar);
   backdrop-filter: var(--t-glass-blur);
   border-inline-end: 1px solid var(--t-glass-border);
 }
