@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { isTrialExpired, trialDaysLeft } from '../lib/homeRoute';
+import { isTrialExpired } from '../lib/homeRoute';
 
 /**
  * Where an expired institution should write to. Set this to your real address.
@@ -49,7 +49,16 @@ export function TrialExpiredScreen() {
           </a>
         ) : (
           <p className="w-full py-3 rounded-xl bg-overlay border border-line text-sm font-semibold text-ink-soft">
-            Contact your platform administrator to continue
+            Contact{' '}
+            <a
+              href="https://www.vybecreativemedia.lk"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-accent underline underline-offset-2 hover:no-underline"
+            >
+              www.vybecreativemedia.lk
+            </a>{' '}
+            administrator to continue
           </p>
         )}
 
@@ -70,14 +79,65 @@ export function TrialExpiredScreen() {
  * Silent until the last three days. A banner that shows from day one is furniture by day
  * two, and the point is for the deadline to land while there is still time to act on it.
  */
-export function TrialBanner() {
+/** Largest two units that still carry information: 6d 4h, then 4h 12m, then 12m 30s. */
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${sec}s`;
+}
+
+/**
+ * Live countdown, shown for the whole trial rather than only its last days.
+ *
+ * The tick interval follows the granularity on screen: once a minute while days are
+ * showing, once a second in the final hour. A per-second re-render for six days would be
+ * half a million renders to animate a number that has not changed.
+ *
+ * `subject` is the institution being shown, so the strip is right during "view as" — the
+ * platform owner previewing a school has no trial of their own.
+ */
+export function TrialBanner({ subject }: { subject?: { plan?: string | null; trialEndsAt?: string | null } | null }) {
   const user = useAuthStore((s) => s.user);
-  const days = trialDaysLeft(user);
-  if (days === null || days > 3 || isTrialExpired(user)) return null;
+  const plan = subject ? subject.plan : user?.tenantPlan;
+  const endsAt = subject ? subject.trialEndsAt : user?.tenantTrialEndsAt;
+  const [now, setNow] = useState(() => Date.now());
+
+  const remaining = endsAt ? new Date(endsAt).getTime() - now : 0;
+  const active = plan === 'trial' && !!endsAt && remaining > 0;
+
+  useEffect(() => {
+    if (!active) return;
+    const everySecond = remaining < 3600_000;
+    const id = window.setInterval(() => setNow(Date.now()), everySecond ? 1000 : 60_000);
+    return () => window.clearInterval(id);
+    // Re-armed when crossing the one-hour mark, so the cadence tightens on its own.
+  }, [active, remaining < 3600_000]);
+
+  if (!active) return null;
+
+  // Neutral for most of the trial; the colour only escalates when it is nearly out, so
+  // urgency still means something when it arrives.
+  const hours = remaining / 3600_000;
+  const tone =
+    hours <= 24
+      ? 'bg-red-500/15 border-red-500/25 text-red-800 dark:text-red-300'
+      : hours <= 72
+        ? 'bg-amber-500/15 border-amber-500/25 text-amber-800 dark:text-amber-300'
+        : 'bg-overlay border-line text-ink-soft';
 
   return (
-    <div className="flex items-center justify-center gap-2 px-4 py-1.5 bg-amber-500/15 border-b border-amber-500/25 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-      {days === 0 ? 'Your free trial ends today.' : `${days} day${days === 1 ? '' : 's'} left in your free trial.`}
+    <div className={`flex items-center justify-center gap-2 px-4 py-1.5 border-b text-[11px] font-semibold ${tone}`}>
+      <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+      </svg>
+      <span>
+        Free trial — <strong className="tabular-nums">{formatCountdown(remaining)}</strong> left
+      </span>
       <Link to="/school/profile" className="underline underline-offset-2 hover:no-underline">
         Keep your account
       </Link>

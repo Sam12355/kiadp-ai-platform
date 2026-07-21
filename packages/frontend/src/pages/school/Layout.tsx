@@ -74,7 +74,7 @@ export default function SchoolLayout() {
   return (
     <div className="flex h-screen bg-transparent text-ink relative overflow-hidden font-body">
       <BubblesBackground />
-      <TrialBanner />
+      <TrialBanner subject={tenant ? { plan: tenant.plan, trialEndsAt: tenant.trialEndsAt } : undefined} />
 
       {/* Mobile Top Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-raised/80 backdrop-blur-3xl border-b border-line px-6 flex items-center justify-between z-40">
