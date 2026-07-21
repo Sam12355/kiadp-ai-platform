@@ -518,7 +518,80 @@ CONTENT RULES (Grounded Intelligence):
 4. VISUALS: When [Visual Evidence from Page X] entries appear in your context, those images are AUTOMATICALLY DISPLAYED to the user in the chat interface as actual photos/figures. DO NOT say "I cannot provide a photo" or "I cannot show an image" — the image IS already being shown. Instead write "Here is an image showing..." or "As shown in the figure above..." and briefly describe what it depicts, with the relevant [Source N] citation.
 5. ZERO OUTSIDE KNOWLEDGE: Do not add ANY facts, numbers, names, properties, or descriptions not present in the sources. If the sources don't mention it, you don't mention it.
 6. REFUSAL: If the context is entirely irrelevant, trigger the [UNGROUNDED] protocol.
+7. A NAME IS NOT AN EXPLANATION: A heading, slide title, or list item tells you a topic EXISTS; it does not tell you what the topic MEANS. If the sources only name something and the user asks what it means, say plainly that the documents list it as a topic but do not explain it — then offer what the documents DO say around it. Never fill the gap from your own knowledge, and never dress up a list of nearby topics as if it were a definition.
 `;
+
+/**
+ * Delete factual claims the model failed to cite.
+ *
+ * SYSTEM_PROMPT already says "if you cannot cite a fact, do not write that fact at all",
+ * and the model mostly obeys — but only mostly. Asked what "Software Engineering as an
+ * academic discipline" means, against a deck where that phrase is a bare bullet with no
+ * definition anywhere, it produced a fluent five-part definition: two parts invented
+ * outright and carrying no citation, three parts stitched from real list items and cited
+ * normally. A prompt rule the model can silently skip is not a safeguard, so the citation
+ * requirement is enforced here instead, where skipping it is not an option.
+ *
+ * Structure is preserved rather than reflowed: headers, blank lines and sub-bullets stay
+ * with their parent, so a partially-grounded answer still reads as prose rather than as
+ * shrapnel. Sub-bullets inherit their parent's fate — "- Requirements" under a cited
+ * parent is part of that cited claim, not a separate uncited one.
+ */
+function stripUncitedClaims(text: string): { text: string; dropped: string[] } {
+  const dropped: string[] = [];
+  const kept: string[] = [];
+  // Whether the last top-level line survived — sub-bullets follow their parent.
+  let parentKept = true;
+
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    const isStructural = trimmed === ''
+      || /^#{1,6}\s/.test(trimmed)          // ### Header
+      || /^([-*_])\1{2,}$/.test(trimmed);   // --- rule
+    if (isStructural) { kept.push(line); continue; }
+
+    const isNested = /^\s{2,}/.test(line);
+    if (isNested) {
+      if (parentKept) kept.push(line); else dropped.push(trimmed);
+      continue;
+    }
+
+    if (/\[Source \d+\]/.test(line)) { parentKept = true; kept.push(line); }
+    else { parentKept = false; dropped.push(trimmed); }
+  }
+
+  // A header whose entire body was dropped is left pointing at nothing — remove it, and
+  // collapse the blank runs that removing lines leaves behind.
+  const out: string[] = [];
+  for (let i = 0; i < kept.length; i++) {
+    const line = kept[i];
+    if (/^#{1,6}\s/.test(line.trim())) {
+      const hasBody = kept.slice(i + 1).some(l => l.trim() !== '' && !/^#{1,6}\s/.test(l.trim()));
+      if (!hasBody) continue;
+    }
+    if (line.trim() === '' && out.length > 0 && out[out.length - 1].trim() === '') continue;
+    out.push(line);
+  }
+
+  return { text: out.join('\n').trim(), dropped };
+}
+
+/** Enough of a real answer survived the citation check to be worth sending. */
+function hasSubstance(text: string): boolean {
+  return text.replace(/[#*_\-\s]/g, '').length >= 40;
+}
+
+/**
+ * Said when every claim failed the citation check. Phrased to be spoken aloud as well as
+ * read: voice mode reads this result out, so it cannot lean on markdown or a ✦ glyph.
+ */
+const NOT_IN_DOCUMENTS: Record<string, string> = {
+  'en': "I couldn't find that in your documents. The uploaded material mentions the topic but doesn't explain it, so I don't have a grounded answer to give you.",
+  'fr': "Je n'ai pas trouvé cela dans vos documents. Le contenu téléversé mentionne le sujet sans l'expliquer, je ne peux donc pas donner de réponse fondée.",
+  'ar': "لم أجد ذلك في مستنداتك. المواد المرفوعة تذكر الموضوع لكنها لا تشرحه، لذا ليس لدي إجابة مستندة إليها.",
+  'si': "ඔබගේ ලේඛනවල එය සොයාගත නොහැකි විය. උඩුගත කළ ලේඛනවල එම මාතෘකාව සඳහන් වුවත් එය පැහැදිලි කර නැත, එබැවින් මට පදනම් සහිත පිළිතුරක් දිය නොහැක.",
+  'ta': "உங்கள் ஆவணங்களில் அதைக் கண்டறிய முடியவில்லை. பதிவேற்றிய ஆவணங்களில் இந்தத் தலைப்பு குறிப்பிடப்பட்டுள்ளது, ஆனால் விளக்கப்படவில்லை, எனவே ஆதாரப்பூர்வமான பதில் என்னிடம் இல்லை.",
+};
 
 /**
  * True when the user is asking for source text rather than an explanation.
@@ -1419,6 +1492,9 @@ export async function voiceAsk(
   const finalSystemPrompt = SYSTEM_PROMPT + `\n\nRESPONSE LANGUAGE: You MUST respond entirely in ${targetLanguage}.`;
 
   let answerText: string;
+  // Only model-generated prose is citation-checked below: stored passages and the
+  // rate-limit excerpt fallback are source text already, and carry no citations.
+  let modelGenerated = false;
   if (isVerbatim) {
     // Stored text, not model output — see buildVerbatimAnswer.
     // Pass the raw transcript alongside the query. Voice compresses the spoken request to
@@ -1442,6 +1518,7 @@ export async function voiceAsk(
       { role: 'system', content: finalSystemPrompt },
       { role: 'user', content: instructions + "USER QUESTION: " + queryText },
     ], { temperature: 0, skipGemini: !useGemini, preferGemini: useGemini }) || '';
+    modelGenerated = true;
   } catch (llmErr: any) {
     // All AI providers rate-limited — return the raw source text as the answer
     // so the user still sees something instead of an error
@@ -1449,6 +1526,23 @@ export async function voiceAsk(
     const excerpts = reranked.slice(0, 3).map((c: any) => c.text.substring(0, 300)).join('\n\n');
     answerText = `Here is what I found in the documents:\n\n${excerpts}`;
   }
+  // Same citation enforcement as askQuestion — see stripUncitedClaims. Voice needs it more,
+  // not less: a spoken answer arrives without the visible source markers that let a reader
+  // notice a claim came from nowhere, so an invented definition sounds exactly as
+  // authoritative as a quoted one.
+  if (modelGenerated) {
+    const checked = stripUncitedClaims(answerText);
+    if (checked.dropped.length > 0) {
+      getLogger().warn(
+        { queryText, dropped: checked.dropped.slice(0, 5), droppedCount: checked.dropped.length },
+        'voiceAsk: removed uncited claims from answer',
+      );
+    }
+    answerText = hasSubstance(checked.text)
+      ? checked.text
+      : (NOT_IN_DOCUMENTS[language] ?? NOT_IN_DOCUMENTS['en']);
+  }
+
   // Clean citation markers (same as askQuestion). The run-of-spaces collapse is skipped
   // for verbatim answers, since indentation and alignment are part of the quoted source.
   answerText = isVerbatim
@@ -2024,6 +2118,25 @@ Rules:
       ...historyMessages,
       { role: 'user', content: instructions + "USER QUESTION: " + standaloneQuery },
     ], { model: selectedModel, temperature: mode === 'grounded' ? 0 : 0.7, preferGemini: useGemini }) || 'No response generated.';
+  }
+
+  // Enforce the citation rule before the markers are stripped for display — they are the
+  // only evidence of which claims the model could actually source. Verbatim answers are
+  // stored text and carry no citations by design; Deep Dive is explicitly permitted to go
+  // beyond the documents; chit-chat has nothing to cite.
+  let uncited: string[] = [];
+  if (mode === 'grounded' && !isVerbatim && !isChitChat) {
+    const checked = stripUncitedClaims(answerText);
+    uncited = checked.dropped;
+    if (uncited.length > 0) {
+      getLogger().warn(
+        { queryText: standaloneQuery, dropped: uncited.slice(0, 5), droppedCount: uncited.length },
+        'removed uncited claims from grounded answer',
+      );
+    }
+    // Losing the whole answer means nothing in it was supported by the sources. Say so,
+    // rather than shipping the fragments that happened to survive.
+    answerText = hasSubstance(checked.text) ? checked.text : '[UNGROUNDED]';
   }
 
   // Clean any leftover citation markers from the answer.
