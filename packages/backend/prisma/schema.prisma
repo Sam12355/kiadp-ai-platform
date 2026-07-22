@@ -57,6 +57,21 @@ model Tenant {
   plan      String   @default("paid")
   /// When the free trial lapses. Null means there is no trial to lapse.
   trialEndsAt DateTime? @map("trial_ends_at")
+
+  /// Which band of the student ladder was bought (50…1000). Null means unmetered — the
+  /// state every institution is in before a plan is assigned to it.
+  studentCap Int? @map("student_cap")
+  /// Questions included per calendar month. NULL MEANS NO LIMIT, deliberately: a column
+  /// added to live data must not start enforcing a cap nobody agreed to.
+  questionsPerMonth Int? @map("questions_per_month")
+  /// Pay-as-you-go balance, drawn on only once the monthly allowance is spent.
+  questionCredits Int @default(0) @map("question_credits")
+  /// Whether this institution's questions may reach the expensive model. Defaults true so
+  /// behaviour is unchanged until plans are actually assigned; the lower bands turn it off,
+  /// which is what keeps API cost at ~5% of revenue instead of ~19%.
+  allowAdvancedModel Boolean @default(true) @map("allow_advanced_model")
+
+  usageMonths TenantUsageMonth[]
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -72,6 +87,31 @@ model Tenant {
 // ================================================
 // Auth Models
 // ================================================
+
+/// One row per institution per calendar month.
+///
+/// A counter rather than a COUNT over `questions`: the quota is checked on every single
+/// question, and an aggregate over a growing table is the wrong shape for that. It also
+/// separates *billable* questions from rows in the questions table, so a chit-chat reply
+/// or a failed answer need not be charged for.
+model TenantUsageMonth {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// "YYYY-MM", so a month is a lookup rather than a range scan.
+  month     String
+  questions Int      @default(0)
+  /// Credits consumed in this month, once the included allowance ran out. Kept separate so
+  /// an invoice can show what was included and what was extra.
+  creditsUsed Int    @default(0) @map("credits_used")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, month])
+  @@index([tenantId])
+  @@map("tenant_usage_month")
+}
 
 model User {
   id                String   @id @default(uuid()) @db.Uuid
