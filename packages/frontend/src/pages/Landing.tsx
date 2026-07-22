@@ -420,7 +420,7 @@ export default function Landing() {
       </main>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-line-soft">
+      <footer className="glass-panel border-t mt-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex flex-col items-center sm:items-start gap-1">
             <Wordmark size="0.85rem" />
