@@ -202,6 +202,59 @@ router.patch('/:id/plan', requireSuperAdmin, async (req: Request, res: Response,
   }
 });
 
+/**
+ * POST /tenants/:id/credits — add pay-as-you-go questions to an institution.
+ *
+ * Platform owner only, and additive by design: it takes an amount to ADD rather than a new
+ * balance to set. Setting a balance means a top-up applied twice silently overwrites the
+ * first, and a top-up applied while a question is being answered can erase a credit that
+ * was just spent. Adding is safe under both.
+ *
+ * Negative amounts are allowed so a mistaken top-up can be reversed, but the balance is
+ * floored at zero — an institution should never owe questions.
+ */
+const creditsSchema = z.object({
+  questions: z.number().int().refine(n => n !== 0, 'Amount must not be zero'),
+  /** Free-text note for the record — which invoice or pack this came from. */
+  note: z.string().max(200).optional(),
+});
+
+router.post('/:id/credits', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { questions, note } = creditsSchema.parse(req.body);
+    const prisma = getPrisma();
+
+    const before = await prisma.tenant.findUnique({
+      where: { id: req.params.id },
+      select: { questionCredits: true, name: true },
+    });
+    if (!before) {
+      res.status(404).json({ success: false, error: 'Institution not found' });
+      return;
+    }
+
+    const next_ = Math.max(0, before.questionCredits + questions);
+    const tenant = await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: { questionCredits: next_ },
+      select: { id: true, name: true, questionCredits: true },
+    });
+
+    // Money moved. This is the record of who granted what, and it is the only one — there
+    // is no payment provider behind this yet.
+    getLogger().info(
+      { tenantId: tenant.id, name: tenant.name, added: questions,
+        from: before.questionCredits, to: tenant.questionCredits,
+        byUserId: req.user?.userId, note: note ?? null },
+      'pay-as-you-go credits adjusted',
+    );
+
+    res.json({ success: true, data: tenant });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /tenants/:id/users/:userId — assign a user to this institution.
 //
 // requireTenantParam already pins :id to the caller's own tenant. The remaining risk is

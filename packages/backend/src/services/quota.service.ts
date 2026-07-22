@@ -73,30 +73,66 @@ export async function getQuotaStatus(tenantId: string | null | undefined): Promi
 }
 
 /**
- * Count one answered question against the month.
+ * Count one answered question, spending a credit if the month's allowance is gone.
  *
- * Called AFTER an answer is produced, not before it is attempted: a question that failed
- * on a rate limit or a provider outage is not something a school should be billed for.
+ * The order is: included questions first, then pay-as-you-go credits. That is what makes
+ * credits work as BOTH things they need to be — an overflow for a school that outgrew its
+ * plan mid-term, and a standalone product for a school that wants no commitment at all.
+ * The second needs no special case: an institution on credits alone is simply one whose
+ * allowance is zero, so every question falls straight through to the credit branch.
  *
- * The cost of that choice is that two questions arriving at the same instant can both pass
- * a check that only one of them had room for, so the limit is soft by a request or two.
- * That is the right way round — a hard limit here would mean either charging for failures
- * or holding a lock across a model call that takes seconds.
+ * Called AFTER an answer is produced. A question that failed on a rate limit or a provider
+ * outage is not something a school should be billed for, and a credit is real money.
+ *
+ * The increment happens first and the decision is read from its result, so two questions
+ * arriving together cannot both believe they were the last one inside the allowance.
  */
 export async function recordQuestion(tenantId: string | null | undefined): Promise<void> {
   if (!tenantId) return;
   const month = currentMonth();
+  const prisma = getPrisma();
+
   try {
-    await getPrisma().tenantUsageMonth.upsert({
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { questionsPerMonth: true },
+    });
+
+    // Atomic, and it returns the post-increment count — which is what decides whether this
+    // particular question was inside the allowance or over it.
+    const usage = await prisma.tenantUsageMonth.upsert({
       where: { tenantId_month: { tenantId, month } },
-      // One statement, no read first: the unique (tenant, month) pair makes the increment
-      // atomic even with several requests in flight.
       update: { questions: { increment: 1 } },
       create: { tenantId, month, questions: 1 },
+      select: { questions: true },
     });
+
+    const limit = tenant?.questionsPerMonth ?? null;
+    if (limit === null || usage.questions <= limit) return; // inside the plan; nothing to spend
+
+    // Over the allowance: this one costs a credit. updateMany with a positive-balance
+    // condition rather than a plain decrement, so a race cannot drive the balance below
+    // zero and hand out questions nobody paid for.
+    const spent = await prisma.tenant.updateMany({
+      where: { id: tenantId, questionCredits: { gt: 0 } },
+      data: { questionCredits: { decrement: 1 } },
+    });
+
+    if (spent.count > 0) {
+      await prisma.tenantUsageMonth.update({
+        where: { tenantId_month: { tenantId, month } },
+        // Tracked apart from `questions` so an invoice can show what was included and what
+        // was bought — the first thing asked when a bill is queried.
+        data: { creditsUsed: { increment: 1 } },
+      });
+    } else {
+      // The guard should have refused this before it reached a model. Reaching here means
+      // it slipped through the soft edge of the limit, so it is logged rather than hidden.
+      getLogger().warn({ tenantId, month, used: usage.questions, limit }, 'question served with no allowance or credit left');
+    }
   } catch (err) {
-    // Never fail a delivered answer over bookkeeping. The student has been helped; losing
-    // one tick from a counter is the smaller harm, and it is logged so it is not silent.
+    // Never fail a delivered answer over bookkeeping. The student has been helped; a lost
+    // tick is the smaller harm, and it is logged so it is not silent.
     getLogger().warn({ err: (err as Error)?.message, tenantId, month }, 'failed to record question usage');
   }
 }
