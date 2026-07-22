@@ -3,7 +3,7 @@ import { getOpenAI } from '../config/openai.js';
 import { getEnv } from '../config/env.js';
 import { AppError, NotFoundError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
-import { recordQuestion } from './quota.service.js';
+import { recordQuestion, allowsAdvancedModel } from './quota.service.js';
 import { CohereClient } from 'cohere-ai';
 import { embedText } from './embedding.service.js';
 import { GoogleGenAI } from '@google/genai';
@@ -1766,7 +1766,21 @@ export async function askQuestion(
   // Complex keywords in English and Arabic that trigger the "Heavy" brain
   const complexKeywords = /invent|design|synthesize|analyze|compare|calculate|solve|deep dive|connect|summary|summarize|creative|ابتكار|تصميم|تحليل|مقارنة|حساب|حل|تعمق|ربط|ملخص|تلخيص|إبداع/i;
   const isComplex = complexKeywords.test(queryText) || queryText.length > 300;
-  const selectedModel = (isChitChat || !isComplex) ? env.OPENAI_CHAT_MODEL_MINI : env.OPENAI_CHAT_MODEL;
+  // Which model answers is the cost. A complex question is worth the expensive model, but
+  // only if the institution's plan pays for it — that single decision is the difference
+  // between roughly 5% and 19% of revenue going to the AI provider, and it is why the
+  // smaller bands can be priced for a small school at all.
+  //
+  // Note that everything else already runs on the cheap model: chatComplete defaults to it,
+  // so voice, the extract step and the verbatim selector are unaffected by this switch.
+  const advancedAllowed = await allowsAdvancedModel(tenantId);
+  const wantsAdvanced = !isChitChat && isComplex;
+  const selectedModel = (wantsAdvanced && advancedAllowed) ? env.OPENAI_CHAT_MODEL : env.OPENAI_CHAT_MODEL_MINI;
+  if (wantsAdvanced && !advancedAllowed) {
+    // Logged so a school reporting "shorter answers than the demo" has an explanation
+    // sitting in the record rather than needing to be reproduced.
+    getLogger().info({ tenantId }, 'complex question answered on the cheap model: plan does not include it');
+  }
 
   let standaloneQuery = queryText;
 

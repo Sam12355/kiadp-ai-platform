@@ -100,3 +100,29 @@ export async function recordQuestion(tenantId: string | null | undefined): Promi
     getLogger().warn({ err: (err as Error)?.message, tenantId, month }, 'failed to record question usage');
   }
 }
+
+/**
+ * Whether this institution's plan pays for the expensive model.
+ *
+ * This is the single largest cost decision the platform makes. Measured on this
+ * deployment, one question costs about LKR 0.23 answered by gpt-4o-mini and LKR 3.88
+ * answered by gpt-4o — a 17x difference that swamps every other variable, including how
+ * many students a school has.
+ *
+ * Defaults to allowed when there is no tenant (the platform owner) or the row is missing,
+ * so a lookup failure degrades to the better answer rather than quietly downgrading a
+ * school that paid for it. The wrong-but-cheap failure would be far harder to notice.
+ */
+export async function allowsAdvancedModel(tenantId: string | null | undefined): Promise<boolean> {
+  if (!tenantId) return true;
+  try {
+    const tenant = await getPrisma().tenant.findUnique({
+      where: { id: tenantId },
+      select: { allowAdvancedModel: true },
+    });
+    return tenant?.allowAdvancedModel ?? true;
+  } catch (err) {
+    getLogger().warn({ err: (err as Error)?.message, tenantId }, 'model policy lookup failed; allowing advanced model');
+    return true;
+  }
+}

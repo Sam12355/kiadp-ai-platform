@@ -8,7 +8,7 @@ import { uploadImage } from '../middleware/upload.js';
 import { uploadBufferToCloudinary } from '../services/storage.service.js';
 import { BadRequestError, ForbiddenError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
-import { allBands, CREDIT_PACKS } from '../config/pricing.js';
+import { allBands, CREDIT_PACKS, planForBand } from '../config/pricing.js';
 import { getQuotaStatus } from '../services/quota.service.js';
 
 const router: Router = Router();
@@ -79,6 +79,15 @@ const planSchema = z.object({
   plan: z.enum(['trial', 'paid']).optional(),
   // Null clears the trial end date, which for a 'trial' plan means it never lapses.
   trialEndsAt: z.string().datetime().nullable().optional(),
+  /**
+   * A rung on the student ladder. Setting it derives the allowance and the model policy
+   * from pricing.ts rather than accepting them separately — three fields that must agree
+   * are three chances to sell a 200-student plan with a 2,000-student allowance.
+   */
+  studentBand: z.number().int().min(1).max(100000).nullable().optional(),
+  /** Override the derived values, for a negotiated deal that does not fit the ladder. */
+  questionsPerMonth: z.number().int().min(0).nullable().optional(),
+  allowAdvancedModel: z.boolean().optional(),
 });
 
 // POST /tenants — create institution. Onboarding a school is a platform-owner action.
@@ -161,6 +170,12 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
 router.patch('/:id/plan', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = planSchema.parse(req.body);
+
+    // A band is the normal path: it fills in the allowance and the model policy together,
+    // from the same table the price came from. Explicit values still win, so a negotiated
+    // deal can be recorded — but nothing is left to be set separately and forgotten.
+    const fromBand = data.studentBand != null ? planForBand(data.studentBand) : null;
+
     const tenant = await getPrisma().tenant.update({
       where: { id: req.params.id },
       data: {
@@ -168,8 +183,17 @@ router.patch('/:id/plan', requireSuperAdmin, async (req: Request, res: Response,
         ...(data.trialEndsAt !== undefined
           ? { trialEndsAt: data.trialEndsAt === null ? null : new Date(data.trialEndsAt) }
           : {}),
+        ...(data.studentBand !== undefined
+          ? { studentCap: data.studentBand === null ? null : fromBand!.students }
+          : {}),
+        ...(fromBand ? { questionsPerMonth: fromBand.questionsPerMonth, allowAdvancedModel: fromBand.allowAdvancedModel } : {}),
+        ...(data.questionsPerMonth !== undefined ? { questionsPerMonth: data.questionsPerMonth } : {}),
+        ...(data.allowAdvancedModel !== undefined ? { allowAdvancedModel: data.allowAdvancedModel } : {}),
       },
-      select: { id: true, name: true, plan: true, trialEndsAt: true },
+      select: {
+        id: true, name: true, plan: true, trialEndsAt: true,
+        studentCap: true, questionsPerMonth: true, allowAdvancedModel: true, questionCredits: true,
+      },
     });
     getLogger().info({ tenantId: tenant.id, plan: tenant.plan, trialEndsAt: tenant.trialEndsAt }, 'tenant plan updated');
     res.json({ success: true, data: tenant });
