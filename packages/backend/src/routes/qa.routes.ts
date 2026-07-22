@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { resolveTenantContext, requireLiveTenant } from '../middleware/rbac.js';
+import { resolveTenantContext, requireLiveTenant, requireQuota } from '../middleware/rbac.js';
 import * as qaController from '../controllers/qa.controller.js';
 
 const router: Router = Router();
@@ -9,7 +9,7 @@ const router: Router = Router();
 // using "view as", narrows it to the one they are viewing. Without it here the chat
 // answers from the caller's own scope, so previewing a school's student experience would
 // quietly search every school's documents — the one thing the preview exists to show.
-router.use(authenticate, resolveTenantContext, requireLiveTenant);
+router.use(authenticate, resolveTenantContext, requireLiveTenant, requireQuota);
 
 /**
  * @openapi

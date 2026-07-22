@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
-import { ForbiddenError, UnauthorizedError, PaymentRequiredError } from '../utils/errors.js';
+import { ForbiddenError, UnauthorizedError, PaymentRequiredError, QuotaExceededError } from '../utils/errors.js';
 import type { UserRole } from '@khalifa/shared';
 import { getPrisma } from '../config/database.js';
 import { getLogger } from '../utils/logger.js';
 import { isTrialExpired } from '../services/auth.service.js';
+import { getQuotaStatus } from './../services/quota.service.js';
 
 // ── Tenant scoping ──
 //
@@ -209,6 +210,36 @@ export async function requireLiveTenant(req: Request, _res: Response, next: Next
       return;
     }
 
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+
+/**
+ * Blocks a question once the institution's monthly allowance is spent.
+ *
+ * Mounted after requireLiveTenant, so an expired trial is reported as an expired trial
+ * rather than as a quota problem — the two need different things from the customer.
+ *
+ * Reads only; the counter is advanced after an answer is actually produced. A school is
+ * not billed for a question the platform failed to answer.
+ */
+export async function requireQuota(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    const status = await getQuotaStatus(req.callerTenantId);
+    if (status.exhausted) {
+      getLogger().info(
+        { tenantId: req.callerTenantId, used: status.used, limit: status.limit, month: status.month },
+        'question refused: monthly allowance spent',
+      );
+      next(new QuotaExceededError(
+        `This institution has used all ${status.limit} questions included this month. ` +
+        'Add credits or move to a larger plan to continue.',
+      ));
+      return;
+    }
     next();
   } catch (err) {
     next(err);

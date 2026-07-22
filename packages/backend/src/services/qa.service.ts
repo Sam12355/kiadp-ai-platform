@@ -3,6 +3,7 @@ import { getOpenAI } from '../config/openai.js';
 import { getEnv } from '../config/env.js';
 import { AppError, NotFoundError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
+import { recordQuestion } from './quota.service.js';
 import { CohereClient } from 'cohere-ai';
 import { embedText } from './embedding.service.js';
 import { GoogleGenAI } from '@google/genai';
@@ -1714,6 +1715,10 @@ export async function voiceAsk(
     : answerText.replace(/\[Source \d+\]/g, '').replace(/  +/g, ' ');
   getLogger().debug({ ms: Date.now() - t0, answerLength: answerText.length, imageCount: images.length, isVerbatim }, 'voiceAsk: complete');
 
+  // Counted only now, with an answer in hand: a question that died on a rate limit or a
+  // provider outage is not something a school should pay for.
+  await recordQuestion(tenantId);
+
   return { answerText, images };
 }
 
@@ -2308,6 +2313,9 @@ export async function askQuestion(
       }
     },
   });
+
+  // See the note in voiceAsk: charged on delivery, not on attempt.
+  await recordQuestion(tenantId);
 
   return formatAnswerResponse(answer);
 }

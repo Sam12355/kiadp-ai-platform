@@ -62,6 +62,17 @@ export class PaymentRequiredError extends AppError {
   }
 }
 
+/**
+ * The institution is live and paid, but has spent this month's included questions.
+ * Distinct from TRIAL_EXPIRED: that one needs a sale, this one needs credits or a bigger
+ * plan, and next month it clears on its own.
+ */
+export class QuotaExceededError extends AppError {
+  constructor(message = 'Monthly question allowance reached') {
+    super(message, 402, 'QUOTA_EXCEEDED');
+  }
+}
+
 export class ValidationError extends AppError {
   public readonly details: Record<string, unknown>;
 

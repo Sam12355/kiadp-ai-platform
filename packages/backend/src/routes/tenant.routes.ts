@@ -9,6 +9,7 @@ import { uploadBufferToCloudinary } from '../services/storage.service.js';
 import { BadRequestError, ForbiddenError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
 import { allBands, CREDIT_PACKS } from '../config/pricing.js';
+import { getQuotaStatus } from '../services/quota.service.js';
 
 const router: Router = Router();
 
@@ -376,6 +377,28 @@ router.get('/:id/analytics', async (req: Request, res: Response, next: NextFunct
         ungrounded: ungroundedRecent.map(q => ({ id: q.id, question: q.queryText, createdAt: q.createdAt })),
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /tenants/:id/usage — questions used this month against what the plan includes.
+ *
+ * Serves both the school's own "where do we stand" panel and the platform owner's view of
+ * an institution, so the two can never disagree about the same month. Scoped by
+ * requireTenantParam, so a school reads only itself.
+ */
+router.get('/:id/usage', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [status, tenant] = await Promise.all([
+      getQuotaStatus(req.params.id),
+      getPrisma().tenant.findUnique({
+        where: { id: req.params.id },
+        select: { studentCap: true, allowAdvancedModel: true, plan: true },
+      }),
+    ]);
+    res.json({ success: true, data: { ...status, ...tenant } });
   } catch (err) {
     next(err);
   }
