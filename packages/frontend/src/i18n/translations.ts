@@ -328,6 +328,20 @@ const en = {
     unansweredQuestions: 'Questions your documents didn\'t answer',
     unansweredSub: 'Consider adding material that covers these.',
     allAnsweredFromDocs: 'Every question so far was answered from your documents.',
+    usageThisMonth: 'This month',
+    usageQuestionsUsed: 'Questions used',
+    usageOf: 'of',
+    usageUnmeteredTitle: 'Unlimited questions',
+    usageUnmeteredBody: 'Your institution is not on a metered plan — questions are not counted against a monthly allowance.',
+    usageCreditsRemaining: 'Credits remaining',
+    usageCreditsHint: 'Used automatically once the monthly allowance runs out.',
+    usageNearLimitTitle: 'Approaching your monthly allowance',
+    usageNearLimitBody: 'Questions are working as normal. Your allowance resets at the start of next month.',
+    usageOnCreditsTitle: 'Running on credits',
+    usageOnCreditsBody: 'This month\'s allowance is used up, so further questions draw on your credit balance.',
+    usagePausedTitle: 'Questions are paused',
+    usagePausedBody: 'This month\'s allowance is used up and no credits remain. Questions will work again when the allowance resets next month, or as soon as credits are added.',
+    usageContactAdmin: 'Contact your platform administrator to add credits or review your plan.',
 };
 
 const ar = {
@@ -659,6 +673,20 @@ const ar = {
     unansweredQuestions: 'أسئلة لم تُجب عنها مستنداتك',
     unansweredSub: 'فكّر في إضافة مواد تغطي هذه المواضيع.',
     allAnsweredFromDocs: 'كل سؤال حتى الآن أُجيب من مستنداتك.',
+    usageThisMonth: 'هذا الشهر',
+    usageQuestionsUsed: 'الأسئلة المستخدمة',
+    usageOf: 'من',
+    usageUnmeteredTitle: 'أسئلة غير محدودة',
+    usageUnmeteredBody: 'مؤسستك ليست على خطة محدودة — لا تُحتسب الأسئلة ضمن حصة شهرية.',
+    usageCreditsRemaining: 'الأرصدة المتبقية',
+    usageCreditsHint: 'تُستخدم تلقائيًا عند نفاد الحصة الشهرية.',
+    usageNearLimitTitle: 'اقتربت من حصتك الشهرية',
+    usageNearLimitBody: 'الأسئلة تعمل بشكل طبيعي. تتجدد حصتك مع بداية الشهر المقبل.',
+    usageOnCreditsTitle: 'العمل بالأرصدة',
+    usageOnCreditsBody: 'نفدت حصة هذا الشهر، لذا تُخصم الأسئلة الإضافية من رصيدك.',
+    usagePausedTitle: 'الأسئلة متوقفة مؤقتًا',
+    usagePausedBody: 'نفدت حصة هذا الشهر ولم يتبقَّ أي رصيد. ستعمل الأسئلة مجددًا عند تجديد الحصة الشهر المقبل، أو فور إضافة أرصدة.',
+    usageContactAdmin: 'تواصل مع مسؤول المنصة لإضافة أرصدة أو لمراجعة خطتك.',
 };
 
 const si: typeof en = {
@@ -969,6 +997,22 @@ const si: typeof en = {
   unansweredQuestions: 'ඔබේ ලේඛනවලට පිළිතුරු දිය නොහැකි වූ ප්‍රශ්න',
   unansweredSub: 'මේවා ආවරණය වන ලේඛන එක් කිරීම සලකා බලන්න.',
   allAnsweredFromDocs: 'මෙතෙක් සෑම ප්‍රශ්නයකටම ඔබේ ලේඛනවලින් පිළිතුරු ලැබී ඇත.',
+  usageThisMonth: 'මේ මාසය',
+  usageQuestionsUsed: 'භාවිත කළ ප්‍රශ්න',
+  // Sinhala reverses the operands in "X of Y", so a slash keeps the figures in the order
+  // the bar shows them.
+  usageOf: '/',
+  usageUnmeteredTitle: 'අසීමිත ප්‍රශ්න',
+  usageUnmeteredBody: 'ඔබේ ආයතනය මාසික සීමාවක් සහිත සැලසුමක නැත — ප්‍රශ්න මාසික දීමනාවකට එරෙහිව ගණන් නොගැනේ.',
+  usageCreditsRemaining: 'ඉතිරි ක්‍රෙඩිට්',
+  usageCreditsHint: 'මාසික දීමනාව අවසන් වූ විට ස්වයංක්‍රීයව භාවිත වේ.',
+  usageNearLimitTitle: 'ඔබේ මාසික දීමනාවට ළං වෙමින්',
+  usageNearLimitBody: 'ප්‍රශ්න සාමාන්‍ය පරිදි ක්‍රියාත්මක වේ. ඔබේ දීමනාව ලබන මාසය ආරම්භයේදී අලුත් වේ.',
+  usageOnCreditsTitle: 'ක්‍රෙඩිට් මත ක්‍රියාත්මකයි',
+  usageOnCreditsBody: 'මේ මාසයේ දීමනාව අවසන් වී ඇති නිසා ඉදිරි ප්‍රශ්න ඔබේ ක්‍රෙඩිට් ශේෂයෙන් අඩු වේ.',
+  usagePausedTitle: 'ප්‍රශ්න තාවකාලිකව නවතා ඇත',
+  usagePausedBody: 'මේ මාසයේ දීමනාව අවසන් වී ඇති අතර ක්‍රෙඩිට් ද ඉතිරි නැත. ලබන මාසයේ දීමනාව අලුත් වූ විට හෝ ක්‍රෙඩිට් එකතු කළ විගස ප්‍රශ්න යළි ක්‍රියාත්මක වේ.',
+  usageContactAdmin: 'ක්‍රෙඩිට් එකතු කිරීමට හෝ ඔබේ සැලසුම සමාලෝචනය කිරීමට ඔබේ වේදිකා පරිපාලක අමතන්න.',
 };
 
 const ta: typeof en = {
@@ -1279,6 +1323,22 @@ const ta: typeof en = {
   unansweredQuestions: 'உங்கள் ஆவணங்கள் பதிலளிக்காத கேள்விகள்',
   unansweredSub: 'இவற்றை உள்ளடக்கிய ஆவணங்களைச் சேர்ப்பதைப் பரிசீலியுங்கள்.',
   allAnsweredFromDocs: 'இதுவரை ஒவ்வொரு கேள்விக்கும் உங்கள் ஆவணங்களிலிருந்தே பதில் கிடைத்துள்ளது.',
+  usageThisMonth: 'இந்த மாதம்',
+  usageQuestionsUsed: 'பயன்படுத்திய கேள்விகள்',
+  // Tamil reverses the operands in "X of Y", so a slash keeps the figures in the order
+  // the bar shows them.
+  usageOf: '/',
+  usageUnmeteredTitle: 'வரம்பற்ற கேள்விகள்',
+  usageUnmeteredBody: 'உங்கள் நிறுவனம் அளவிடப்படும் திட்டத்தில் இல்லை — கேள்விகள் மாதாந்திர ஒதுக்கீட்டுக்கு எதிராகக் கணக்கிடப்படுவதில்லை.',
+  usageCreditsRemaining: 'மீதமுள்ள கிரெடிட்கள்',
+  usageCreditsHint: 'மாதாந்திர ஒதுக்கீடு தீர்ந்ததும் தானாகவே பயன்படுத்தப்படும்.',
+  usageNearLimitTitle: 'உங்கள் மாதாந்திர ஒதுக்கீட்டை நெருங்குகிறீர்கள்',
+  usageNearLimitBody: 'கேள்விகள் வழக்கம்போல் இயங்குகின்றன. உங்கள் ஒதுக்கீடு அடுத்த மாதத் தொடக்கத்தில் புதுப்பிக்கப்படும்.',
+  usageOnCreditsTitle: 'கிரெடிட்களில் இயங்குகிறது',
+  usageOnCreditsBody: 'இந்த மாத ஒதுக்கீடு தீர்ந்துவிட்டதால், அடுத்த கேள்விகள் உங்கள் கிரெடிட் இருப்பிலிருந்து கழிக்கப்படும்.',
+  usagePausedTitle: 'கேள்விகள் தற்காலிகமாக நிறுத்தப்பட்டுள்ளன',
+  usagePausedBody: 'இந்த மாத ஒதுக்கீடு தீர்ந்துவிட்டது, கிரெடிட்களும் மீதமில்லை. அடுத்த மாதம் ஒதுக்கீடு புதுப்பிக்கப்படும்போது அல்லது கிரெடிட்கள் சேர்க்கப்பட்டவுடன் கேள்விகள் மீண்டும் இயங்கும்.',
+  usageContactAdmin: 'கிரெடிட்களைச் சேர்க்க அல்லது உங்கள் திட்டத்தை மறுபரிசீலிக்க உங்கள் தள நிர்வாகியைத் தொடர்பு கொள்ளவும்.',
 };
 
 export const translations = {

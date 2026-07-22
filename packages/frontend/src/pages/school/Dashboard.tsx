@@ -3,7 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
-import { FileText, HelpCircle, Users, AlertCircle, Key, TrendingUp, CheckCircle2, XCircle, Clock, Sparkles } from 'lucide-react';
+import { useImpersonationStore } from '../../store/impersonationStore';
+import { useLanguageStore } from '../../store/languageStore';
+import { translations, type Lang } from '../../i18n/translations';
+import { FileText, HelpCircle, Users, AlertCircle, Key, TrendingUp, CheckCircle2, XCircle, Clock, Sparkles, Gauge, CreditCard, Info } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -33,6 +36,21 @@ interface Analytics {
   docStatuses: { status: string; count: number }[];
 }
 
+interface Usage {
+  used: number;
+  /** Null when the institution is unmetered — no plan assigned. */
+  limit: number | null;
+  remaining: number | null;
+  credits: number;
+  /** Allowance spent and no credits left: questions are being refused. */
+  exhausted: boolean;
+  /** "YYYY-MM". */
+  month: string;
+  studentCap?: number | null;
+  allowAdvancedModel?: boolean;
+  plan?: string;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   COMPLETED: '#10b981',
   PROCESSING: '#f59e0b',
@@ -60,8 +78,127 @@ function fmt(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+const fmtNum = (n: number) => n.toLocaleString();
+
+/** "2026-07" → "July 2026". Built in UTC to match how the backend keys the month. */
+function monthLabel(month: string, lang: Lang): string {
+  const [y, m] = month.split('-').map(Number);
+  if (!y || !m) return month;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(lang, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** A notice line: informational by default, escalating only when questions actually stop. */
+function UsageNotice({ tone, icon: Icon, title, body, extra }: {
+  tone: 'blue' | 'amber' | 'red';
+  icon: typeof Info;
+  title: string;
+  body: string;
+  extra?: string;
+}) {
+  const tones = {
+    blue: 'text-blue-700 dark:text-blue-400 bg-blue-500/10 border-blue-500/25',
+    amber: 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/25',
+    red: 'text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/25',
+  };
+  return (
+    <div className={`flex items-start gap-3 p-4 rounded-2xl border ${tones[tone]}`}>
+      <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" />
+      <div className="text-start">
+        <p className="text-[11px] font-black uppercase tracking-widest">{title}</p>
+        <p className="text-xs mt-1.5 leading-relaxed opacity-90">{body}</p>
+        {extra && <p className="text-xs mt-1.5 leading-relaxed opacity-90">{extra}</p>}
+      </div>
+    </div>
+  );
+}
+
+function ThisMonthCard({ usage, t, lang }: { usage: Usage; t: typeof translations.en; lang: Lang }) {
+  const metered = usage.limit != null;
+  // A limit of 0 is fully spent, not 0% used — the division would be NaN.
+  const pct = usage.limit == null ? 0
+    : usage.limit > 0 ? Math.min(100, Math.round((usage.used / usage.limit) * 100))
+    : 100;
+  const atLimit = metered && usage.remaining === 0;
+  const nearLimit = metered && pct >= 80 && !atLimit;
+  const barTone = usage.exhausted ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-blue-500';
+
+  return (
+    <div className="glass rounded-[1.5rem] p-8 space-y-5">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Gauge className="w-4 h-4 text-blue-700 dark:text-blue-400" />
+          <h2 className="text-xs font-black uppercase tracking-widest text-ink-mute">{t.usageThisMonth}</h2>
+        </div>
+        <span className="text-[10px] font-black uppercase tracking-widest text-ink-faint">
+          {monthLabel(usage.month, lang)}
+        </span>
+      </div>
+
+      {usage.limit == null ? (
+        // No plan assigned. An empty bar here would read as "you have nothing left".
+        <div className="space-y-3">
+          <div className="flex items-baseline gap-3">
+            <p className="text-4xl font-black text-ink tracking-tighter" style={{ fontFamily: 'var(--font-heading)' }}>
+              {fmtNum(usage.used)}
+            </p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-ink-mute">{t.usageQuestionsUsed}</p>
+          </div>
+          <div className="inline-flex items-center px-3 py-1.5 rounded-full text-blue-700 dark:text-blue-400 bg-blue-500/10 border border-blue-500/25">
+            <span className="text-[10px] font-black uppercase tracking-widest">{t.usageUnmeteredTitle}</span>
+          </div>
+          <p className="text-[11px] text-ink-mute leading-relaxed">{t.usageUnmeteredBody}</p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-2xl font-black text-ink tracking-tight">
+              {fmtNum(usage.used)} <span className="text-ink-mute font-bold">{t.usageOf}</span> {fmtNum(usage.limit)}
+            </p>
+            <span className="text-[11px] font-black text-ink-faint tabular-nums">{pct}%</span>
+          </div>
+          <div className="h-2.5 rounded-full bg-raised border border-line-soft overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-500 ${barTone}`} style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-ink-mute">{t.usageQuestionsUsed}</p>
+        </div>
+      )}
+
+      {usage.credits > 0 && (
+        <div className="flex items-center justify-between gap-4 pt-4 border-t border-line-soft">
+          <div className="flex items-center gap-2.5">
+            <CreditCard className="w-4 h-4 text-ink-mute flex-shrink-0" />
+            <div className="text-start">
+              <p className="text-[11px] font-bold text-ink">{t.usageCreditsRemaining}</p>
+              <p className="text-[10px] text-ink-faint mt-0.5">{t.usageCreditsHint}</p>
+            </div>
+          </div>
+          <span className="text-lg font-black text-ink tabular-nums">{fmtNum(usage.credits)}</span>
+        </div>
+      )}
+
+      {usage.exhausted ? (
+        <UsageNotice
+          tone="red" icon={AlertCircle}
+          title={t.usagePausedTitle} body={t.usagePausedBody} extra={t.usageContactAdmin}
+        />
+      ) : atLimit ? (
+        // Allowance gone but credits are covering it — a fact to state, not a warning.
+        <UsageNotice tone="blue" icon={Info} title={t.usageOnCreditsTitle} body={t.usageOnCreditsBody} />
+      ) : nearLimit ? (
+        <UsageNotice tone="amber" icon={Info} title={t.usageNearLimitTitle} body={t.usageNearLimitBody} />
+      ) : null}
+    </div>
+  );
+}
+
 export default function SchoolDashboard() {
   const { user } = useAuthStore();
+  const { lang } = useLanguageStore();
+  const t = translations[lang];
+  const impersonatedTenantId = useImpersonationStore((s) => s.tenantId);
+  // When the platform owner is viewing an institution, their own tenantId is null — the
+  // institution being viewed is the one whose allowance this panel is about.
+  const usageTenantId = impersonatedTenantId ?? user?.tenantId;
   const [showOnboarding, setShowOnboarding] = useState(false);
   // Subscribing to the theme is what re-reads the variables after a toggle: the chart holds
   // its colours as props, so nothing repaints without a render.
@@ -84,6 +221,13 @@ export default function SchoolDashboard() {
     queryKey: ['school-analytics', user?.tenantId],
     queryFn: async () => (await apiClient.get(`/tenants/${user?.tenantId}/analytics`)).data.data,
     enabled: !!user?.tenantId,
+    refetchInterval: 60000,
+  });
+
+  const { data: usage } = useQuery<Usage>({
+    queryKey: ['school-usage', usageTenantId],
+    queryFn: async () => (await apiClient.get(`/tenants/${usageTenantId}/usage`)).data.data,
+    enabled: Boolean(usageTenantId),
     refetchInterval: 60000,
   });
 
@@ -164,6 +308,10 @@ export default function SchoolDashboard() {
           return stat.href ? <Link key={stat.name} to={stat.href}>{card}</Link> : <div key={stat.name}>{card}</div>;
         })}
       </div>
+
+      {/* Usage against the plan. Absent rather than errored if the call fails: it is
+          secondary to the rest of the dashboard. */}
+      {usage && <ThisMonthCard usage={usage} t={t} lang={lang} />}
 
       {/* Activity chart + doc breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

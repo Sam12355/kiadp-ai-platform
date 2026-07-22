@@ -7,6 +7,7 @@ import { processTextContent } from '../services/ingestion.service.js';
 import { BadRequestError, NotFoundError } from '../utils/errors.js';
 import { generateApiKey } from '../middleware/api-key.middleware.js';
 import { getTrialDays, DEFAULT_TRIAL_DAYS } from '../services/auth.service.js';
+import { tenantEconomics } from '../services/cost.service.js';
 import { z } from 'zod';
 
 const router: Router = Router();
@@ -945,6 +946,26 @@ type AIProvider = typeof VALID_PROVIDERS[number];
 
 /**
  * @openapi
+ * /admin/economics:
+ *   get:
+ *     summary: Estimated cost and margin per institution (platform owner only)
+ *     tags: [Admin]
+ */
+router.get('/economics', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Any past month can be asked for, so a finished month can be reviewed rather than only
+    // the one still accumulating.
+    const month = typeof req.query.month === 'string' && /^\d{4}-\d{2}$/.test(req.query.month)
+      ? req.query.month
+      : undefined;
+    res.json({ success: true, data: await tenantEconomics(month) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
  * /admin/settings/trial-days:
  *   get:
  *     summary: How long a new free trial runs (platform setting)
@@ -953,6 +974,26 @@ type AIProvider = typeof VALID_PROVIDERS[number];
 router.get('/settings/trial-days', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireSuperAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     res.json({ success: true, data: { days: await getTrialDays(), default: DEFAULT_TRIAL_DAYS } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/economics:
+ *   get:
+ *     summary: Estimated cost and margin per institution (platform owner only)
+ *     tags: [Admin]
+ */
+router.get('/economics', authenticate, requireRole(UserRole.ADMIN as any), resolveTenantContext, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Any past month can be asked for, so a finished month can be reviewed rather than only
+    // the one still accumulating.
+    const month = typeof req.query.month === 'string' && /^\d{4}-\d{2}$/.test(req.query.month)
+      ? req.query.month
+      : undefined;
+    res.json({ success: true, data: await tenantEconomics(month) });
   } catch (err) {
     next(err);
   }
