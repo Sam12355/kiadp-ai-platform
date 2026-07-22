@@ -9,7 +9,7 @@ import { uploadBufferToCloudinary } from '../services/storage.service.js';
 import { BadRequestError, ForbiddenError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
 import { allBands, CREDIT_PACKS, planForBand } from '../config/pricing.js';
-import { getQuotaStatus } from '../services/quota.service.js';
+import { getQuotaStatus, currentMonth } from '../services/quota.service.js';
 
 const router: Router = Router();
 
@@ -113,9 +113,22 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { users: true, documents: true, questions: true } },
+        // This month's counter, so the list can show usage against allowance without one
+        // request per row. A filtered include is a join, not N queries.
+        usageMonths: { where: { month: currentMonth() }, select: { questions: true, creditsUsed: true } },
       },
     });
-    res.json({ success: true, data: tenants });
+
+    // Flattened, because a caller wanting "how much has this school used" should not have
+    // to know that the answer lives in an array that is empty until the first question.
+    res.json({
+      success: true,
+      data: tenants.map(({ usageMonths, ...t }) => ({
+        ...t,
+        usedThisMonth: usageMonths[0]?.questions ?? 0,
+        creditsUsedThisMonth: usageMonths[0]?.creditsUsed ?? 0,
+      })),
+    });
   } catch (err) {
     next(err);
   }

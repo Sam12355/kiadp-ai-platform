@@ -8,7 +8,7 @@ import {
   Building2, Plus, Users, FileText, HelpCircle, ChevronRight, X,
   AlertCircle, UserPlus, UserMinus, ToggleLeft, ToggleRight, Search,
   Lock, Mail, User, Save, Trash2, RefreshCw, Pencil, Upload, Eye,
-  CalendarClock, FlaskConical,
+  CalendarClock, FlaskConical, Layers, Gauge, CreditCard, ArrowRight,
 } from 'lucide-react';
 
 type Plan = 'trial' | 'paid';
@@ -21,7 +21,49 @@ interface Tenant {
   createdAt: string;
   plan: string;
   trialEndsAt: string | null;
+  /** Rung on the student ladder. Null = no plan assigned. */
+  studentCap: number | null;
+  /** Included questions per month. Null = unmetered. */
+  questionsPerMonth: number | null;
+  questionCredits: number;
+  /** This month's counter, joined by the list endpoint so rows need no extra request. */
+  usedThisMonth?: number;
+  allowAdvancedModel: boolean;
   _count: { users: number; documents: number; questions: number };
+}
+
+/** A rung on the price list, as served by GET /tenants/plans. */
+interface PlanBand {
+  students: number;
+  pricePerYear: number;
+  pricePerStudent: number;
+  questionsPerMonth: number;
+  allowAdvancedModel: boolean;
+}
+
+interface CreditPack {
+  questions: number;
+  priceLkr: number;
+  pricePerQuestion: number;
+}
+
+interface PlansCatalog {
+  bands: PlanBand[];
+  creditPacks: CreditPack[];
+}
+
+interface Usage {
+  used: number;
+  /** Null when the institution is unmetered. */
+  limit: number | null;
+  remaining: number | null;
+  credits: number;
+  exhausted: boolean;
+  /** "YYYY-MM". */
+  month: string;
+  studentCap?: number | null;
+  allowAdvancedModel?: boolean;
+  plan?: string;
 }
 
 interface TenantUser {
@@ -73,6 +115,51 @@ function trialState(t: Pick<Tenant, 'plan' | 'trialEndsAt'>): { label: string; t
     ? 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/25'
     : 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25';
   return { label: formatRemaining(ms), tone };
+}
+
+const fmtNum = (n: number): string => n.toLocaleString('en-US');
+
+/** "2026-07" → "July 2026". Parsed as UTC because the backend keys months in UTC. */
+function monthLabel(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  if (!y || !m) return month;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** The two things a band decides: how many questions, and which model answers them. */
+function PlanFacts({ questionsPerMonth, advanced }: { questionsPerMonth: number | null; advanced: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-2 flex-wrap">
+      <span className="font-bold text-ink">
+        {questionsPerMonth == null ? 'Unmetered' : `${fmtNum(questionsPerMonth)} q/mo`}
+      </span>
+      <span className={advanced ? 'text-emerald-700 dark:text-emerald-400' : 'text-ink-faint'}>
+        {advanced ? 'gpt-4o included' : 'gpt-4o-mini only'}
+      </span>
+    </span>
+  );
+}
+
+function Fact({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="bg-surface border border-line-soft rounded-xl px-3 py-2 min-w-0">
+      <p className="text-[9px] font-black uppercase tracking-widest text-ink-faint">{label}</p>
+      <p className={`text-xs font-bold mt-0.5 truncate ${tone ?? 'text-ink'}`}>{value}</p>
+    </div>
+  );
+}
+
+/**
+ * The compact plan/usage line on a list row. `used` is only known for the institution
+ * currently selected — the list endpoint carries the allowance, not the month's count —
+ * so rows fall back to showing what the plan includes.
+ */
+function listQuotaLabel(t: Tenant, used: number | null): string {
+  if (t.questionsPerMonth == null) return 'unmetered';
+  const band = t.studentCap != null ? `${t.studentCap} · ` : '';
+  return used == null
+    ? `${band}${fmtNum(t.questionsPerMonth)}/mo`
+    : `${band}${fmtNum(used)}/${fmtNum(t.questionsPerMonth)}`;
 }
 
 /** ISO → the local wall-clock string a datetime-local input expects. */
@@ -128,6 +215,12 @@ export default function Institutions() {
   const [trialDraft, setTrialDraft] = useState('');
   const [planError, setPlanError] = useState('');
 
+  // Plan assignment + credits. bandDraft is the student count as a string; '' means no plan.
+  const [bandDraft, setBandDraft] = useState('');
+  const [creditAmount, setCreditAmount] = useState('');
+  const [creditNote, setCreditNote] = useState('');
+  const [creditError, setCreditError] = useState('');
+
   // Upload document modal
   const [showUploadDoc, setShowUploadDoc] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -139,6 +232,19 @@ export default function Institutions() {
   const { data: tenants, isLoading: tenantsLoading } = useQuery<Tenant[]>({
     queryKey: ['admin-tenants'],
     queryFn: async () => (await apiClient.get('/tenants')).data.data,
+  });
+
+  // The price list never changes between deploys, so it is fetched once and kept.
+  const { data: plans } = useQuery<PlansCatalog>({
+    queryKey: ['tenant-plans'],
+    queryFn: async () => (await apiClient.get('/tenants/plans')).data.data,
+    staleTime: Infinity,
+  });
+
+  const { data: usage, isLoading: usageLoading } = useQuery<Usage>({
+    queryKey: ['tenant-usage', selected?.id],
+    queryFn: async () => (await apiClient.get(`/tenants/${selected!.id}/usage`)).data.data,
+    enabled: !!selected,
   });
 
   const { data: tenantUsers, isLoading: tuLoading } = useQuery<TenantUser[]>({
@@ -170,6 +276,16 @@ export default function Institutions() {
     setPlanError('');
   }, [selected?.id, selected?.plan, selected?.trialEndsAt]);
 
+  // Same idea for the band selector — it must always open showing what they are on now,
+  // not what was left in the box from the last institution looked at.
+  useEffect(() => {
+    setBandDraft(selected?.studentCap != null ? String(selected.studentCap) : '');
+  }, [selected?.id, selected?.studentCap]);
+
+  useEffect(() => {
+    setCreditAmount(''); setCreditNote(''); setCreditError('');
+  }, [selected?.id]);
+
   // ── Mutations ─────────────────────────────────────────────
   const editTenantMutation = useMutation({
     mutationFn: async () => (await apiClient.patch(`/tenants/${editing!.id}`, { name: editName })).data.data,
@@ -191,16 +307,49 @@ export default function Institutions() {
   });
 
   const planMutation = useMutation({
-    mutationFn: async (vars: { plan?: Plan; trialEndsAt?: string | null }) => {
+    mutationFn: async (vars: {
+      plan?: Plan;
+      trialEndsAt?: string | null;
+      studentBand?: number | null;
+      questionsPerMonth?: number | null;
+      allowAdvancedModel?: boolean;
+    }) => {
       const { data } = await apiClient.patch(`/tenants/${selected!.id}/plan`, vars);
-      return data.data as Pick<Tenant, 'id' | 'name' | 'plan' | 'trialEndsAt'>;
+      return data.data as Pick<Tenant,
+        'id' | 'name' | 'plan' | 'trialEndsAt' | 'studentCap' | 'questionsPerMonth' | 'allowAdvancedModel' | 'questionCredits'>;
     },
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ['admin-tenants'] });
-      setSelected(s => s && s.id === updated.id ? { ...s, plan: updated.plan, trialEndsAt: updated.trialEndsAt } : s);
+      qc.invalidateQueries({ queryKey: ['tenant-usage', updated.id] });
+      // Mirror the server's own numbers back into the panel rather than the ones just
+      // typed — a band derives the allowance and the model policy, so what was sent is
+      // not what was stored.
+      setSelected(s => s && s.id === updated.id ? {
+        ...s,
+        plan: updated.plan,
+        trialEndsAt: updated.trialEndsAt,
+        studentCap: updated.studentCap,
+        questionsPerMonth: updated.questionsPerMonth,
+        allowAdvancedModel: updated.allowAdvancedModel,
+        questionCredits: updated.questionCredits,
+      } : s);
       setPlanError('');
     },
     onError: (err: any) => setPlanError(err.response?.data?.error?.message || 'Failed to update plan'),
+  });
+
+  const creditsMutation = useMutation({
+    mutationFn: async (vars: { questions: number; note?: string }) => {
+      const { data } = await apiClient.post(`/tenants/${selected!.id}/credits`, vars);
+      return data.data as Pick<Tenant, 'id' | 'name' | 'questionCredits'>;
+    },
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ['admin-tenants'] });
+      qc.invalidateQueries({ queryKey: ['tenant-usage', updated.id] });
+      setSelected(s => s && s.id === updated.id ? { ...s, questionCredits: updated.questionCredits } : s);
+      setCreditAmount(''); setCreditNote(''); setCreditError('');
+    },
+    onError: (err: any) => setCreditError(err.response?.data?.error?.message || 'Failed to adjust credits'),
   });
 
   const toggleMutation = useMutation({
@@ -287,6 +436,27 @@ export default function Institutions() {
   );
 
   const autoSlug = (n: string) => n.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  // ── Plan assignment, derived ──────────────────────────────
+  const currentBandKey = selected?.studentCap != null ? String(selected.studentCap) : '';
+  const draftBand = (plans?.bands ?? []).find(b => String(b.students) === bandDraft) ?? null;
+  const bandChanged = !!selected && bandDraft !== currentBandKey;
+
+  const applyBand = () => {
+    if (!selected) return;
+    // Clearing the band must also clear the allowance: the API leaves questionsPerMonth
+    // alone when studentBand is null, which would strand a limit with no plan behind it.
+    planMutation.mutate(
+      draftBand
+        ? { studentBand: draftBand.students }
+        : { studentBand: null, questionsPerMonth: null },
+    );
+  };
+
+  const usagePct = usage && usage.limit ? Math.min(100, (usage.used / usage.limit) * 100) : 0;
+  const usageTone = usagePct >= 100 ? 'bg-red-500' : usagePct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+  const creditBalance = usage?.credits ?? selected?.questionCredits ?? 0;
+  const creditDelta = Number(creditAmount);
 
   // Quick-sets force plan back to 'trial' — expiring a date on a 'paid' tenant would
   // change nothing, and the point of these buttons is to make the lockout actually fire.
@@ -539,6 +709,10 @@ export default function Institutions() {
                     <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {t._count.users}</span>
                     <span className="flex items-center gap-1"><FileText className="w-3 h-3" /> {t._count.documents}</span>
                     <span className="flex items-center gap-1"><HelpCircle className="w-3 h-3" /> {t._count.questions}</span>
+                    <span className={`flex items-center gap-1 ${t.questionsPerMonth == null ? 'text-ink-faint italic' : 'text-ink-mute'}`}>
+                      <Gauge className="w-3 h-3" />
+                      {listQuotaLabel(t, selected?.id === t.id ? usage?.used ?? t.usedThisMonth ?? null : t.usedThisMonth ?? null)}
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
@@ -610,8 +784,185 @@ export default function Institutions() {
                 ))}
               </div>
 
+              {/* ── What they are on RIGHT NOW ──
+                  First thing in the block, before any control that changes it. An operator
+                  who cannot read the current band at a glance will assign the wrong one. */}
+              <div className="grid grid-cols-3 gap-2">
+                <Fact
+                  label="Band"
+                  value={selected.studentCap != null ? `${selected.studentCap} students` : 'None'}
+                  tone={selected.studentCap != null ? 'text-ink' : 'text-ink-faint'}
+                />
+                <Fact
+                  label="Included"
+                  value={selected.questionsPerMonth == null ? 'Unmetered' : `${fmtNum(selected.questionsPerMonth)}/mo`}
+                  tone={selected.questionsPerMonth == null ? 'text-ink-faint' : 'text-ink'}
+                />
+                <Fact
+                  label="gpt-4o"
+                  value={selected.allowAdvancedModel ? 'Included' : 'Excluded'}
+                  tone={selected.allowAdvancedModel ? 'text-emerald-700 dark:text-emerald-400' : 'text-ink-faint'}
+                />
+              </div>
+
+              {/* ── Band assignment ── */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" /> Plan band
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={bandDraft}
+                    onChange={(e) => setBandDraft(e.target.value)}
+                    disabled={planMutation.isPending}
+                    className="flex-1 min-w-0 px-3 py-2 bg-surface border border-line rounded-xl text-ink text-xs focus:outline-none focus:border-emerald-500/50 transition-colors cursor-pointer disabled:opacity-40"
+                  >
+                    <option value="" className="bg-raised text-ink">No plan — unmetered</option>
+                    {(plans?.bands ?? []).map((b) => (
+                      <option key={b.students} value={String(b.students)} className="bg-raised text-ink">
+                        {b.students} students — LKR {fmtNum(b.pricePerYear)}/yr
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    disabled={!bandChanged || planMutation.isPending}
+                    onClick={applyBand}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer whitespace-nowrap">
+                    {planMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    Apply
+                  </button>
+                </div>
+
+                {/* What the choice implies — before, and what it becomes after. */}
+                <div className="px-1 pt-0.5 text-[10px] leading-relaxed">
+                  {bandChanged ? (
+                    <div className="flex items-center gap-2 flex-wrap text-ink-mute">
+                      <span className="line-through decoration-ink-faint/60">
+                        <PlanFacts questionsPerMonth={selected.questionsPerMonth} advanced={selected.allowAdvancedModel} />
+                      </span>
+                      <ArrowRight className="w-3 h-3 text-ink-faint flex-shrink-0" />
+                      <PlanFacts
+                        questionsPerMonth={draftBand ? draftBand.questionsPerMonth : null}
+                        advanced={draftBand ? draftBand.allowAdvancedModel : false}
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-ink-mute">
+                      Currently{' '}
+                      <PlanFacts questionsPerMonth={selected.questionsPerMonth} advanced={selected.allowAdvancedModel} />
+                    </span>
+                  )}
+                  {draftBand && (
+                    <p className="text-ink-faint mt-0.5">
+                      LKR {fmtNum(draftBand.pricePerYear)}/yr · LKR {fmtNum(draftBand.pricePerStudent)} per student
+                    </p>
+                  )}
+                  {!draftBand && bandChanged && (
+                    <p className="text-amber-700 dark:text-amber-400 mt-0.5 font-bold">
+                      Removes the allowance entirely — questions stop being metered.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Usage against the allowance ── */}
+              <div className="space-y-1.5 pt-3 border-t border-line-soft">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-ink-mute flex items-center gap-1.5">
+                    <Gauge className="w-3.5 h-3.5" /> Usage
+                  </p>
+                  {usage && (
+                    <span className="text-[9px] font-black uppercase tracking-widest text-ink-faint">
+                      {monthLabel(usage.month)}
+                    </span>
+                  )}
+                </div>
+
+                {usageLoading ? (
+                  <div className="flex justify-center py-2">
+                    <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : !usage ? (
+                  <p className="text-[11px] text-ink-faint italic px-1">Usage unavailable.</p>
+                ) : usage.limit == null ? (
+                  <p className="text-[11px] text-ink-faint px-1">Unmetered — no plan assigned.</p>
+                ) : (
+                  <>
+                    <div className="h-2 rounded-full bg-surface border border-line-soft overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-500 ${usageTone}`} style={{ width: `${usagePct}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 px-1">
+                      <span className="text-[10px] font-bold text-ink">
+                        {fmtNum(usage.used)} of {fmtNum(usage.limit)} this month
+                      </span>
+                      <span className="text-[10px] font-bold text-ink-faint">{usagePct.toFixed(0)}%</span>
+                    </div>
+                    {usage.exhausted && (
+                      <p className="text-[10px] font-bold text-red-700 dark:text-red-400 px-1">
+                        Allowance spent and no credits left — further questions are refused.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* ── Pay-as-you-go credits ── */}
+              <div className="space-y-2 pt-3 border-t border-line-soft">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-ink-mute flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5" /> Credits
+                  </p>
+                  <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${
+                    creditBalance > 0
+                      ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                      : 'text-ink-faint bg-raised border-line'
+                  }`}>
+                    {fmtNum(creditBalance)} left
+                  </span>
+                </div>
+
+                {creditError && (
+                  <div className="flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-[11px]">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{creditError}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  {(plans?.creditPacks ?? []).map((p) => (
+                    <button key={p.questions}
+                      disabled={creditsMutation.isPending}
+                      onClick={() => creditsMutation.mutate({ questions: p.questions, note: 'pack' })}
+                      className="flex-1 min-w-0 py-2 px-2 bg-surface hover:bg-overlay border border-line rounded-xl transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                      <span className="block text-[11px] font-black text-ink leading-none">+{fmtNum(p.questions)}</span>
+                      <span className="block text-[9px] text-ink-faint mt-1">LKR {fmtNum(p.priceLkr)}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input type="number" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)}
+                    placeholder="Amount"
+                    className="w-24 flex-shrink-0 px-3 py-2 bg-surface border border-line rounded-xl text-ink placeholder:text-ink-faint text-xs focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  />
+                  <input type="text" value={creditNote} onChange={(e) => setCreditNote(e.target.value)}
+                    placeholder="Note (optional)"
+                    className="flex-1 min-w-0 px-3 py-2 bg-surface border border-line rounded-xl text-ink placeholder:text-ink-faint text-xs focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  />
+                  <button
+                    disabled={!Number.isFinite(creditDelta) || creditDelta === 0 || creditsMutation.isPending}
+                    onClick={() => creditsMutation.mutate({ questions: Math.trunc(creditDelta), note: creditNote.trim() || undefined })}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer whitespace-nowrap">
+                    {creditsMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    Add
+                  </button>
+                </div>
+                <p className="text-[10px] text-ink-faint px-1">
+                  Adds to the balance rather than replacing it. A negative amount reverses a top-up; the balance floors at zero.
+                </p>
+              </div>
+
               {/* Exact expiry */}
-              <div className="space-y-1">
+              <div className="space-y-1 pt-3 border-t border-line-soft">
                 <label className="text-[10px] font-black uppercase tracking-widest text-ink-mute">Trial ends at</label>
                 <div className="flex gap-2">
                   <input type="datetime-local" value={trialDraft}
