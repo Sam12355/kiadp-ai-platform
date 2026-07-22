@@ -944,7 +944,6 @@ export default function KnowledgeAssistant() {
           isOpen={isVoiceModeOpen}
           onClose={() => setIsVoiceModeOpen(false)}
           onStatusChange={setVoiceStatus}
-          apiKey={import.meta.env.VITE_GEMINI_API_KEY || ""}
           language={lang}
           institutionName={institutionName || ''}
           chatMessages={messages}

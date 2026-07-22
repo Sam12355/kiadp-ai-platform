@@ -3,6 +3,7 @@ import healthRoutes from './health.routes.js';
 import authRoutes from './auth.routes.js';
 import documentRoutes from './document.routes.js';
 import qaRoutes from './qa.routes.js';
+import voiceRoutes from './voice.routes.js';
 import adminRoutes from './admin.routes.js';
 import whatsappRoutes from './whatsapp.routes.js';
 import askRoutes from './ask.routes.js';
@@ -25,6 +26,7 @@ router.use('/whatsapp', whatsappRoutes);
 
 // Knowledge / QA
 router.use('/knowledge', qaRoutes);
+router.use('/voice', voiceRoutes);
 
 // Admin
 router.use('/admin', adminRoutes);

@@ -9,7 +9,6 @@ export interface VoiceModeHandle {
 interface VoiceModeProps {
   isOpen: boolean;
   onClose: () => void;
-  apiKey: string;
   language?: string;
   institutionName?: string;
   onStatusChange?: (status: 'connecting' | 'ready' | 'listening' | 'speaking' | 'thinking') => void;
@@ -23,7 +22,7 @@ interface VoiceModeProps {
 }
 
 export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
-  ({ isOpen, onClose, apiKey, language, institutionName, onStatusChange, onTranscript, onImages, chatMessages, isMuted, pendingClientText, onClientTextSent, onAiVolume }, ref) => {
+  ({ isOpen, onClose, language, institutionName, onStatusChange, onTranscript, onImages, chatMessages, isMuted, pendingClientText, onClientTextSent, onAiVolume }, ref) => {
   const [status, setStatus] = useState<'connecting'|'ready'|'listening'|'speaking'|'thinking'>('connecting');
   const [error, setError] = useState<string|null>(null);
 
@@ -145,13 +144,13 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
   useEffect(() => { onImagesRef.current = onImages; }, [onImages]);
 
   useEffect(() => {
-    if (isOpen && apiKey) {
+    if (isOpen) {
       connect();
     } else {
       disconnect();
     }
     return () => disconnect();
-  }, [isOpen, apiKey]);
+  }, [isOpen]);
 
   const connect = async () => {
     try {
@@ -162,11 +161,24 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
       setStatusAndNotify('connecting');
       setError(null);
 
-      if (!apiKey) {
-        setError('Voice mode is not configured (missing API key). Please contact support.');
+      // Single-use, minutes-long token minted per session by the backend. The browser is
+      // never given the project's API key — that key used to ship inside this bundle, where
+      // anyone could read it out of dev tools and spend the quota.
+      let sessionToken: string;
+      try {
+        const { data } = await apiClient.post('/voice/token');
+        sessionToken = data.data.token;
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        setError(
+          status === 402
+            ? "Voice mode is unavailable because this institution’s access has ended."
+            : 'Could not start voice mode. Please try again.',
+        );
         setStatusAndNotify('ready');
         return;
       }
+      if (isStale()) return;
 
       // Create AudioContext at 16kHz for mic input (same as working Examx project)
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -214,7 +226,7 @@ export const VoiceMode = React.forwardRef<VoiceModeHandle, VoiceModeProps>(
         }
 
       // Connect directly to Gemini Live API using the SDK (no backend bridge)
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey: sessionToken, httpOptions: { apiVersion: 'v1alpha' } });
 
       const sessionPromise = ai.live.connect({
         model: "gemini-3.1-flash-live-preview",
