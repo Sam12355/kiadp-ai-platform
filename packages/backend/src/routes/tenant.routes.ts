@@ -8,6 +8,7 @@ import { uploadImage } from '../middleware/upload.js';
 import { uploadBufferToCloudinary } from '../services/storage.service.js';
 import { BadRequestError, ForbiddenError } from '../utils/errors.js';
 import { getLogger } from '../utils/logger.js';
+import { allBands, CREDIT_PACKS } from '../config/pricing.js';
 
 const router: Router = Router();
 
@@ -32,6 +33,17 @@ router.get('/public', async (_req: Request, res: Response, next: NextFunction) =
   } catch (err) {
     next(err);
   }
+});
+
+/**
+ * GET /tenants/plans — the commercial ladder. Unauthenticated.
+ *
+ * Public because a pricing page is public, and because the alternative is the price list
+ * living twice: once here and once in whatever renders it. It carries no institution data,
+ * only what anything costs.
+ */
+router.get('/plans', (_req: Request, res: Response) => {
+  res.json({ success: true, data: { bands: allBands(), creditPacks: CREDIT_PACKS } });
 });
 
 // All tenant routes BELOW require admin authentication.
